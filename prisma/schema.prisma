@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Usuarios del sistema ───
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  password     String
+  role         Role     @default(VENDEDOR)
+  zone         String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  quotesAssigned  Quote[]    @relation("QuoteSeller")
+  ordersAssigned  Order[]    @relation("OrderSeller")
+  notes           Note[]
+  activities      Activity[]
+  clientsDefault  Client[]   @relation("DefaultSeller")
+}
+
+enum Role {
+  ADMIN
+  VENDEDOR
+  LOGISTICA
+}
+
+// ─── Clientes ───
+model Client {
+  id             String   @id @default(uuid())
+  code           String   @unique          // CLI-001
+  name           String                     // Razón social
+  cuit           String?
+  address        String?
+  city           String?
+  province       String?
+  zone           String?                    // AMBA Norte, Interior Oeste, etc.
+  postalCode     String?
+  phone          String?
+  email          String?
+  emailDomain    String?                    // argencraft.com.ar (para matchear mails)
+  activity       String?                    // Tipo de actividad
+  defaultSellerId String?
+  defaultSeller  User?    @relation("DefaultSeller", fields: [defaultSellerId], references: [id])
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  quotes         Quote[]
+  orders         Order[]
+}
+
+// ─── Definición de Etapas (configurables) ───
+model StageDefinition {
+  id          String  @id @default(uuid())
+  phase       Phase                        // COTIZACION o ORDEN_COMPRA
+  stageKey    String                       // recibida, asignada, armado, etc.
+  label       String                       // "Solicitud Recibida"
+  tone        String  @default("gray")     // Color para el badge
+  order       Int                          // Orden de aparición
+  mandatory   Boolean @default(false)      // ¿Obligatoria? (pedido de Hollman)
+  maxHours    Int?                         // Tiempo máximo en esta etapa (alertas)
+  active      Boolean @default(true)
+
+  @@unique([phase, stageKey])
+}
+
+enum Phase {
+  COTIZACION
+  ORDEN_COMPRA
+}
+
+// ─── Cotizaciones (Fase 1) ───
+model Quote {
+  id             String    @id @default(uuid())
+  code           String    @unique          // COT-2026-041
+  clientId       String?
+  client         Client?   @relation(fields: [clientId], references: [id])
+  sellerId       String?
+  seller         User?     @relation("QuoteSeller", fields: [sellerId], references: [id])
+  stage          String    @default("recibida")
+  source         String    @default("MANUAL")   // MANUAL | EMAIL | WHATSAPP
+  amount         Float?                     // Monto estimado USD
+  flexxusCode    String?                    // Código NP de Flexxus
+  deadline       DateTime?                  // Fecha límite de armado
+  rejectReason   String?                    // Motivo de rechazo
+  rejectNotes    String?                    // Observaciones del rechazo
+  isDraft        Boolean   @default(false)  // Auto-ingresada desde mail
+  emailSubject   String?                    // Asunto del mail original
+  emailMessageId String?                    // ID de Gmail (evitar duplicados)
+  emailFrom      String?                    // Remitente del mail
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  notes          Note[]    @relation("QuoteNotes")
+  attachments    Attachment[] @relation("QuoteAttachments")
+  activities     Activity[] @relation("QuoteActivities")
+  orders         Order[]   @relation("OrderFromQuote")
+}
+
+// ─── Órdenes de Compra (Fase 2) ───
+model Order {
+  id              String    @id @default(uuid())
+  code            String    @unique         // OC-2026-018
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  sellerId        String?
+  seller          User?     @relation("OrderSeller", fields: [sellerId], references: [id])
+  fromQuoteId     String?
+  fromQuote       Quote?    @relation("OrderFromQuote", fields: [fromQuoteId], references: [id])
+  stage           String    @default("oc")
+  clientOCCode    String?                   // Código OC que envía el cliente
+  flexxusCode     String?                   // Código NP de Flexxus
+  deliveryType    String?                   // AMBA | Interior
+  carrier         String?                   // Nombre del transportista
+  trackingNumber  String?                   // Número de guía
+  estimatedDate   DateTime?                 // Fecha estimada de entrega
+  invoiceIssued   Boolean   @default(false)
+  invoiceDate     DateTime?
+  waybillReceived Boolean   @default(false) // Remito conformado recibido
+  waybillDate     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  notes           Note[]    @relation("OrderNotes")
+  attachments     Attachment[] @relation("OrderAttachments")
+  activities      Activity[] @relation("OrderActivities")
+}
+
+// ─── Notas / Comentarios ───
+model Note {
+  id        String   @id @default(uuid())
+  text      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  quoteId   String?
+  quote     Quote?   @relation("QuoteNotes", fields: [quoteId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation("OrderNotes", fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// ─── Archivos adjuntos ───
+model Attachment {
+  id        String   @id @default(uuid())
+  filename  String
+  path      String
+  size      Int?
+  mimeType  String?
+  quoteId   String?
+  quote     Quote?   @relation("QuoteAttachments", fields: [quoteId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation("OrderAttachments", fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// ─── Log de actividades (trazabilidad) ───
+model Activity {
+  id        String   @id @default(uuid())
+  action    String                          // STAGE_CHANGE, NOTE_ADDED, CREATED, ASSIGNED, etc.
+  detail    String                          // "Movió de Solicitud Recibida a Asignada"
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  quoteId   String?
+  quote     Quote?   @relation("QuoteActivities", fields: [quoteId], references: [id], onDelete: Cascade)
+  orderId   String?
+  order     Order?   @relation("OrderActivities", fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// ─── Integración de email ───
+model EmailIntegration {
+  id           String    @id @default(uuid())
+  accountEmail String
+  lastSyncAt   DateTime?
+  lastUid      Int?                         // Último UID procesado
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+}
+
+// ─── Motivos de rechazo (configurables) ───
+model RejectionReason {
+  id     String  @id @default(uuid())
+  label  String
+  order  Int
+  active Boolean @default(true)
+}

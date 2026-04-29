@@ -1,0 +1,536 @@
+/* CRM MySelec — App shell: login, sidebar, topbar, role routing.
+   Depends on: crm-data.jsx, crm-interact.jsx, crm-kanban.jsx, crm-details.jsx, crm-views.jsx */
+
+const { useState, useEffect } = React;
+
+function AppRoot() {
+  const [logged, setLogged] = useState(CrmAuth.isLoggedIn());
+  const [apiData, setApiData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // On login or if already has token, load API data
+  useEffect(() => {
+    if (!logged) { setLoading(false); return; }
+    setLoading(true);
+    loadAllData().then(data => {
+      if (data) {
+        // Replace window globals with API data
+        window.USERS = data.users;
+        window.CLIENTS = data.clients;
+        window.QUOTES = data.quotes;
+        window.ORDERS = data.orders;
+        window.STAGES_F1 = data.stagesF1;
+        window.STAGES_F2 = data.stagesF2;
+        window.ACTIVITY = data.activity;
+        setApiData(data);
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [logged]);
+
+  if (!logged) return <Login onLogin={() => setLogged(true)} />;
+  
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-navy-950">
+      <div className="text-center">
+        <Logo size={48} />
+        <div className="text-white/60 mt-4 text-sm">Cargando sistema...</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <AppProvider key={apiData ? 'api' : 'static'}>
+      <App/>
+    </AppProvider>
+  );
+}
+
+function App() {
+  const { roleKey, setRoleKey, currentUserId, setCurrentUserId, users, openModal, closeAllModals } = useApp();
+  const [screen, setScreen] = useState('dashboard');
+
+  useEffect(() => {
+    if (roleKey === 'admin')     { setCurrentUserId('u-vl'); setScreen('dashboard'); }
+    if (roleKey === 'seller')    { setCurrentUserId('u-lp'); setScreen('my-quotes'); }
+    if (roleKey === 'logistics') { setCurrentUserId('u-lg'); setScreen('ops'); }
+  }, [roleKey]);
+
+  // Cmd/Ctrl+K opens search
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        openModal('search');
+      }
+      if (e.key === 'Escape') closeAllModals();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openModal, closeAllModals]);
+
+  const user = users.find(u => u.id === currentUserId) || users[0];
+
+  const openDetail = (code, kind='quote') => openModal(kind==='quote'?'quoteDetail':'orderDetail', { code });
+
+  return (
+    <div className="min-h-screen flex bg-surface" data-screen-label={`${roleKey} · ${screen}`}>
+      <Sidebar role={roleKey} screen={screen} setScreen={setScreen}/>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Topbar user={user} roleKey={roleKey} setRoleKey={setRoleKey}/>
+        <main className="flex-1 min-w-0 overflow-x-hidden">
+          {screen === 'dashboard'  && <Dashboard/>}
+          {screen === 'quotes'     && <KanbanQuotes onOpen={(c)=>openDetail(c,'quote')}/>}
+          {screen === 'orders'     && <KanbanOrders onOpen={(c)=>openDetail(c,'order')}/>}
+          {screen === 'my-quotes'  && <MySalesView user={user} initialTab="quotes" onOpen={openDetail}/>}
+          {screen === 'my-orders'  && <MySalesView user={user} initialTab="orders" onOpen={openDetail}/>}
+          {screen === 'ops'        && <LogisticsView onOpen={(c)=>openDetail(c,'order')}/>}
+          {screen === 'clients'    && <Clients readonly={roleKey!=='admin'}/>}
+          {screen === 'team'       && <Team/>}
+          {screen === 'config'     && <Config/>}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Login ----------
+function Login({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [pass,  setPass]  = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const result = await CrmApi.login(email, pass);
+      CrmAuth.setToken(result.token);
+      CrmAuth.setUser(result.user);
+      onLogin();
+    } catch (err) {
+      setError(err.message || 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-stretch bg-navy-950 relative overflow-hidden">
+      <div className="absolute inset-0 opacity-[0.08]" style={{
+        backgroundImage:'radial-gradient(circle at 20% 30%, #3B82F6 0, transparent 40%), radial-gradient(circle at 80% 70%, #3B82F6 0, transparent 35%)'
+      }}/>
+      <div className="absolute inset-0" style={{
+        backgroundImage:'linear-gradient(#ffffff09 1px, transparent 1px), linear-gradient(90deg, #ffffff09 1px, transparent 1px)',
+        backgroundSize:'40px 40px'
+      }}/>
+
+      <div className="relative hidden md:flex flex-col justify-between w-[44%] p-12 text-white">
+        <div className="flex items-center gap-3">
+          <Logo size={40}/>
+          <div>
+            <div className="font-bold text-xl tracking-wide">MYSELEC</div>
+            <div className="text-[11px] uppercase tracking-[.2em] text-white/50">Sistema Comercial</div>
+          </div>
+        </div>
+        <div className="space-y-6 max-w-md">
+          <div className="text-[11px] font-mono uppercase tracking-[.2em] text-brand">Pipeline comercial v1</div>
+          <h1 className="text-4xl font-bold leading-tight">
+            Del mail a la entrega,<br/>con trazabilidad real.
+          </h1>
+          <p className="text-white/60 text-[15px]">
+            Gestioná cotizaciones, órdenes de compra y entregas en un solo lugar.
+            Cada estado, cada adjunto, cada nota — registrados.
+          </p>
+          <div className="flex gap-6 pt-4">
+            <div><div className="text-white font-semibold">2 fases</div><div className="text-white/40 text-[11px] uppercase tracking-wider">Cotización + OC</div></div>
+            <div><div className="text-white font-semibold">16 etapas</div><div className="text-white/40 text-[11px] uppercase tracking-wider">configurables</div></div>
+            <div><div className="text-white font-semibold">3 roles</div><div className="text-white/40 text-[11px] uppercase tracking-wider">Admin · Ventas · Logística</div></div>
+          </div>
+        </div>
+        <div className="text-[11px] text-white/40">© 2026 MySelec · Materiales eléctricos para el sector energético</div>
+      </div>
+
+      <div className="relative flex-1 flex items-center justify-center p-8">
+        <form onSubmit={handleSubmit}
+              className="w-full max-w-sm bg-white rounded-2xl shadow-pop p-8 border border-line">
+          <div className="md:hidden flex items-center gap-2 mb-6">
+            <Logo size={28} tone="dark"/>
+            <div className="font-bold tracking-wider">MYSELEC</div>
+          </div>
+          <h2 className="text-xl font-bold text-ink-900">Iniciar sesión</h2>
+          <p className="text-sm text-ink-500 mb-6">Ingresá con tu cuenta corporativa.</p>
+          {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+          <label className="block text-xs font-medium text-ink-700 mb-1.5">Email</label>
+          <input className="inp w-full mb-4" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@myselec.com.ar" />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-xs font-medium text-ink-700">Contraseña</label>
+          </div>
+          <input type="password" className="inp w-full mb-6" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" />
+          <button className="btn-primary w-full justify-center" disabled={loading}>
+            {loading ? 'Ingresando...' : 'Iniciar sesión'}
+          </button>
+          <div className="mt-6 pt-5 border-t border-line text-center">
+            <div className="text-[11px] uppercase tracking-wider text-ink-400">Sistema de Gestión Comercial</div>
+            <div className="text-xs text-ink-500 mt-0.5">MySelec · v2026.04</div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Sidebar ----------
+function Sidebar({ role, screen, setScreen }) {
+  const navAdmin = [
+    { id:'dashboard', label:'Dashboard',             icon:'layout-dashboard' },
+    { id:'quotes',    label:'Cotizaciones',          icon:'clipboard-list', sub:'Fase 1' },
+    { id:'orders',    label:'Órdenes de Compra',     icon:'package',        sub:'Fase 2' },
+    { id:'clients',   label:'Clientes',              icon:'building-2' },
+    { id:'team',      label:'Equipo',                icon:'users' },
+    { id:'config',    label:'Configuración',         icon:'settings' },
+  ];
+  const navSeller = [
+    { id:'my-quotes', label:'Mis Cotizaciones',      icon:'clipboard-list' },
+    { id:'my-orders', label:'Mis Órdenes de Compra', icon:'package' },
+    { id:'clients',   label:'Clientes',              icon:'building-2', sub:'solo lectura' },
+  ];
+  const navLog = [
+    { id:'ops',       label:'Operaciones',           icon:'truck', sub:'Fase 2' },
+  ];
+  const nav = role === 'admin' ? navAdmin : role === 'seller' ? navSeller : navLog;
+
+  return (
+    <aside className="w-[244px] shrink-0 bg-navy-900 text-white flex flex-col min-h-screen">
+      <div className="px-5 pt-5 pb-4 flex items-center gap-2.5 border-b border-white/5">
+        <Logo size={32}/>
+        <div>
+          <div className="font-bold tracking-wider text-[15px]">MYSELEC</div>
+          <div className="text-[10px] uppercase tracking-[.18em] text-white/45">CRM Comercial</div>
+        </div>
+      </div>
+
+      <nav className="flex-1 py-4 px-3 space-y-0.5">
+        <div className="px-3 pb-1.5 text-[10px] uppercase tracking-wider text-white/35 font-semibold">
+          {role==='admin' ? 'Gestión' : role==='seller' ? 'Mi pipeline' : 'Operaciones'}
+        </div>
+        {nav.map(n => (
+          <button key={n.id} onClick={()=>setScreen(n.id)}
+            className={cx(
+              'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] text-left transition-colors',
+              screen === n.id
+                ? 'bg-brand text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]'
+                : 'text-white/75 hover:bg-white/5 hover:text-white'
+            )}
+          >
+            <Icon name={n.icon} size={17}/>
+            <span className="flex-1 leading-tight">
+              {n.label}
+              {n.sub && <span className="block text-[10px] uppercase tracking-wider opacity-60 font-medium">{n.sub}</span>}
+            </span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="mx-3 mb-3 rounded-xl bg-white/5 border border-white/10 p-3">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Icon name="sparkles" size={14} className="text-brand"/>
+          <span className="text-[11px] uppercase tracking-wider text-white/60 font-semibold">Novedades</span>
+        </div>
+        <p className="text-[12px] text-white/75 leading-snug">
+          Nueva integración con Flexxus. El código NP se sincroniza automáticamente al cargar una OC.
+        </p>
+      </div>
+
+      <div className="px-4 py-3 border-t border-white/5 text-[11px] text-white/40 font-mono">
+        v2026.04 · conectado
+      </div>
+    </aside>
+  );
+}
+
+// ---------- Topbar ----------
+function Topbar({ user, roleKey, setRoleKey }) {
+  const { notifications, openModal, pushToast } = useApp();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await CrmApi.syncMail();
+      if (result.synced > 0) {
+        pushToast(`${result.synced} cotización(es) ingresada(s) desde mail`, 'ok');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        pushToast('No hay mails nuevos', 'info');
+      }
+    } catch (err) {
+      pushToast('Error al sincronizar: ' + err.message, 'bad');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleLogout = () => {
+    CrmAuth.clearToken();
+    localStorage.removeItem('crm_user');
+    window.location.reload();
+  };
+
+  const title = {
+    admin: 'Vista Administrador', seller: 'Vista Vendedor', logistics: 'Vista Logística'
+  }[roleKey];
+  return (
+    <header className="h-[62px] bg-white border-b border-line flex items-center gap-4 px-6 shrink-0 relative">
+      <div className="flex items-center gap-2 text-sm flex-1">
+        <Icon name="home" size={13} className="text-ink-400"/>
+        <span className="text-ink-500">MySelec CRM</span>
+        <Icon name="chevron-right" size={12} className="text-ink-300"/>
+        <span className="font-semibold text-ink-900">{title}</span>
+      </div>
+
+      <div className="flex items-center gap-1.5 bg-surface rounded-lg p-1 border border-line">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 px-2">Vista</span>
+        {[
+          {k:'admin',     l:'Admin'},
+          {k:'seller',    l:'Vendedor'},
+          {k:'logistics', l:'Logística'},
+        ].map(o => (
+          <button key={o.k} onClick={()=>setRoleKey(o.k)}
+            className={cx(
+              'text-xs font-medium px-2.5 py-1 rounded-md transition-colors',
+              roleKey === o.k ? 'bg-white text-navy-900 shadow-sm border border-line' : 'text-ink-500 hover:text-ink-900'
+            )}
+          >{o.l}</button>
+        ))}
+      </div>
+
+      <button onClick={()=>openModal('search')}
+        className="relative hidden md:inline-flex items-center gap-2 px-3 h-9 rounded-lg bg-surface hover:bg-white hover:border-line border border-transparent text-ink-500 text-xs">
+        <Icon name="search" size={14}/>
+        <span>Buscar…</span>
+        <kbd className="ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded border border-line bg-white text-ink-500">⌘K</kbd>
+      </button>
+
+      {roleKey === 'admin' && (
+        <button onClick={handleSync} disabled={syncing}
+          className="inline-flex items-center gap-2 px-3 h-9 rounded-lg bg-brand/10 hover:bg-brand/20 text-brand text-xs font-medium border border-brand/20 transition-colors">
+          <Icon name="mail" size={14}/>
+          {syncing ? 'Sincronizando...' : 'Sincronizar Mail'}
+        </button>
+      )}
+
+      <div className="relative">
+        <button onClick={()=>setNotifOpen(o=>!o)}
+          className="relative w-9 h-9 rounded-lg hover:bg-surface flex items-center justify-center text-ink-700">
+          <Icon name="bell" size={17}/>
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-bad text-white text-[10px] font-bold flex items-center justify-center">{unreadCount}</span>
+          )}
+        </button>
+        {notifOpen && <NotificationsPopover onClose={()=>setNotifOpen(false)}/>}
+      </div>
+
+      <div className="flex items-center gap-2.5 pl-3 border-l border-line">
+        <Avatar name={user.name} size={32}/>
+        <div className="leading-tight">
+          <div className="text-sm font-semibold text-ink-900">{user.name}</div>
+          <div className="text-[11px] text-ink-500">{user.role} · {user.zone || '—'}</div>
+        </div>
+        <button onClick={handleLogout} title="Cerrar sesión" className="w-8 h-8 rounded-lg hover:bg-surface flex items-center justify-center text-ink-400 hover:text-bad">
+          <Icon name="log-out" size={15}/>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// ---------- Dashboard ----------
+function Dashboard() {
+  const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+          PieChart, Pie, Cell, AreaChart, Area } = window.Recharts;
+  const { quotes, users, clients, activity, openModal } = useApp();
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const kpis = [
+    { label:'Cotizaciones activas',   value:String(quotes.filter(q=>!['aceptada','rechazada'].includes(q.stage)).length), delta:'+12%', tone:'up',   hint:'vs mes anterior' },
+    { label:'Presupuestos enviados',  value:String(quotes.filter(q=>q.stage==='enviado').length),        delta:'pendientes', tone:'flat', hint:'USD 412k en juego' },
+    { label:'OC en curso',            value:'12',        delta:'+3',   tone:'up',   hint:'nuevas esta semana' },
+    { label:'Entregas este mes',      value:'23',        delta:'−2',   tone:'down', hint:'vs. abril 2025' },
+    { label:'Monto total cotizado',   value:'USD 684k',  delta:'+18%', tone:'up',   hint:'mes corriente' },
+    { label:'Tasa de conversión',     value:'56%',       delta:'+4 pp',tone:'up',   hint:'cotización → OC' },
+  ];
+
+  return (
+    <div>
+      <PageHead
+        subtitle="Vista general · Administrador"
+        title={`Buenos días, Victoria.`}
+        description={`Resumen comercial al ${new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })}. Tenés 3 cotizaciones vencidas que requieren atención.`}
+        actions={
+          <>
+            <div className="relative">
+              <button onClick={()=>setExportOpen(o=>!o)} className="btn-ghost"><Icon name="download" size={14}/>Exportar<Icon name="chevron-down" size={11}/></button>
+              {exportOpen && <ExportMenu onClose={()=>setExportOpen(false)}/>}
+            </div>
+            <button className="btn-ghost"><Icon name="calendar" size={14}/>Abril 2026</button>
+          </>
+        }
+      />
+      <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
+        <div className="grid grid-cols-6 gap-3">
+          {kpis.map((k,i) => (
+            <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card">
+              <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.label}</div>
+              <div className="text-2xl font-bold text-ink-900 mt-2">{k.value}</div>
+              <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                <span className={cx('font-medium',
+                  k.tone==='up'?'text-ok':k.tone==='down'?'text-bad':'text-ink-500')}>
+                  {k.tone==='up' && '▲ '}{k.tone==='down' && '▼ '}{k.delta}
+                </span>
+                <span className="text-ink-400">· {k.hint}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-5 bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="mb-2">
+              <div className="text-sm font-semibold text-ink-900">Cotizaciones por vendedor</div>
+              <div className="text-xs text-ink-500">Mes corriente · cotizadas vs. ganadas</div>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={CH_SELLERS} barCategoryGap={18}>
+                <CartesianGrid stroke="#F1F5F9" vertical={false}/>
+                <XAxis dataKey="name" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
+                <Tooltip cursor={{fill:'#F1F5F9'}} contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                <Legend iconType="circle" wrapperStyle={{fontSize:12, paddingTop:4}}/>
+                <Bar dataKey="cotiz"   name="Cotizadas" fill="#1B2A4A" radius={[4,4,0,0]}/>
+                <Bar dataKey="ganadas" name="Ganadas"   fill="#3B82F6" radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="col-span-3 bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="mb-2">
+              <div className="text-sm font-semibold text-ink-900">Distribución por etapa</div>
+              <div className="text-xs text-ink-500">{quotes.length} cotizaciones activas</div>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={CH_STAGE_DIST} dataKey="value" nameKey="name"
+                     innerRadius={48} outerRadius={78} paddingAngle={2} stroke="#fff" strokeWidth={2}>
+                  {CH_STAGE_DIST.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                </Pie>
+                <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
+              {CH_STAGE_DIST.map(e=>(
+                <div key={e.name} className="flex items-center gap-1.5 text-[11px] text-ink-700">
+                  <span className="w-2 h-2 rounded-sm" style={{background:e.color}}/>
+                  <span className="truncate flex-1">{e.name}</span>
+                  <span className="font-semibold">{e.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="col-span-4 bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="mb-2">
+              <div className="text-sm font-semibold text-ink-900">Evolución mensual</div>
+              <div className="text-xs text-ink-500">Últimos 6 meses · recibidas vs. ganadas</div>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={CH_MONTHLY}>
+                <defs>
+                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.35}/>
+                    <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.0}/>
+                  </linearGradient>
+                  <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10B981" stopOpacity={0.35}/>
+                    <stop offset="100%" stopColor="#10B981" stopOpacity={0.0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#F1F5F9" vertical={false}/>
+                <XAxis dataKey="month" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
+                <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                <Legend iconType="circle" wrapperStyle={{fontSize:12, paddingTop:4}}/>
+                <Area type="monotone" dataKey="recibidas" name="Recibidas" stroke="#3B82F6" strokeWidth={2} fill="url(#g1)"/>
+                <Area type="monotone" dataKey="ganadas"   name="Ganadas"   stroke="#10B981" strokeWidth={2} fill="url(#g2)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-7 bg-white rounded-xl border border-line shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-line">
+              <div>
+                <div className="text-sm font-semibold text-ink-900">Cotizaciones próximas a vencer</div>
+                <div className="text-xs text-ink-500">Pasaron el tiempo límite de armado (1 día hábil)</div>
+              </div>
+              <Badge tone="red" dot>3 vencidas</Badge>
+            </div>
+            <table className="w-full tbl">
+              <thead>
+                <tr>
+                  <th>Código</th><th>Cliente</th><th>Vendedor</th><th>Etapa</th>
+                  <th className="!text-right">Días</th><th className="!text-right">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quotes.filter(q => q.dias >= 5 && !['aceptada','rechazada'].includes(q.stage)).slice(0,5).map(q => {
+                  const cli = clients.find(c=>c.code===q.client); const s = users.find(u=>u.id===q.seller);
+                  const stg = STAGES_F1.find(x=>x.id===q.stage);
+                  return (
+                    <tr key={q.code} className="cursor-pointer" onClick={()=>openModal('quoteDetail', { code:q.code })}>
+                      <td className="mono text-[12px] font-semibold text-navy-900">{q.code}</td>
+                      <td className="font-medium">{cli?.name}</td>
+                      <td><div className="flex items-center gap-2"><Avatar name={s.name} size={22}/>{s.name.split(' ')[0]}</div></td>
+                      <td><Badge tone={stg.tone} dot>{stg.label}</Badge></td>
+                      <td className="text-right"><span className="mono text-bad font-semibold">{q.dias}d</span></td>
+                      <td className="text-right mono">{fmtMoney(q.monto)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="col-span-5 bg-white rounded-xl border border-line shadow-card">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-line">
+              <div className="text-sm font-semibold text-ink-900">Últimas actividades</div>
+              <button className="text-xs text-brand hover:underline">Ver todo</button>
+            </div>
+            <ul className="p-2 max-h-[360px] overflow-y-auto scroll-thin">
+              {activity.map((a,i) => {
+                const u = users.find(x=>x.id===a.by);
+                return (
+                  <li key={i} className="flex gap-3 px-3 py-2.5 rounded-lg hover:bg-surface">
+                    <Avatar name={u?.name || '?'} size={28}/>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-ink-900 leading-snug">{a.text}</div>
+                      <div className="text-[11px] text-ink-500 mt-0.5 mono">{fmtDateTime(a.at)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Mount ----------
+ReactDOM.createRoot(document.getElementById('root')).render(<AppRoot/>);

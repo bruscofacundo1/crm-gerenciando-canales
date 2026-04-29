@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>CRM MySelec · Sistema de Gestión Comercial</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+        colors: {
+          navy:    { 950: '#0F1A30', 900: '#1B2A4A', 800: '#243557', 700: '#2D4A6F' },
+          ink:     { 900: '#1E293B', 700: '#334155', 500: '#64748B', 400: '#94A3B8', 300: '#CBD5E1' },
+          line:    '#E2E8F0',
+          surface: '#F5F7FA',
+          brand:   '#3B82F6',
+          brandSoft:'#DBEAFE',
+          ok:      '#10B981',
+          warn:    '#F59E0B',
+          bad:     '#EF4444',
+          purple6: '#8B5CF6',
+          sky5:    '#0EA5E9',
+          orange5: '#F97316',
+        },
+        boxShadow: {
+          card: '0 1px 2px 0 rgba(15, 26, 48, 0.04), 0 1px 3px 0 rgba(15, 26, 48, 0.06)',
+          pop:  '0 10px 32px -12px rgba(15, 26, 48, 0.25), 0 4px 8px -4px rgba(15, 26, 48, 0.10)',
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  html, body { font-family: 'DM Sans', system-ui, sans-serif; color: #1E293B; background: #F5F7FA; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  /* Scrollbar */
+  .scroll-thin::-webkit-scrollbar { height: 10px; width: 10px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  /* subtle stripe placeholder */
+  .stripe-ph {
+    background-image: repeating-linear-gradient(45deg, #EEF2F7 0 8px, #F7F9FC 8px 16px);
+  }
+  /* stepper dotted line */
+  .stepline::before {
+    content:""; position:absolute; left:11px; top:22px; bottom:-4px;
+    border-left: 2px dotted #CBD5E1;
+  }
+  .stepline:last-child::before { display:none; }
+  /* kanban drag visual cue */
+  .kcard:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(15,26,48,0.18), 0 2px 4px -2px rgba(15,26,48,0.08); }
+  .kcard { transition: transform .12s ease, box-shadow .12s ease; }
+  /* Inputs & buttons (plain CSS — avoid @apply on CDN Tailwind) */
+  .inp { background:#fff; border:1px solid #E2E8F0; border-radius:8px; padding:8px 12px; font-size:13.5px; outline:none; color:#1E293B; }
+  .inp::placeholder { color:#94A3B8; }
+  .inp:focus { border-color:#3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+  .btn-primary, .btn-ghost, .btn-accent {
+    display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:500;
+    border-radius:8px; padding:8px 14px; transition: background-color .15s, color .15s, border-color .15s; cursor:pointer;
+    border:1px solid transparent; white-space:nowrap;
+  }
+  .btn-primary { background:#1B2A4A; color:#fff; }
+  .btn-primary:hover { background:#243557; }
+  .btn-ghost   { background:#fff; border-color:#E2E8F0; color:#334155; }
+  .btn-ghost:hover { background:#F5F7FA; }
+  .btn-accent  { background:#3B82F6; color:#fff; }
+  .btn-accent:hover { background:rgba(59,130,246,0.9); }
+  .chip { display:inline-flex; align-items:center; gap:4px; border-radius:6px; font-size:11px; font-weight:500; padding:2px 6px; }
+  .tbl th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; color:#64748B; padding:10px 16px; background:#F5F7FA; border-bottom:1px solid #E2E8F0; }
+  .tbl td { padding:12px 16px; font-size:13.5px; color:#334155; border-bottom:1px solid #E2E8F0; }
+  .tbl tr:hover td { background:#FAFBFD; }
+  /* kanban column height */
+  .kcol-body { max-height: calc(100vh - 290px); overflow-y: auto; }
+  /* sparkline grid */
+  .spark-grid { background-image: linear-gradient(to right, #F1F5F9 1px, transparent 1px); background-size: 20% 100%; }
+  /* subtle fade for modal */
+  .modal-enter { animation: fi .18s ease-out; }
+  @keyframes fi { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none;} }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+<script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js"></script>
+</head>
+<body class="min-h-screen">
+<div id="root"></div>
+<script type="text/babel" src="./crm-api.jsx"></script>
+<script type="text/babel" src="./crm-interact.jsx"></script>
+<script type="text/babel" src="./crm-data.jsx"></script>
+<script type="text/babel" src="./crm-kanban.jsx"></script>
+<script type="text/babel" src="./crm-details.jsx"></script>
+<script type="text/babel" src="./crm-views.jsx"></script>
+<script type="text/babel" src="./crm-app.jsx"></script>
+</body>
+</html>
