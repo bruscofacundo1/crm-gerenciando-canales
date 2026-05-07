@@ -159,15 +159,91 @@ router.patch('/stages/:id', authMiddleware, async (req, res) => {
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Solo administradores' });
     }
-    const { mandatory, maxHours } = req.body;
+    const { mandatory, maxHours, label, tone } = req.body;
     const data = {};
     if (mandatory !== undefined) data.mandatory = mandatory;
     if (maxHours  !== undefined) data.maxHours  = maxHours || null;
+    if (label     !== undefined) data.label     = label;
+    if (tone      !== undefined) data.tone      = tone;
     const updated = await prisma.stageDefinition.update({
       where: { id: req.params.id },
       data,
     });
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /data/stages — crear nueva etapa (admin only)
+router.post('/stages', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo administradores' });
+    }
+    const { label, phase, tone = 'gray' } = req.body;
+    if (!label || !phase) return res.status(400).json({ error: 'label y phase son requeridos' });
+    if (!['COTIZACION', 'ORDEN_COMPRA'].includes(phase)) {
+      return res.status(400).json({ error: 'phase inválida' });
+    }
+
+    // stageKey: slug del label
+    const stageKey = label.toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+    // order: al final de su fase
+    const last = await prisma.stageDefinition.findFirst({
+      where: { phase },
+      orderBy: { order: 'desc' },
+    });
+    const order = (last?.order ?? 0) + 1;
+
+    const stage = await prisma.stageDefinition.create({
+      data: { label, phase, tone, stageKey, order, active: true },
+    });
+    res.json(stage);
+  } catch (err) {
+    if (err.code === 'P2002') return res.status(400).json({ error: 'Ya existe una etapa con ese nombre en esa fase' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /data/stages/:id — eliminar etapa (admin only, solo si no tiene quotes)
+router.delete('/stages/:id', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo administradores' });
+    }
+    const stage = await prisma.stageDefinition.findUnique({ where: { id: req.params.id } });
+    if (!stage) return res.status(404).json({ error: 'Etapa no encontrada' });
+
+    const quotesInStage = await prisma.quote.count({ where: { stage: stage.stageKey } });
+    if (quotesInStage > 0) {
+      return res.status(400).json({ error: `No se puede eliminar: hay ${quotesInStage} cotización(es) en esta etapa` });
+    }
+
+    await prisma.stageDefinition.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /data/stages/reorder — reordenar etapas (admin only)
+router.patch('/stages-reorder', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Solo administradores' });
+    }
+    // ids: array de IDs en el nuevo orden (por fase)
+    const { ids } = req.body;
+    if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids debe ser un array' });
+
+    await Promise.all(ids.map((id, i) =>
+      prisma.stageDefinition.update({ where: { id }, data: { order: i + 1 } })
+    ));
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -16,10 +16,15 @@ function PageHead({ subtitle, title, description, actions }) {
 
 // ---------- Vendedor view ----------
 function MySalesView({ user, initialTab='quotes', onOpen }) {
-  const [tab, setTab] = useState(initialTab);
+  const [tab,    setTab]    = useState(initialTab);
+  const [search, setSearch] = useState('');
   const { quotes, orders, clients, openModal } = useApp();
-  const myQuotes = quotes.filter(q => q.seller === user.id);
-  const myOrders = orders.filter(o => o.seller === user.id);
+
+  // mis cotizaciones = asignadas a mí
+  const myQuotes    = quotes.filter(q => q.seller === user.id);
+  // sin asignar = stage recibida + sin seller (el backend ya las filtra para VENDEDOR)
+  const unassigned  = quotes.filter(q => !q.seller && q.stage === 'recibida');
+  const myOrders    = orders.filter(o => o.seller === user.id);
 
   // personal KPIs
   const activas   = myQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
@@ -66,6 +71,36 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
           ))}
         </div>
 
+        {/* Bandeja sin asignar — solo si hay */}
+        {unassigned.length > 0 && (
+          <div className="bg-white rounded-xl border border-amber-200 shadow-card overflow-hidden">
+            <div className="px-5 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="inbox" size={15} className="text-amber-600"/>
+                <div className="text-sm font-semibold text-amber-800">Bandeja sin asignar</div>
+              </div>
+              <Badge tone="amber" dot>{unassigned.length} nueva{unassigned.length !== 1 ? 's' : ''}</Badge>
+            </div>
+            <table className="tbl w-full">
+              <thead><tr>
+                <th>Código</th><th>Remitente</th><th>Asunto</th><th>Tipo</th><th>Ingreso</th><th></th>
+              </tr></thead>
+              <tbody>
+                {unassigned.map(q => (
+                  <tr key={q.code} className="cursor-pointer" onClick={()=>onOpen(q.code,'quote')}>
+                    <td className="mono text-[12px] font-semibold text-navy-900">{q.code}</td>
+                    <td className="text-[12px] text-ink-600">{q.emailFrom || '—'}</td>
+                    <td className="text-[12px]">{q.emailSubject || '—'}</td>
+                    <td>{q.mailType ? <Badge tone={q.mailType==='SOLICITUD'?'sky':q.mailType==='PRESUPUESTO'?'blue':'purple'}>{q.mailType}</Badge> : '—'}</td>
+                    <td className="mono text-[12px]">{fmtDate(q.ingreso)}</td>
+                    <td className="text-right"><Icon name="chevron-right" size={14} className="text-ink-400"/></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* tabs: my quotes / my orders */}
         <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
           <div className="flex items-center justify-between px-5 pt-4 pb-2 border-b border-line">
@@ -82,46 +117,55 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Icon name="search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400"/>
-                <input className="inp pl-8 text-xs py-1.5 w-48" placeholder="Buscar cliente…"/>
-              </div>
+            <div className="relative">
+              <Icon name="search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400"/>
+              <input className="inp pl-8 text-xs py-1.5 w-48" placeholder="Buscar cliente…"
+                value={search} onChange={e=>setSearch(e.target.value)}/>
             </div>
           </div>
 
-          {tab==='quotes' && (
-            <table className="tbl w-full">
-              <thead><tr>
-                <th>Código</th><th>Cliente</th><th>Etapa</th>
-                <th>Ingreso</th><th className="!text-right">Días</th>
-                <th className="!text-right">Monto</th>
-                <th>NP Flexxus</th><th></th>
-              </tr></thead>
-              <tbody>
-                {myQuotes.map(q => {
-                  const cli = clients.find(c => c.code === q.client);
-                  const stg = STAGES_F1.find(s => s.id === q.stage);
-                  return (
-                    <tr key={q.code} className="cursor-pointer" onClick={()=>onOpen(q.code,'quote')}>
-                      <td className="mono text-[12px] font-semibold text-navy-900">{q.code}</td>
-                      <td className="font-medium">{cli?.name || '—'}<div className="text-[11px] text-ink-500">{cli?.city || ''}</div></td>
-                      <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : q.stage}</td>
-                      <td className="mono text-[12px]">{fmtDate(q.ingreso)}</td>
-                      <td className="text-right mono">
-                        <span className={q.dias>=5?'text-bad font-semibold':''}>{q.dias != null ? `${q.dias}d` : '—'}</span>
-                      </td>
-                      <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto) : '—'}</td>
-                      <td className="mono text-[11px]">{q.flexxus || '—'}</td>
-                      <td className="text-right">
-                        <button className="text-ink-400 hover:text-ink-900"><Icon name="chevron-right" size={14}/></button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+          {tab==='quotes' && (() => {
+            const filtered = myQuotes.filter(q => {
+              if (!search) return true;
+              const s = search.toLowerCase();
+              return (q.clientName||'').toLowerCase().includes(s)
+                  || (q.code||'').toLowerCase().includes(s)
+                  || (q.flexxus||'').toLowerCase().includes(s);
+            });
+            return (
+              <table className="tbl w-full">
+                <thead><tr>
+                  <th>Código</th><th>Cliente</th><th>Tipo</th><th>Etapa</th>
+                  <th>Ingreso</th><th className="!text-right">Días</th>
+                  <th className="!text-right">Monto</th><th></th>
+                </tr></thead>
+                <tbody>
+                  {filtered.length === 0 && (
+                    <tr><td colSpan="8" className="text-center text-ink-400 py-6">Sin cotizaciones</td></tr>
+                  )}
+                  {filtered.map(q => {
+                    const cli = clients.find(c => c.code === q.client);
+                    const stg = STAGES_F1.find(s => s.id === q.stage);
+                    return (
+                      <tr key={q.code} className="cursor-pointer" onClick={()=>onOpen(q.code,'quote')}>
+                        <td className="mono text-[12px] font-semibold text-navy-900">{q.code}</td>
+                        <td className="font-medium">{q.clientName || cli?.name || '—'}
+                          <div className="text-[11px] text-ink-500">{cli?.city || ''}</div></td>
+                        <td>{q.mailType ? <Badge tone={q.mailType==='SOLICITUD'?'sky':q.mailType==='PRESUPUESTO'?'blue':'purple'} dot>{q.mailType}</Badge> : '—'}</td>
+                        <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : q.stage}</td>
+                        <td className="mono text-[12px]">{fmtDate(q.ingreso)}</td>
+                        <td className="text-right mono">
+                          <span className={q.dias>=5?'text-bad font-semibold':''}>{q.dias != null ? `${q.dias}d` : '—'}</span>
+                        </td>
+                        <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto) : '—'}</td>
+                        <td className="text-right"><Icon name="chevron-right" size={14} className="text-ink-400"/></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            );
+          })()}
 
           {tab==='orders' && (
             <table className="tbl w-full">
@@ -158,6 +202,7 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
 
 // ---------- Logística view ----------
 function LogisticsView({ onOpen }) {
+  const { orders: ORDERS, clients: CLIENTS, users: USERS } = useApp();
   // KPIs
   const byStage = (id) => ORDERS.filter(o => o.stage === id).length;
   const enTransito = byStage('transito');
@@ -237,16 +282,16 @@ function LogisticsView({ onOpen }) {
                         return (
                           <tr key={o.code} className="cursor-pointer" onClick={()=>onOpen(o.code)}>
                             <td className="mono text-[12px] font-semibold text-navy-900">{o.code}</td>
-                            <td className="font-medium">{cli.name}</td>
+                            <td className="font-medium">{cli?.name||'—'}</td>
                             <td>
                               <div className="flex items-center gap-1.5">
-                                <Badge tone={o.entrega==='AMBA'?'blue':'purple'}>{o.entrega}</Badge>
-                                <span className="text-[11.5px] text-ink-500 truncate">{cli.city}</span>
+                                {o.entrega && <Badge tone={o.entrega==='AMBA'?'blue':'purple'}>{o.entrega}</Badge>}
+                                <span className="text-[11.5px] text-ink-500 truncate">{cli?.city}</span>
                               </div>
                             </td>
                             <td className="text-[12px]">{o.transp}{o.guia && <span className="ml-1 mono text-[11px] text-ink-500">· {o.guia}</span>}</td>
                             <td className="mono text-[11px]">{o.flexxus}</td>
-                            <td><div className="flex items-center gap-2"><Avatar name={sel.name} size={20}/>{sel.name.split(' ')[0]}</div></td>
+                            <td><div className="flex items-center gap-2">{sel && <Avatar name={sel.name} size={20}/>}{sel?.name?.split(' ')?.[0]||'—'}</div></td>
                             <td className="mono text-[12px]">{fmtDate(o.fecha)}</td>
                             <td className="text-right">
                               <button onClick={(e)=>{e.stopPropagation();}} className="btn-ghost text-xs py-1 px-2">
@@ -270,7 +315,7 @@ function LogisticsView({ onOpen }) {
 
 // ---------- Clients ----------
 function Clients({ readonly=false }) {
-  const { openModal, clients, users } = useApp();
+  const { openModal, clients, users, quotes, orders } = useApp();
   const [sel, setSel] = useState('');
   const [search, setSearch] = useState('');
   const [filterSeller, setFilterSeller] = useState('');
@@ -294,8 +339,8 @@ function Clients({ readonly=false }) {
   const cli = clients.find(c => c.code === activeSel);
   const seller = users.find(u => u.id === cli?.seller);
 
-  const cliQuotes = QUOTES.filter(q => q.client === cli?.code);
-  const cliOrders = ORDERS.filter(o => o.client === cli?.code);
+  const cliQuotes = quotes.filter(q => q.client === cli?.code);
+  const cliOrders = orders.filter(o => o.client === cli?.code);
 
   return (
     <div>
@@ -378,7 +423,7 @@ function Clients({ readonly=false }) {
             {!readonly && (
               <div className="flex gap-2">
                 <button className="btn-ghost" onClick={()=>openModal('editClient', { clientId: cli.id })}><Icon name="pencil" size={13}/>Editar</button>
-                <button className="btn-primary"><Icon name="file-plus" size={13}/>Nueva cotización</button>
+                <button className="btn-primary" onClick={()=>openModal('newQuote', { defaultClient: cli.code })}><Icon name="file-plus" size={13}/>Nueva cotización</button>
               </div>
             )}
           </div>
@@ -431,7 +476,7 @@ function Clients({ readonly=false }) {
                     <tr key={q.code}>
                       <td><Badge tone="slate">COT</Badge></td>
                       <td className="mono">{q.code}</td>
-                      <td><Badge tone={stg.tone} dot>{stg.label}</Badge></td>
+                      <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{q.stage}</span>}</td>
                       <td>{s?.name?.split(' ')?.[0]||'—'}</td>
                       <td className="mono text-[12px]">{fmtDate(q.ingreso)}</td>
                       <td className="text-right mono">{fmtMoney(q.monto)}</td>
@@ -445,7 +490,7 @@ function Clients({ readonly=false }) {
                     <tr key={o.code}>
                       <td><Badge tone="navy">OC</Badge></td>
                       <td className="mono">{o.code}</td>
-                      <td><Badge tone={stg.tone} dot>{stg.label}</Badge></td>
+                      <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{o.stage}</span>}</td>
                       <td>{s?.name?.split(' ')?.[0]||'—'}</td>
                       <td className="mono text-[12px]">{fmtDate(o.fecha)}</td>
                       <td className="text-right mono">—</td>
@@ -463,15 +508,177 @@ function Clients({ readonly=false }) {
 }
 
 // ---------- Team (admin) ----------
+// ---------- UserModal — crear/editar usuario ----------
+function UserModal({ user, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name:     user?.name     || '',
+    email:    user?.email    || '',
+    role:     user?.role     || 'VENDEDOR',
+    zone:     user?.zone     || '',
+    password: '',
+  });
+  const [error,   setError]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const { pushToast } = useApp();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!form.name || !form.email) { setError('Nombre y email son requeridos'); return; }
+    if (!user && !form.password)   { setError('Contraseña requerida al crear usuario'); return; }
+    setLoading(true);
+    try {
+      const data = { name: form.name, email: form.email, role: form.role, zone: form.zone };
+      if (form.password) data.password = form.password;
+      const saved = user
+        ? await CrmApi.updateUser(user.id, data)
+        : await CrmApi.createUser(data);
+      onSave(saved);
+      pushToast(user ? 'Usuario actualizado' : 'Usuario creado');
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Error al guardar');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const f = (k) => ({ value: form[k], onChange: e => setForm(v => ({...v, [k]: e.target.value})) });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-pop w-full max-w-md p-6 border border-line">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-ink-900">{user ? 'Editar usuario' : 'Nuevo usuario'}</h3>
+          <button onClick={onClose} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
+        </div>
+        {error && <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-ink-700 mb-1">Nombre completo</label>
+            <input className="inp w-full" placeholder="Juan Pérez" {...f('name')}/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-700 mb-1">Email</label>
+            <input className="inp w-full" type="email" placeholder="juan@myselec.com.ar" {...f('email')}/>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-ink-700 mb-1">Rol</label>
+              <select className="inp w-full" value={form.role} onChange={e=>setForm(v=>({...v, role: e.target.value}))}>
+                <option value="VENDEDOR">Vendedor</option>
+                <option value="ADMIN">Administrador</option>
+                <option value="LOGISTICA">Logística</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-700 mb-1">Zona</label>
+              <input className="inp w-full" placeholder="AMBA Norte…" {...f('zone')}/>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-700 mb-1">
+              {user ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+            </label>
+            <input className="inp w-full" type="password" placeholder="••••••••" {...f('password')}/>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="submit" className="btn-primary flex-1 justify-center" disabled={loading}>
+              {loading ? 'Guardando...' : (user ? 'Guardar cambios' : 'Crear usuario')}
+            </button>
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Team() {
-  const stats = USERS.filter(u=>u.role==='Vendedor').map(u => ({
-    ...u,
-    clientes: CLIENTS.filter(c=>c.seller===u.id).length,
-    cotiz:    QUOTES.filter(q=>q.seller===u.id).length,
-    ganadas:  QUOTES.filter(q=>q.seller===u.id && q.stage==='aceptada').length,
-    activas:  QUOTES.filter(q=>q.seller===u.id && !['aceptada','rechazada'].includes(q.stage)).length,
-    ocs:      ORDERS.filter(o=>o.seller===u.id).length,
-  }));
+  const { quotes, orders, clients, pushToast } = useApp();
+  const [users,    setUsers]    = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [modal,    setModal]    = useState(null); // null | { mode:'create' } | { mode:'edit', user }
+
+  useEffect(() => {
+    CrmApi.getUsersFull()
+      .then(data => { setUsers(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = (saved) => {
+    setUsers(prev => {
+      if (!prev) return [saved];
+      const idx = prev.findIndex(u => u.id === saved.id);
+      return idx >= 0 ? prev.map(u => u.id === saved.id ? {...u, ...saved} : u) : [...prev, saved];
+    });
+  };
+
+  const handleToggle = async (u) => {
+    try {
+      const updated = await CrmApi.toggleUser(u.id);
+      setUsers(prev => prev.map(x => x.id === u.id ? {...x, active: updated.active} : x));
+      pushToast(`${u.name} ${updated.active ? 'activado' : 'desactivado'}`);
+    } catch (err) {
+      pushToast(err.message || 'Error', 'bad');
+    }
+  };
+
+  const roleLabel = { ADMIN:'Administrador', VENDEDOR:'Vendedor', LOGISTICA:'Logística' };
+  const roleTone  = { ADMIN:'navy', VENDEDOR:'blue', LOGISTICA:'amber' };
+
+  const sellers = (users || []).filter(u => u.role === 'VENDEDOR');
+  const others  = (users || []).filter(u => u.role !== 'VENDEDOR');
+
+  const UserRow = ({ u, showStats }) => {
+    const rate = u.cotiz ? Math.round(u.ganadas/u.cotiz*100) : 0;
+    return (
+      <tr className={cx(!u.active && 'opacity-40')}>
+        <td>
+          <div className="flex items-center gap-2.5">
+            <Avatar name={u.name} size={32}/>
+            <div>
+              <div className="font-semibold text-[13px]">{u.name}</div>
+              <div className="text-[11px] text-ink-500">{u.email}</div>
+            </div>
+          </div>
+        </td>
+        <td><Badge tone={roleTone[u.role]}>{roleLabel[u.role]}</Badge></td>
+        <td><Badge tone="slate">{u.zone || '—'}</Badge></td>
+        {showStats && <>
+          <td className="text-right mono text-[13px]">{u.clientes ?? '—'}</td>
+          <td className="text-right mono text-[13px]">{u.cotiz ?? '—'}</td>
+          <td className="text-right mono text-[13px] font-semibold text-ok">{u.ganadas ?? '—'}</td>
+          <td className="text-right">
+            {u.cotiz > 0 ? (
+              <div className="inline-flex items-center gap-2">
+                <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden">
+                  <div className="h-full bg-brand" style={{width:`${rate}%`}}/>
+                </div>
+                <span className="mono text-[11.5px] w-8 text-right">{rate}%</span>
+              </div>
+            ) : <span className="text-ink-300 text-xs">—</span>}
+          </td>
+          <td className="text-right mono text-[13px]">{u.ocs ?? '—'}</td>
+        </>}
+        <td className="text-right">
+          <div className="flex items-center justify-end gap-1">
+            {!u.active && <Badge tone="gray" dot>Inactivo</Badge>}
+            <button onClick={() => setModal({ mode:'edit', user: u })}
+              className="btn-ghost p-1.5" title="Editar">
+              <Icon name="pencil" size={13} className="text-ink-500"/>
+            </button>
+            <button onClick={() => handleToggle(u)}
+              className="btn-ghost p-1.5" title={u.active ? 'Desactivar' : 'Activar'}>
+              <Icon name={u.active ? 'user-minus' : 'user-check'} size={13}
+                className={u.active ? 'text-red-400' : 'text-ok'}/>
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div>
       <PageHead
@@ -479,123 +686,206 @@ function Team() {
         title="Usuarios del sistema"
         description="Gestioná roles, zonas asignadas y accesos."
         actions={
-          <>
-            <button className="btn-ghost"><Icon name="shield" size={14}/>Permisos</button>
-            <button className="btn-primary"><Icon name="user-plus" size={14}/>Invitar usuario</button>
-          </>
+          <button className="btn-primary" onClick={() => setModal({ mode:'create' })}>
+            <Icon name="user-plus" size={14}/>Nuevo usuario
+          </button>
         }
       />
+
+      {modal && (
+        <UserModal
+          user={modal.mode === 'edit' ? modal.user : null}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+        />
+      )}
+
       <div className="p-6 space-y-5">
-        <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-line flex items-center justify-between">
-            <div className="text-sm font-semibold">Vendedores</div>
-            <div className="text-xs text-ink-500">{stats.length} activos</div>
-          </div>
-          <table className="tbl w-full">
-            <thead><tr>
-              <th>Usuario</th><th>Zona</th>
-              <th className="!text-right">Clientes</th>
-              <th className="!text-right">Cotizaciones</th>
-              <th className="!text-right">Ganadas</th>
-              <th className="!text-right">Tasa</th>
-              <th className="!text-right">OCs</th>
-              <th></th>
-            </tr></thead>
-            <tbody>
-              {stats.map(u => {
-                const rate = u.cotiz ? Math.round(u.ganadas/u.cotiz*100) : 0;
-                return (
-                  <tr key={u.id}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={u.name} size={32}/>
-                        <div>
-                          <div className="font-semibold text-[13px]">{u.name}</div>
-                          <div className="text-[11px] text-ink-500">{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><Badge tone="slate">{u.zone}</Badge></td>
-                    <td className="text-right mono">{u.clientes}</td>
-                    <td className="text-right mono">{u.cotiz}</td>
-                    <td className="text-right mono font-semibold text-ok">{u.ganadas}</td>
-                    <td className="text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden">
-                          <div className="h-full bg-brand" style={{ width: `${rate}%`}}/>
-                        </div>
-                        <span className="mono text-[11.5px] w-8 text-right">{rate}%</span>
-                      </div>
-                    </td>
-                    <td className="text-right mono">{u.ocs}</td>
-                    <td className="text-right">
-                      <button className="text-ink-400 hover:text-ink-900"><Icon name="more-horizontal" size={14}/></button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {loading ? (
+          <div className="text-center text-ink-400 py-10">Cargando usuarios…</div>
+        ) : (
+          <>
+            <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-line flex items-center justify-between">
+                <div className="text-sm font-semibold">Vendedores</div>
+                <div className="text-xs text-ink-500">{sellers.filter(u=>u.active).length} activos</div>
+              </div>
+              <table className="tbl w-full">
+                <thead><tr>
+                  <th>Usuario</th><th>Rol</th><th>Zona</th>
+                  <th className="!text-right">Clientes</th>
+                  <th className="!text-right">Cotiz.</th>
+                  <th className="!text-right">Ganadas</th>
+                  <th className="!text-right">Tasa</th>
+                  <th className="!text-right">OCs</th>
+                  <th></th>
+                </tr></thead>
+                <tbody>
+                  {sellers.length === 0 && (
+                    <tr><td colSpan="9" className="text-center text-ink-400 py-6">Sin vendedores</td></tr>
+                  )}
+                  {sellers.map(u => <UserRow key={u.id} u={u} showStats={true}/>)}
+                </tbody>
+              </table>
+            </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
-            <div className="px-5 py-3 border-b border-line text-sm font-semibold">Administradores</div>
-            <table className="tbl w-full">
-              <tbody>
-                {USERS.filter(u=>u.role==='Administrador').map(u=>(
-                  <tr key={u.id}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={u.name} size={30}/>
-                        <div>
-                          <div className="font-semibold text-[13px]">{u.name}</div>
-                          <div className="text-[11px] text-ink-500">{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><Badge tone="navy">Admin</Badge></td>
-                    <td className="text-right"><button className="text-ink-400"><Icon name="more-horizontal" size={14}/></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
-            <div className="px-5 py-3 border-b border-line text-sm font-semibold">Logística</div>
-            <table className="tbl w-full">
-              <tbody>
-                {USERS.filter(u=>u.role==='Logística').map(u=>(
-                  <tr key={u.id}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={u.name} size={30}/>
-                        <div>
-                          <div className="font-semibold text-[13px]">{u.name}</div>
-                          <div className="text-[11px] text-ink-500">{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><Badge tone="amber">Depósito</Badge></td>
-                    <td className="text-right"><button className="text-ink-400"><Icon name="more-horizontal" size={14}/></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-line text-sm font-semibold">Administradores y Logística</div>
+              <table className="tbl w-full">
+                <thead><tr>
+                  <th>Usuario</th><th>Rol</th><th>Zona</th><th></th>
+                </tr></thead>
+                <tbody>
+                  {others.length === 0 && (
+                    <tr><td colSpan="4" className="text-center text-ink-400 py-6">Sin usuarios</td></tr>
+                  )}
+                  {others.map(u => <UserRow key={u.id} u={u} showStats={false}/>)}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 // ---------- Config ----------
+const STAGE_TONES = ['gray','sky','blue','purple','amber','orange','green','red'];
+
+const NOTIF_TRIGGERS = [
+  { value: 'STAGE_CHANGE', label: 'Cambio de etapa' },
+  { value: 'IDLE_HOURS',   label: 'Sin movimiento (horas)' },
+  { value: 'FOLLOW_UP',    label: 'Seguimiento periódico' },
+];
+const NOTIF_SENDTO = [
+  { value: 'SELLER', label: 'Vendedor asignado' },
+  { value: 'ADMIN',  label: 'Administradores' },
+  { value: 'BOTH',   label: 'Ambos' },
+];
+const NOTIF_VARS = ['{{quote.code}}','{{quote.stage}}','{{client.name}}','{{seller.name}}','{{days}}','{{hours}}'];
+
+function NotifModal({ rule, stages, onSave, onClose }) {
+  const [form, setForm] = React.useState(rule || {
+    name: '', trigger: 'STAGE_CHANGE', stageFrom: '', stageTo: '',
+    idleHours: 24, subject: '', body: '', sendTo: 'SELLER', active: true,
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const isNew = !rule?.id;
+
+  const handleSave = () => {
+    if (!form.name.trim()) return alert('El nombre es obligatorio');
+    if (!form.subject.trim()) return alert('El asunto es obligatorio');
+    onSave(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+          <div className="font-semibold">{isNew ? 'Nueva regla' : 'Editar regla'}</div>
+          <button onClick={onClose} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="text-[12px] font-medium text-ink-600 mb-1 block">Nombre</label>
+            <input className="inp w-full" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Ej: Alerta cotización inactiva"/>
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-ink-600 mb-1 block">Disparador</label>
+            <select className="inp w-full" value={form.trigger} onChange={e => set('trigger', e.target.value)}>
+              {NOTIF_TRIGGERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {form.trigger === 'STAGE_CHANGE' && (
+            <div className="grid grid-cols-2 gap-3">
+              {(() => {
+                const seen = new Set();
+                const uniq = stages.filter(s => { if (seen.has(s.stageKey)) return false; seen.add(s.stageKey); return true; });
+                return (
+                  <>
+                    <div>
+                      <label className="text-[12px] font-medium text-ink-600 mb-1 block">Desde etapa</label>
+                      <select className="inp w-full" value={form.stageFrom||''} onChange={e => set('stageFrom', e.target.value)}>
+                        <option value="">Cualquiera</option>
+                        {uniq.map(s => <option key={s.id} value={s.stageKey}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[12px] font-medium text-ink-600 mb-1 block">Hacia etapa</label>
+                      <select className="inp w-full" value={form.stageTo||''} onChange={e => set('stageTo', e.target.value)}>
+                        <option value="">Cualquiera</option>
+                        {uniq.map(s => <option key={s.id} value={s.stageKey}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          {(form.trigger === 'IDLE_HOURS' || form.trigger === 'FOLLOW_UP') && (
+            <div>
+              <label className="text-[12px] font-medium text-ink-600 mb-1 block">Horas sin movimiento</label>
+              <input type="number" min="1" className="inp w-32" value={form.idleHours||24}
+                onChange={e => set('idleHours', parseInt(e.target.value)||24)}/>
+            </div>
+          )}
+          <div>
+            <label className="text-[12px] font-medium text-ink-600 mb-1 block">Enviar a</label>
+            <select className="inp w-full" value={form.sendTo} onChange={e => set('sendTo', e.target.value)}>
+              {NOTIF_SENDTO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-ink-600 mb-1 block">Asunto del email</label>
+            <input className="inp w-full" value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Ej: Cotización {{quote.code}} sin movimiento"/>
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-ink-600 mb-1 block">Cuerpo del mensaje</label>
+            <textarea className="inp w-full font-mono text-[12px]" rows={5} value={form.body}
+              onChange={e => set('body', e.target.value)}
+              placeholder="Hola {{seller.name}},&#10;&#10;La cotización {{quote.code}} del cliente {{client.name}} lleva {{hours}}h sin avanzar."/>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {NOTIF_VARS.map(v => (
+                <button key={v} onClick={() => set('body', (form.body||'') + v)}
+                  className="text-[11px] mono px-1.5 py-0.5 rounded bg-surface border border-line hover:border-brand text-ink-600">
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => set('active', !form.active)}
+              className={cx('w-9 h-5 rounded-full relative transition-colors', form.active ? 'bg-brand' : 'bg-ink-300')}>
+              <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', form.active ? 'left-[18px]' : 'left-0.5')}/>
+            </button>
+            <span className="text-[13px] text-ink-600">{form.active ? 'Regla activa' : 'Regla inactiva'}</span>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
+          <button onClick={onClose} className="btn-ghost">Cancelar</button>
+          <button onClick={handleSave} className="btn-primary">Guardar regla</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Config() {
   const { pushToast } = useApp();
   const [tab, setTab] = useState('stages');
   const [stagesData, setStagesData] = useState(null);
   const [stagesLoading, setStagesLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editTone, setEditTone] = useState('gray');
+  const [newStage, setNewStage] = useState({ label: '', tone: 'gray', phase: null });
+
+  // Notifications state
+  const [notifRules, setNotifRules] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifModal, setNotifModal] = useState(null); // null | 'new' | rule-object
 
   useEffect(() => {
     CrmApi.getStagesFull()
@@ -603,12 +893,20 @@ function Config() {
       .catch(() => setStagesLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (tab !== 'notifs') return;
+    setNotifLoading(true);
+    CrmApi.getNotificationRules()
+      .then(r => { setNotifRules(r); setNotifLoading(false); })
+      .catch(() => setNotifLoading(false));
+  }, [tab]);
+
   const handleToggleMandatory = async (stage) => {
     const newVal = !stage.mandatory;
     setStagesData(sd => sd.map(s => s.id === stage.id ? {...s, mandatory: newVal} : s));
     try {
       await CrmApi.updateStage(stage.id, { mandatory: newVal });
-      pushToast(`${stage.label} — ${newVal ? 'marcada obligatoria' : 'marcada opcional'}`);
+      pushToast(`${stage.label} — ${newVal ? 'obligatoria' : 'opcional'}`);
     } catch (err) {
       setStagesData(sd => sd.map(s => s.id === stage.id ? {...s, mandatory: !newVal} : s));
       pushToast(err.message || 'Error al actualizar', 'bad');
@@ -627,46 +925,171 @@ function Config() {
     }
   };
 
+  const startEdit = (s) => {
+    setEditingId(s.id);
+    setEditLabel(s.label);
+    setEditTone(s.tone);
+  };
+
+  const saveEdit = async (s) => {
+    if (!editLabel.trim()) { setEditingId(null); return; }
+    const label = editLabel.trim();
+    const tone  = editTone;
+    setStagesData(sd => sd.map(x => x.id === s.id ? {...x, label, tone} : x));
+    setEditingId(null);
+    try {
+      await CrmApi.updateStage(s.id, { label, tone });
+      pushToast(`Etapa "${label}" actualizada`);
+    } catch (err) {
+      pushToast(err.message || 'Error al guardar', 'bad');
+    }
+  };
+
+  const handleMove = async (stage, dir, phases) => {
+    const list = [...phases];
+    const idx = list.findIndex(s => s.id === stage.id);
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+    setStagesData(sd => {
+      const others = sd.filter(s => s.phase !== stage.phase);
+      return [...others, ...list];
+    });
+    try {
+      await CrmApi.reorderStages(list.map(s => s.id));
+      pushToast('Orden actualizado');
+    } catch (err) {
+      pushToast(err.message || 'Error al reordenar', 'bad');
+    }
+  };
+
+  const handleDelete = async (stage) => {
+    if (!window.confirm(`¿Eliminar la etapa "${stage.label}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await CrmApi.deleteStage(stage.id);
+      setStagesData(sd => sd.filter(s => s.id !== stage.id));
+      pushToast(`Etapa "${stage.label}" eliminada`);
+    } catch (err) {
+      pushToast(err.message || 'Error al eliminar', 'bad');
+    }
+  };
+
+  const handleAddStage = async (phase) => {
+    const label = newStage.label.trim();
+    if (!label) return;
+    try {
+      const created = await CrmApi.createStage({ label, phase, tone: newStage.tone });
+      setStagesData(sd => [...sd, created]);
+      setNewStage({ label: '', tone: 'gray', phase: null });
+      pushToast(`Etapa "${label}" creada`);
+    } catch (err) {
+      pushToast(err.message || 'Error al crear etapa', 'bad');
+    }
+  };
+
   const f1 = stagesData?.filter(s => s.phase === 'COTIZACION') || [];
   const f2 = stagesData?.filter(s => s.phase === 'ORDEN_COMPRA') || [];
 
-  const StageList = ({ stages, title }) => (
+  const TonePicker = ({ value, onChange }) => (
+    <div className="flex items-center gap-1">
+      {STAGE_TONES.map(t => (
+        <button key={t} onClick={() => onChange(t)}
+          className={cx('w-5 h-5 rounded-full border-2 transition-all',
+            value === t ? 'border-ink-900 scale-125' : 'border-transparent')}
+          style={{ background: STAGE_DOT[t] || '#94A3B8' }}
+        />
+      ))}
+    </div>
+  );
+
+  const StageList = ({ stages, phase, title }) => (
     <div className="bg-white border border-line rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold">{title}</div>
+        <button onClick={() => setNewStage({ label: '', tone: 'gray', phase })}
+          className="btn-ghost text-[12px] flex items-center gap-1 text-brand">
+          <Icon name="plus" size={13}/> Agregar etapa
+        </button>
       </div>
       {stagesLoading ? (
         <div className="text-[13px] text-ink-400 py-6 text-center">Cargando etapas…</div>
       ) : (
         <ul className="space-y-1.5">
           {stages.map((s, i) => (
-            <li key={s.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface">
-              <Icon name="grip-vertical" size={14} className="text-ink-300"/>
-              <span className="w-6 text-right mono text-[11px] text-ink-500 font-semibold">{i+1}.</span>
-              <StageDot tone={s.tone}/>
-              <span className="flex-1 text-[13px] font-medium text-ink-900">{s.label}</span>
-              <div className="flex items-center gap-1.5 text-[11px] text-ink-500 shrink-0">
-                <span>Obligatoria</span>
-                <button
-                  onClick={() => handleToggleMandatory(s)}
-                  className={cx('w-8 h-4 rounded-full relative transition-colors shrink-0',
-                    s.mandatory ? 'bg-brand' : 'bg-ink-300')}>
-                  <div className={cx('absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all',
-                    s.mandatory ? 'left-[18px]' : 'left-0.5')}/>
-                </button>
-              </div>
-              <input
-                type="number" min="1" placeholder="Sin límite"
-                value={s.maxHours || ''}
-                onChange={e => setStagesData(sd => sd.map(x =>
-                  x.id === s.id ? {...x, maxHours: e.target.value ? parseInt(e.target.value) : null} : x
-                ))}
-                onBlur={e => handleUpdateMaxHours(s, e.target.value)}
-                className="inp text-xs py-1 w-24 text-center"
-              />
-              <span className="text-[11px] text-ink-400">hs</span>
+            <li key={s.id}>
+              {editingId === s.id ? (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-surface border border-line">
+                  <StageDot tone={editTone}/>
+                  <input autoFocus className="inp text-[13px] py-1 flex-1"
+                    value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(s); if (e.key === 'Escape') setEditingId(null); }}
+                  />
+                  <TonePicker value={editTone} onChange={setEditTone}/>
+                  <button onClick={() => saveEdit(s)} className="btn-primary text-[12px] py-1 px-2">Guardar</button>
+                  <button onClick={() => setEditingId(null)} className="btn-ghost text-[12px] py-1 px-2">Cancelar</button>
+                </div>
+              ) : (
+                <div className="group flex items-center gap-2 p-2.5 rounded-lg hover:bg-surface">
+                  <div className="flex flex-col gap-0.5">
+                    <button onClick={() => handleMove(s, -1, stages)}
+                      disabled={i === 0}
+                      className="text-ink-300 hover:text-ink-700 disabled:opacity-20 leading-none">
+                      <Icon name="chevron-up" size={12}/>
+                    </button>
+                    <button onClick={() => handleMove(s, 1, stages)}
+                      disabled={i === stages.length - 1}
+                      className="text-ink-300 hover:text-ink-700 disabled:opacity-20 leading-none">
+                      <Icon name="chevron-down" size={12}/>
+                    </button>
+                  </div>
+                  <span className="w-5 text-right mono text-[11px] text-ink-400 font-semibold">{i+1}.</span>
+                  <StageDot tone={s.tone}/>
+                  <span className="flex-1 text-[13px] font-medium text-ink-900">{s.label}</span>
+                  {s.mandatory && <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">OBLIG.</span>}
+                  <div className="flex items-center gap-1.5 text-[11px] text-ink-500 shrink-0">
+                    <span>Obligatoria</span>
+                    <button onClick={() => handleToggleMandatory(s)}
+                      className={cx('w-8 h-4 rounded-full relative transition-colors shrink-0',
+                        s.mandatory ? 'bg-brand' : 'bg-ink-300')}>
+                      <div className={cx('absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all',
+                        s.mandatory ? 'left-[18px]' : 'left-0.5')}/>
+                    </button>
+                  </div>
+                  <input type="number" min="1" placeholder="∞"
+                    value={s.maxHours || ''}
+                    onChange={e => setStagesData(sd => sd.map(x =>
+                      x.id === s.id ? {...x, maxHours: e.target.value ? parseInt(e.target.value) : null} : x
+                    ))}
+                    onBlur={e => handleUpdateMaxHours(s, e.target.value)}
+                    className="inp text-xs py-1 w-16 text-center"
+                  />
+                  <span className="text-[11px] text-ink-400">hs</span>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEdit(s)} className="btn-ghost p-1" title="Editar">
+                      <Icon name="pencil" size={13} className="text-ink-500"/>
+                    </button>
+                    <button onClick={() => handleDelete(s)} className="btn-ghost p-1" title="Eliminar">
+                      <Icon name="trash-2" size={13} className="text-red-400"/>
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
+          {newStage.phase === phase && (
+            <li className="flex items-center gap-2 p-2.5 rounded-lg bg-surface border border-line border-dashed mt-2">
+              <StageDot tone={newStage.tone}/>
+              <input autoFocus className="inp text-[13px] py-1 flex-1" placeholder="Nombre de la etapa…"
+                value={newStage.label}
+                onChange={e => setNewStage(n => ({...n, label: e.target.value}))}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddStage(phase); if (e.key === 'Escape') setNewStage({label:'',tone:'gray',phase:null}); }}
+              />
+              <TonePicker value={newStage.tone} onChange={t => setNewStage(n => ({...n, tone: t}))}/>
+              <button onClick={() => handleAddStage(phase)} className="btn-primary text-[12px] py-1 px-2">Crear</button>
+              <button onClick={() => setNewStage({label:'',tone:'gray',phase:null})} className="btn-ghost text-[12px] py-1 px-2">Cancelar</button>
+            </li>
+          )}
         </ul>
       )}
     </div>
@@ -689,8 +1112,8 @@ function Config() {
 
       {tab==='stages' && (
         <div className="p-6 grid grid-cols-2 gap-5">
-          <StageList stages={f1} title="Fase 1 · Cotizaciones"/>
-          <StageList stages={f2} title="Fase 2 · Órdenes de Compra"/>
+          <StageList stages={f1} phase="COTIZACION"   title="Fase 1 · Cotizaciones"/>
+          <StageList stages={f2} phase="ORDEN_COMPRA" title="Fase 2 · Órdenes de Compra"/>
         </div>
       )}
 
@@ -739,45 +1162,110 @@ function Config() {
       )}
 
       {tab==='notifs' && (
-        <div className="p-6 grid grid-cols-2 gap-5">
-          <div className="bg-white border border-line rounded-xl p-5">
-            <div className="text-sm font-semibold mb-3">Alertas automáticas</div>
-            {[
-              ['Cotización sin mover > 48h',   true,  'Email al vendedor'],
-              ['Presupuesto enviado sin respuesta > 7d', true, 'Recordatorio al vendedor + copia admin'],
-              ['OC sin avanzar > 72h',          true,  'Notificación a logística'],
-              ['Stock insuficiente al crear OC', false, 'Aviso a compras'],
-              ['Cotización rechazada por precio', true, 'Resumen semanal a gerencia'],
-            ].map(([l,on,desc],i)=>(
-              <label key={i} className="flex items-center gap-3 py-2.5 border-b border-line last:border-b-0">
-                <div className={cx('w-9 h-5 rounded-full relative transition-colors', on?'bg-brand':'bg-ink-300')}>
-                  <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', on?'left-[18px]':'left-0.5')}/>
-                </div>
-                <div className="flex-1">
-                  <div className="text-[13px] font-medium">{l}</div>
-                  <div className="text-[11px] text-ink-500">{desc}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <div className="bg-white border border-line rounded-xl p-5">
-            <div className="text-sm font-semibold mb-3">Canales</div>
-            <div className="space-y-3">
-              {[
-                ['mail', 'Email', 'victoria@myselec.com.ar', true],
-                ['message-circle', 'WhatsApp Business', '+54 11 5432-1098', true],
-                ['slack', 'Slack · #ventas', 'myselec.slack.com', false],
-              ].map(([ic,label,addr,on])=>(
-                <div key={label} className="flex items-center gap-3 p-3 border border-line rounded-lg">
-                  <Icon name={ic} size={18} className="text-ink-500"/>
-                  <div className="flex-1">
-                    <div className="text-[13px] font-medium">{label}</div>
-                    <div className="text-[11px] text-ink-500">{addr}</div>
-                  </div>
-                  <Badge tone={on?'green':'gray'} dot>{on?'Activo':'Inactivo'}</Badge>
-                </div>
-              ))}
+        <div className="p-6">
+          {notifModal !== null && (
+            <NotifModal
+              rule={notifModal === 'new' ? null : notifModal}
+              stages={stagesData || []}
+              onClose={() => setNotifModal(null)}
+              onSave={async (form) => {
+                try {
+                  if (form.id) {
+                    const updated = await CrmApi.updateNotificationRule(form.id, form);
+                    setNotifRules(r => r.map(x => x.id === form.id ? updated : x));
+                    pushToast('Regla actualizada');
+                  } else {
+                    const created = await CrmApi.createNotificationRule(form);
+                    setNotifRules(r => [...r, created]);
+                    pushToast('Regla creada');
+                  }
+                  setNotifModal(null);
+                } catch (err) {
+                  pushToast(err.message || 'Error al guardar', 'bad');
+                }
+              }}
+            />
+          )}
+          <div className="bg-white border border-line rounded-xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-line flex items-center justify-between">
+              <div className="font-semibold text-[13px]">Reglas de notificación</div>
+              <button onClick={() => setNotifModal('new')} className="btn-primary text-[12px] flex items-center gap-1.5">
+                <Icon name="plus" size={13}/> Nueva regla
+              </button>
             </div>
+            {notifLoading ? (
+              <div className="py-12 text-center text-ink-400 text-[13px]">Cargando reglas…</div>
+            ) : notifRules.length === 0 ? (
+              <div className="py-12 text-center text-ink-400 text-[13px]">
+                No hay reglas configuradas. Crea la primera para empezar a recibir notificaciones.
+              </div>
+            ) : (
+              <table className="tbl w-full">
+                <thead><tr>
+                  <th>Nombre</th>
+                  <th>Disparador</th>
+                  <th>Enviar a</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr></thead>
+                <tbody>
+                  {notifRules.map(rule => {
+                    const trig = NOTIF_TRIGGERS.find(t => t.value === rule.trigger);
+                    const sendTo = NOTIF_SENDTO.find(t => t.value === rule.sendTo);
+                    let trigDetail = '';
+                    if (rule.trigger === 'STAGE_CHANGE') {
+                      trigDetail = [rule.stageFrom, rule.stageTo].filter(Boolean).join(' → ') || 'Cualquier cambio';
+                    } else if (rule.idleHours) {
+                      trigDetail = `${rule.idleHours}h sin movimiento`;
+                    }
+                    return (
+                      <tr key={rule.id}>
+                        <td>
+                          <div className="font-medium text-[13px]">{rule.name}</div>
+                          <div className="text-[11px] text-ink-500 mono truncate max-w-[220px]">{rule.subject}</div>
+                        </td>
+                        <td>
+                          <div className="text-[12px]">{trig?.label || rule.trigger}</div>
+                          {trigDetail && <div className="text-[11px] text-ink-500">{trigDetail}</div>}
+                        </td>
+                        <td className="text-[12px]">{sendTo?.label || rule.sendTo}</td>
+                        <td>
+                          <button onClick={async () => {
+                            try {
+                              const updated = await CrmApi.updateNotificationRule(rule.id, { active: !rule.active });
+                              setNotifRules(r => r.map(x => x.id === rule.id ? updated : x));
+                            } catch (err) {
+                              pushToast(err.message || 'Error', 'bad');
+                            }
+                          }} className={cx('w-9 h-5 rounded-full relative transition-colors', rule.active ? 'bg-brand' : 'bg-ink-300')}>
+                            <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', rule.active ? 'left-[18px]' : 'left-0.5')}/>
+                          </button>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => setNotifModal(rule)} className="btn-ghost p-1.5 text-ink-500 hover:text-brand">
+                              <Icon name="pencil" size={13}/>
+                            </button>
+                            <button onClick={async () => {
+                              if (!window.confirm(`¿Eliminar la regla "${rule.name}"?`)) return;
+                              try {
+                                await CrmApi.deleteNotificationRule(rule.id);
+                                setNotifRules(r => r.filter(x => x.id !== rule.id));
+                                pushToast('Regla eliminada');
+                              } catch (err) {
+                                pushToast(err.message || 'Error', 'bad');
+                              }
+                            }} className="btn-ghost p-1.5 text-ink-500 hover:text-bad">
+                              <Icon name="trash-2" size={13}/>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

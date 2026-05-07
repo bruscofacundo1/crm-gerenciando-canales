@@ -18,11 +18,38 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  quotesAssigned  Quote[]    @relation("QuoteSeller")
-  ordersAssigned  Order[]    @relation("OrderSeller")
-  notes           Note[]
-  activities      Activity[]
-  clientsDefault  Client[]   @relation("DefaultSeller")
+  quotesAssigned    Quote[]              @relation("QuoteSeller")
+  ordersAssigned    Order[]              @relation("OrderSeller")
+  notes             Note[]
+  activities        Activity[]
+  clientsDefault    Client[]             @relation("DefaultSeller")
+  passwordResetTokens PasswordResetToken[]
+}
+
+// ─── Tokens de recuperación de contraseña ───
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ─── Reglas de notificación ───
+model NotificationRule {
+  id          String   @id @default(uuid())
+  name        String
+  trigger     String   // STAGE_CHANGE | IDLE_HOURS | FOLLOW_UP
+  stageFrom   String?  // etapa origen (solo STAGE_CHANGE)
+  stageTo     String?  // etapa destino (solo STAGE_CHANGE)
+  idleHours   Int?     // horas inactividad (solo IDLE_HOURS)
+  subject     String   // asunto del mail
+  body        String   @db.Text // cuerpo (soporta {{quote.code}}, {{client.name}}, etc.)
+  sendTo      String   @default("SELLER") // SELLER | ADMIN | BOTH
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 }
 
 enum Role {
@@ -136,7 +163,8 @@ model QuoteItem {
   unit        String?
   unitPrice   Float?
   total       Float?
-  accepted    Boolean  @default(true)   // false para ítems NC (No Cotiza)
+  accepted    Boolean  @default(true)   // false para ítems NC (No Cotiza) — solo PRESUPUESTO
+  checked     Boolean  @default(true)   // OC: cliente confirmó este ítem (checklist)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
 

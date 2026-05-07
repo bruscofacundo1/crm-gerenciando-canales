@@ -108,61 +108,138 @@ function App() {
 
 // ---------- Login ----------
 function Login({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [pass,  setPass]  = useState('');
-  const [error, setError] = useState('');
+  // Detectar token de reset en URL
+  const urlParams  = new URLSearchParams(window.location.search);
+  const resetToken = urlParams.get('reset');
+
+  const [screen,  setScreen]  = useState(resetToken ? 'reset' : 'login');
+  const [email,   setEmail]   = useState('');
+  const [pass,    setPass]    = useState('');
+  const [pass2,   setPass2]   = useState('');
+  const [error,   setError]   = useState('');
+  const [info,    setInfo]    = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const bgStyle = {
+    background: '#0F1B2D',
+    backgroundImage: 'radial-gradient(circle at 20% 30%, #3B82F620 0, transparent 40%), radial-gradient(circle at 80% 70%, #3B82F610 0, transparent 35%), linear-gradient(#ffffff09 1px, transparent 1px), linear-gradient(90deg, #ffffff09 1px, transparent 1px)',
+    backgroundSize: 'auto, auto, 40px 40px, 40px 40px',
+  };
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setError(''); setLoading(true);
     try {
       const result = await CrmApi.login(email, pass);
       CrmAuth.setToken(result.token);
       CrmAuth.setUser(result.user);
       onLogin();
     } catch (err) {
-      setError(err.message || 'Error al iniciar sesión');
+      setError(err.message || 'Credenciales inválidas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgot = async (e) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    try {
+      await CrmApi.forgotPassword(email);
+      setInfo('Si el email existe, recibirás un link para restablecer tu contraseña.');
+    } catch (err) {
+      setError(err.message || 'Error al enviar mail');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (pass !== pass2) { setError('Las contraseñas no coinciden'); return; }
+    if (pass.length < 6) { setError('Mínimo 6 caracteres'); return; }
+    setLoading(true);
+    try {
+      await CrmApi.resetPassword(resetToken, pass);
+      // Limpiar token de URL
+      window.history.replaceState({}, '', '/');
+      setInfo('Contraseña restablecida. Podés iniciar sesión.');
+      setScreen('login');
+    } catch (err) {
+      setError(err.message || 'Token inválido o expirado');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-navy-950 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-[0.08]" style={{
-        backgroundImage:'radial-gradient(circle at 20% 30%, #3B82F6 0, transparent 40%), radial-gradient(circle at 80% 70%, #3B82F6 0, transparent 35%)'
-      }}/>
-      <div className="absolute inset-0" style={{
-        backgroundImage:'linear-gradient(#ffffff09 1px, transparent 1px), linear-gradient(90deg, #ffffff09 1px, transparent 1px)',
-        backgroundSize:'40px 40px'
-      }}/>
-
-      <div className="relative flex items-center justify-center p-8">
-        <form onSubmit={handleSubmit}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-pop p-8 border border-line">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden" style={bgStyle}>
+      <div className="relative flex items-center justify-center p-8 w-full">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] p-8 border border-line">
           <div className="flex items-center gap-2 mb-6">
             <Logo size={28} tone="dark"/>
-            <div className="font-bold tracking-wider">MYSELEC</div>
+            <div className="font-bold tracking-wider text-navy-900">MYSELEC</div>
           </div>
-          <h2 className="text-xl font-bold text-ink-900">Iniciar sesión</h2>
-          <p className="text-sm text-ink-500 mb-6">Ingresá con tu cuenta corporativa.</p>
-          {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
-          <label className="block text-xs font-medium text-ink-700 mb-1.5">Email</label>
-          <input className="inp w-full mb-4" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@myselec.com.ar" />
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-xs font-medium text-ink-700">Contraseña</label>
-          </div>
-          <input type="password" className="inp w-full mb-6" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" />
-          <button className="btn-primary w-full justify-center" disabled={loading}>
-            {loading ? 'Ingresando...' : 'Iniciar sesión'}
-          </button>
+
+          {screen === 'login' && (
+            <form onSubmit={handleLogin}>
+              <h2 className="text-xl font-bold text-ink-900">Iniciar sesión</h2>
+              <p className="text-sm text-ink-500 mb-6">Ingresá con tu cuenta corporativa.</p>
+              {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+              {info  && <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">{info}</div>}
+              <label className="block text-xs font-medium text-ink-700 mb-1.5">Email</label>
+              <input className="inp w-full mb-4" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@myselec.com.ar" autoComplete="email"/>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-ink-700">Contraseña</label>
+                <button type="button" onClick={()=>{setScreen('forgot');setError('');setInfo('');}}
+                  className="text-[11px] text-brand hover:underline">¿Olvidaste tu contraseña?</button>
+              </div>
+              <input type="password" className="inp w-full mb-6" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" autoComplete="current-password"/>
+              <button className="btn-primary w-full justify-center" disabled={loading}>
+                {loading ? 'Ingresando...' : 'Iniciar sesión'}
+              </button>
+            </form>
+          )}
+
+          {screen === 'forgot' && (
+            <form onSubmit={handleForgot}>
+              <button type="button" onClick={()=>{setScreen('login');setError('');setInfo('');}}
+                className="flex items-center gap-1 text-ink-400 hover:text-ink-700 text-xs mb-4">
+                <Icon name="arrow-left" size={13}/> Volver
+              </button>
+              <h2 className="text-xl font-bold text-ink-900">Recuperar contraseña</h2>
+              <p className="text-sm text-ink-500 mb-6">Te enviaremos un link para restablecer tu contraseña.</p>
+              {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+              {info  && <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">{info}</div>}
+              <label className="block text-xs font-medium text-ink-700 mb-1.5">Email</label>
+              <input className="inp w-full mb-6" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@myselec.com.ar" autoComplete="email"/>
+              <button className="btn-primary w-full justify-center" disabled={loading}>
+                {loading ? 'Enviando...' : 'Enviar link de recuperación'}
+              </button>
+            </form>
+          )}
+
+          {screen === 'reset' && (
+            <form onSubmit={handleReset}>
+              <h2 className="text-xl font-bold text-ink-900">Nueva contraseña</h2>
+              <p className="text-sm text-ink-500 mb-6">Elegí una contraseña segura de al menos 6 caracteres.</p>
+              {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+              <label className="block text-xs font-medium text-ink-700 mb-1.5">Nueva contraseña</label>
+              <input type="password" className="inp w-full mb-4" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" autoComplete="new-password"/>
+              <label className="block text-xs font-medium text-ink-700 mb-1.5">Confirmar contraseña</label>
+              <input type="password" className="inp w-full mb-6" value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="••••••••" autoComplete="new-password"/>
+              <button className="btn-primary w-full justify-center" disabled={loading}>
+                {loading ? 'Guardando...' : 'Establecer nueva contraseña'}
+              </button>
+            </form>
+          )}
+
           <div className="mt-6 pt-5 border-t border-line text-center">
             <div className="text-[11px] uppercase tracking-wider text-ink-400">Sistema de Gestión Comercial</div>
             <div className="text-xs text-ink-500 mt-0.5">MySelec · v2026.04</div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

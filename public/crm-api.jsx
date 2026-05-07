@@ -43,6 +43,21 @@ const CrmApi = {
   login: (email, password) => apiFetch('/auth/login', {
     method: 'POST', body: JSON.stringify({ email, password })
   }),
+  forgotPassword: (email) => apiFetch('/auth/forgot-password', {
+    method: 'POST', body: JSON.stringify({ email })
+  }),
+  resetPassword: (token, password) => apiFetch('/auth/reset-password', {
+    method: 'POST', body: JSON.stringify({ token, password })
+  }),
+
+  // Users (admin)
+  getUsersFull: () => apiFetch('/users'),
+  createUser: (data) => apiFetch('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id, data) => apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleUser: (id) => apiFetch(`/users/${id}/toggle`, { method: 'PATCH' }),
+  changeUserPassword: (id, password) => apiFetch(`/users/${id}/password`, {
+    method: 'PATCH', body: JSON.stringify({ password })
+  }),
 
   // Quotes
   getQuotes: () => apiFetch('/quotes'),
@@ -63,6 +78,12 @@ const CrmApi = {
   }),
   updateQuoteItem: (quoteId, itemId, data) => apiFetch(`/quotes/${quoteId}/items/${itemId}`, {
     method: 'PATCH', body: JSON.stringify(data)
+  }),
+  createQuoteItem: (quoteId, data) => apiFetch(`/quotes/${quoteId}/items`, {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  deleteQuoteItem: (quoteId, itemId) => apiFetch(`/quotes/${quoteId}/items/${itemId}`, {
+    method: 'DELETE'
   }),
   linkQuote: (id, linkedQuoteId) => apiFetch(`/quotes/${id}/link`, {
     method: 'PATCH', body: JSON.stringify({ linkedQuoteId })
@@ -92,6 +113,13 @@ const CrmApi = {
   updateStage: (id, data) => apiFetch(`/data/stages/${id}`, {
     method: 'PATCH', body: JSON.stringify(data)
   }),
+  createStage: (data) => apiFetch('/data/stages', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  deleteStage: (id) => apiFetch(`/data/stages/${id}`, { method: 'DELETE' }),
+  reorderStages: (ids) => apiFetch('/data/stages-reorder', {
+    method: 'PATCH', body: JSON.stringify({ ids })
+  }),
   getActivity: (limit = 20) => apiFetch(`/data/activity?limit=${limit}`),
   getDashboard: () => apiFetch('/data/dashboard'),
   getRejectionReasons: () => apiFetch('/data/rejection-reasons'),
@@ -102,6 +130,24 @@ const CrmApi = {
   // Mail
   syncMail: () => apiFetch('/mail/sync', { method: 'POST' }),
   getInbox: (limit = 20) => apiFetch(`/mail/inbox?limit=${limit}`),
+
+  // Notifications
+  getNotificationRules: () => apiFetch('/notifications/rules'),
+  createNotificationRule: (data) => apiFetch('/notifications/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateNotificationRule: (id, data) => apiFetch(`/notifications/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteNotificationRule: (id) => apiFetch(`/notifications/rules/${id}`, { method: 'DELETE' }),
+
+  // Upload attachments
+  uploadAttachments: (quoteId, files) => {
+    const token = CrmAuth.getToken();
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    return fetch(`${API_BASE}/quotes/${quoteId}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    }).then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(new Error(b.error || `Error ${r.status}`))));
+  },
 };
 
 // ─── Load all data from API (replaces hardcoded data) ───

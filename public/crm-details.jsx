@@ -72,6 +72,237 @@ function TabBar({ tabs, active, onChange }) {
   );
 }
 
+// ── Tab Ítems completo (PRESUPUESTO: vista, OC: checklist editable) ──────
+function OCItemsTab({ q, detailItems, setDetailItems }) {
+  const { pushToast } = useApp();
+  const isOC = q.mailType === 'OC';
+
+  // Estado para fila de edición inline
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState({});
+
+  // Estado para nueva fila
+  const [addingNew, setAddingNew] = useState(false);
+  const [newItem, setNewItem] = useState({ sku: '', description: '', quantity: 1, unitPrice: '' });
+
+  const toggleChecked = async (it) => {
+    const newVal = !it.checked;
+    setDetailItems(prev => prev.map(i => i.id === it.id ? {...i, checked: newVal} : i));
+    try {
+      await CrmApi.updateQuoteItem(q.id, it.id, { checked: newVal });
+    } catch {
+      setDetailItems(prev => prev.map(i => i.id === it.id ? {...i, checked: !newVal} : i));
+    }
+  };
+
+  const startEdit = (it) => {
+    setEditingId(it.id);
+    setEditVal({ sku: it.sku || '', description: it.description, quantity: it.quantity, unitPrice: it.unitPrice ?? '' });
+  };
+
+  const saveEdit = async (it) => {
+    const data = {
+      sku:         editVal.sku || null,
+      description: editVal.description || it.description,
+      quantity:    parseFloat(editVal.quantity) || 1,
+      unitPrice:   editVal.unitPrice !== '' ? parseFloat(editVal.unitPrice) : null,
+    };
+    const total = data.unitPrice != null ? data.unitPrice * data.quantity : it.total;
+    setDetailItems(prev => prev.map(i => i.id === it.id ? {...i, ...data, total} : i));
+    setEditingId(null);
+    try {
+      await CrmApi.updateQuoteItem(q.id, it.id, data);
+    } catch (err) {
+      pushToast(err.message || 'Error al guardar', 'bad');
+    }
+  };
+
+  const deleteItem = async (it) => {
+    if (!window.confirm(`¿Eliminar "${it.description}"? Esta acción no se puede deshacer.`)) return;
+    setDetailItems(prev => prev.filter(i => i.id !== it.id));
+    try {
+      await CrmApi.deleteQuoteItem(q.id, it.id);
+    } catch (err) {
+      pushToast(err.message || 'Error al eliminar', 'bad');
+    }
+  };
+
+  const addItem = async () => {
+    if (!newItem.description.trim()) return;
+    try {
+      const created = await CrmApi.createQuoteItem(q.id, {
+        description: newItem.description.trim(),
+        sku:         newItem.sku.trim() || null,
+        quantity:    parseFloat(newItem.quantity) || 1,
+        unitPrice:   newItem.unitPrice !== '' ? parseFloat(newItem.unitPrice) : null,
+      });
+      setDetailItems(prev => [...prev, created]);
+      setNewItem({ sku: '', description: '', quantity: 1, unitPrice: '' });
+      setAddingNew(false);
+    } catch (err) {
+      pushToast(err.message || 'Error al agregar ítem', 'bad');
+    }
+  };
+
+  if (detailItems.length === 0 && !addingNew) {
+    return (
+      <div className="p-6 flex flex-col items-center gap-3 py-12">
+        <div className="text-[13px] text-ink-400">Sin ítems registrados</div>
+        {isOC && (
+          <button onClick={() => setAddingNew(true)} className="btn-ghost text-[12px] text-brand flex items-center gap-1">
+            <Icon name="plus" size={13}/> Agregar ítem
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Total de la OC = ítems checked
+  const totalOC = isOC
+    ? detailItems.filter(i => i.checked).reduce((s, i) => s + (i.total || 0), 0)
+    : detailItems.filter(i => i.accepted !== false).reduce((s, i) => s + (i.total || 0), 0);
+
+  return (
+    <div className="p-6">
+      {isOC && detailItems.length > 0 && (
+        <div className="text-[12px] text-ink-500 mb-3 flex items-center gap-2">
+          <Icon name="check-square" size={13}/>
+          Chequeá los ítems que el cliente confirmó en esta OC. Podés editar cantidades y precios.
+        </div>
+      )}
+      <table className="tbl w-full bg-white border border-line rounded-xl overflow-hidden">
+        <thead>
+          <tr>
+            {isOC && <th className="w-8 !px-2"></th>}
+            <th className="w-24">SKU</th>
+            <th>Descripción</th>
+            <th className="!text-right w-20">Cant.</th>
+            <th className="!text-right w-28">P. Unit.</th>
+            <th className="!text-right w-28">Total</th>
+            {isOC && <th className="w-16"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {detailItems.map((it) => {
+            const unchecked = isOC && !it.checked;
+            const ncItem    = !isOC && it.accepted === false;
+            if (editingId === it.id) {
+              return (
+                <tr key={it.id} className="bg-sky-50">
+                  {isOC && <td className="!px-2"><input type="checkbox" checked={it.checked} readOnly className="opacity-40"/></td>}
+                  <td><input className="inp text-xs py-0.5 w-full" value={editVal.sku}
+                    onChange={e => setEditVal(v => ({...v, sku: e.target.value}))}/></td>
+                  <td><input className="inp text-xs py-0.5 w-full" value={editVal.description}
+                    onChange={e => setEditVal(v => ({...v, description: e.target.value}))}/></td>
+                  <td><input type="number" className="inp text-xs py-0.5 w-full text-right" value={editVal.quantity}
+                    onChange={e => setEditVal(v => ({...v, quantity: e.target.value}))}/></td>
+                  <td><input type="number" className="inp text-xs py-0.5 w-full text-right" value={editVal.unitPrice} placeholder="—"
+                    onChange={e => setEditVal(v => ({...v, unitPrice: e.target.value}))}/></td>
+                  <td className="mono text-right text-ink-400 text-xs">
+                    {editVal.unitPrice !== '' && editVal.quantity
+                      ? (parseFloat(editVal.unitPrice) * parseFloat(editVal.quantity)).toLocaleString('es-AR')
+                      : '—'}
+                  </td>
+                  {isOC && (
+                    <td>
+                      <div className="flex gap-1">
+                        <button onClick={() => saveEdit(it)} className="btn-primary text-[11px] py-0.5 px-1.5">OK</button>
+                        <button onClick={() => setEditingId(null)} className="btn-ghost text-[11px] py-0.5 px-1.5">✕</button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            }
+            return (
+              <tr key={it.id} className={cx(
+                'group',
+                unchecked && 'opacity-50',
+                ncItem    && 'opacity-40 bg-ink-50'
+              )}>
+                {isOC && (
+                  <td className="!px-2">
+                    <input type="checkbox" checked={!!it.checked} className="cursor-pointer accent-brand"
+                      onChange={() => toggleChecked(it)}/>
+                  </td>
+                )}
+                <td className={cx('mono text-[12px]', unchecked && 'line-through')}>{it.sku || '—'}</td>
+                <td className={cx(unchecked && 'line-through')}>
+                  {ncItem && <span className="text-[10px] font-bold text-red-500 mr-1.5 bg-red-50 border border-red-200 px-1 rounded">NC</span>}
+                  {it.description}
+                </td>
+                <td className={cx('mono text-right', unchecked && 'line-through')}>{it.quantity}</td>
+                <td className={cx('mono text-right', unchecked && 'line-through')}>
+                  {it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}
+                </td>
+                <td className={cx('mono text-right font-semibold', unchecked && 'line-through')}>
+                  {it.total != null ? it.total.toLocaleString('es-AR') : '—'}
+                </td>
+                {isOC && (
+                  <td>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEdit(it)} className="btn-ghost p-1" title="Editar">
+                        <Icon name="pencil" size={12} className="text-ink-500"/>
+                      </button>
+                      <button onClick={() => deleteItem(it)} className="btn-ghost p-1" title="Eliminar">
+                        <Icon name="trash-2" size={12} className="text-red-400"/>
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+
+          {/* Fila para agregar nuevo ítem */}
+          {isOC && addingNew && (
+            <tr className="bg-surface border-t border-dashed border-line">
+              <td className="!px-2"><Icon name="plus" size={12} className="text-ink-400"/></td>
+              <td><input autoFocus className="inp text-xs py-0.5 w-full" placeholder="SKU"
+                value={newItem.sku} onChange={e => setNewItem(n => ({...n, sku: e.target.value}))}/></td>
+              <td><input className="inp text-xs py-0.5 w-full" placeholder="Descripción *"
+                value={newItem.description} onChange={e => setNewItem(n => ({...n, description: e.target.value}))}/></td>
+              <td><input type="number" className="inp text-xs py-0.5 w-full text-right" placeholder="1"
+                value={newItem.quantity} onChange={e => setNewItem(n => ({...n, quantity: e.target.value}))}/></td>
+              <td><input type="number" className="inp text-xs py-0.5 w-full text-right" placeholder="—"
+                value={newItem.unitPrice} onChange={e => setNewItem(n => ({...n, unitPrice: e.target.value}))}/></td>
+              <td className="mono text-right text-ink-400 text-xs">
+                {newItem.unitPrice !== '' && newItem.quantity
+                  ? (parseFloat(newItem.unitPrice) * parseFloat(newItem.quantity)).toLocaleString('es-AR') : '—'}
+              </td>
+              <td>
+                <div className="flex gap-1">
+                  <button onClick={addItem} className="btn-primary text-[11px] py-0.5 px-1.5">Agregar</button>
+                  <button onClick={() => setAddingNew(false)} className="btn-ghost text-[11px] py-0.5 px-1.5">✕</button>
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-line bg-surface">
+            {isOC && <td/>}
+            <td colSpan={isOC ? 4 : 4} className="text-right text-[12px] text-ink-500 font-semibold py-2 pr-2">
+              {isOC ? 'Total OC (confirmado)' : 'Total presupuesto'}
+            </td>
+            <td className="mono text-right font-bold text-[13px] pr-3 py-2">
+              U$S {totalOC.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </td>
+            {isOC && (
+              <td className="!px-2">
+                <button onClick={() => setAddingNew(true)}
+                  className="btn-ghost p-1 text-brand" title="Agregar ítem">
+                  <Icon name="plus" size={14}/>
+                </button>
+              </td>
+            )}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 function QuoteDetail({ code, onClose, canReassign }) {
   const { quotes, clients, users, moveQuoteStage, setQuotes, pushToast, closeModal, openModal } = useApp();
   const q = quotes.find(x => x.code === code);
@@ -80,7 +311,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const sel = users.find(u=>u.id===q.seller);
   const stg = STAGES_F1.find(s=>s.id===q.stage);
   const isSolicitud = q.mailType === 'SOLICITUD' || (q.source === 'EMAIL' && !q.mailType);
-  const [tab, setTab] = useState(isSolicitud ? 'mail' : 'resumen');
+  const isOC = q.mailType === 'OC';
+  const defaultTab = isSolicitud ? 'mail' : (isOC ? 'items' : 'resumen');
+  const [tab, setTab] = useState(defaultTab);
   const [stageOpen, setStageOpen] = useState(false);
   const [rejectPending, setRejectPending] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -105,6 +338,23 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [linkDropOpen, setLinkDropOpen] = useState(false);
   const [linkSaving, setLinkSaving] = useState(false);
   const noteInputRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUploadFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const created = await CrmApi.uploadAttachments(q.id, Array.from(files));
+      setDetailAttachments(prev => [...prev, ...created]);
+      pushToast(`${created.length} archivo${created.length > 1 ? 's' : ''} subido${created.length > 1 ? 's' : ''}`);
+    } catch (err) {
+      pushToast(err.message || 'Error al subir archivo', 'bad');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleAssignClient = async () => {
     if (!assignClientId) return;
@@ -292,9 +542,11 @@ function QuoteDetail({ code, onClose, canReassign }) {
           <button className="btn-ghost" onClick={() => { setTab('notas'); setTimeout(() => noteInputRef.current?.focus(), 80); }}>
             <Icon name="message-square" size={13}/>Agregar nota
           </button>
-          <button className="btn-ghost" onClick={() => setTab('adj')}>
+          <button className="btn-ghost" onClick={() => { setTab('adj'); setTimeout(() => fileInputRef.current?.click(), 80); }}>
             <Icon name="paperclip" size={13}/>Adjuntar
           </button>
+          <input ref={fileInputRef} type="file" multiple className="hidden"
+            onChange={e => handleUploadFiles(e.target.files)}/>
           {/* ── Vincular ─────────────────────────────────────── */}
           {(() => {
             const linked = linkedQuotes.linkedQuote || linkedQuotes.linkedBy?.[0];
@@ -571,6 +823,14 @@ function QuoteDetail({ code, onClose, canReassign }) {
               { id:'historial',label:'Historial' },
               { id:'notas',    label:'Notas', count: notes.length > 0 ? notes.length : null },
             ]
+          : isOC
+          ? [
+              { id:'items',    label:'Ítems', count: detailItems.length > 0 ? detailItems.length : null },
+              { id:'mail',     label:'Mail' },
+              { id:'adj',      label:'Adjuntos', count: nonImageAdj.length > 0 ? nonImageAdj.length : null },
+              { id:'historial',label:'Historial' },
+              { id:'notas',    label:'Notas', count: notes.length > 0 ? notes.length : null },
+            ]
           : [
               { id:'resumen',  label:'Resumen' },
               { id:'items',    label:'Ítems', count: detailItems.length > 0 ? detailItems.length : null },
@@ -695,52 +955,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
       )}
 
       {tab === 'items' && !isSolicitud && (
-        <div className="p-6">
-          {detailItems.length === 0 ? (
-            <div className="text-[13px] text-ink-400 py-8 text-center">Sin ítems registrados</div>
-          ) : (
-            <>
-              {q.mailType === 'OC' && (
-                <div className="text-[12px] text-ink-500 mb-3">Marcá los ítems confirmados por el cliente en esta OC:</div>
-              )}
-              <table className="tbl w-full bg-white border border-line rounded-xl overflow-hidden">
-                <thead><tr>
-                  {q.mailType === 'OC' && <th className="w-10"></th>}
-                  <th>SKU</th><th>Descripción</th>
-                  <th className="!text-right">Cant.</th>
-                  <th className="!text-right">P. Unit.</th>
-                  <th className="!text-right">Total</th>
-                </tr></thead>
-                <tbody>
-                  {detailItems.map((it, idx) => (
-                    <tr key={it.id || idx} className={cx(!it.accepted && 'opacity-40')}>
-                      {q.mailType === 'OC' && (
-                        <td>
-                          <input type="checkbox" checked={it.accepted} className="cursor-pointer"
-                            onChange={async () => {
-                              const newVal = !it.accepted;
-                              setDetailItems(prev => prev.map(i => i.id === it.id ? {...i, accepted: newVal} : i));
-                              try {
-                                await CrmApi.updateQuoteItem(q.id, it.id, { accepted: newVal });
-                              } catch {
-                                setDetailItems(prev => prev.map(i => i.id === it.id ? {...i, accepted: !newVal} : i));
-                              }
-                            }}
-                          />
-                        </td>
-                      )}
-                      <td className="mono">{it.sku || '—'}</td>
-                      <td>{it.description}</td>
-                      <td className="mono text-right">{it.quantity}</td>
-                      <td className="mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                      <td className="mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR') : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-        </div>
+        <OCItemsTab q={q} detailItems={detailItems} setDetailItems={setDetailItems}/>
       )}
 
       {tab === 'adj' && (
@@ -771,8 +986,13 @@ function QuoteDetail({ code, onClose, canReassign }) {
               );
             });
           })()}
-          <button className="col-span-2 py-6 border-2 border-dashed border-line rounded-xl text-ink-500 hover:bg-surface">
-            <Icon name="plus" size={14} className="inline mr-1"/> Subir adjunto
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="col-span-2 py-6 border-2 border-dashed border-line rounded-xl text-ink-500 hover:bg-surface disabled:opacity-50">
+            {uploading
+              ? <><Icon name="loader" size={14} className="inline mr-1 animate-spin"/> Subiendo…</>
+              : <><Icon name="plus" size={14} className="inline mr-1"/> Subir adjunto</>}
           </button>
         </div>
       )}
