@@ -342,7 +342,8 @@ async function processEmail(mailData, imap) {
     }
 
     // ── Clasificar tipo de mail ───────────────────────────────────────────
-    const hasOCAttachment = !flexxusData && realAttachments.some(a => isOCAttachment(a));
+    // Cualquier adjunto real no-Flexxus → OC. Sin adjuntos → SOLICITUD.
+    const hasOCAttachment = !flexxusData && realAttachments.length > 0;
     const mailType = flexxusData ? 'PRESUPUESTO' : (hasOCAttachment ? 'OC' : 'SOLICITUD');
 
     console.log(`   📩 ${subject} | from: ${originalSender} | adjuntos reales: ${realAttachments.length} | tipo: ${mailType}`);
@@ -412,7 +413,7 @@ async function processEmail(mailData, imap) {
         code,
         clientId:       client?.id || null,
         sellerId:       client?.defaultSellerId || null,
-        stage:          mailType === 'PRESUPUESTO' ? 'enviado' : (client ? 'asignada' : 'recibida'),
+        stage:          mailType === 'PRESUPUESTO' ? 'enviado' : (mailType === 'OC' ? 'oc' : (client ? 'asignada' : 'recibida')),
         source:         'EMAIL',
         mailType,
         flexxusCode:    flexxusData?.npCode || null,
@@ -517,9 +518,13 @@ async function processEmail(mailData, imap) {
         }
 
         if (presupuestoTarget) {
-          await prisma.quote.update({ where: { id: quote.id },             data: { linkedQuoteId: presupuestoTarget.id } });
+          const npCode = presupuestoTarget.flexxusCode || null;
+          await prisma.quote.update({
+            where: { id: quote.id },
+            data: { linkedQuoteId: presupuestoTarget.id, ...(npCode ? { flexxusCode: npCode } : {}) },
+          });
           await prisma.quote.update({ where: { id: presupuestoTarget.id }, data: { linkedQuoteId: quote.id } });
-          console.log(`   🔗 OC ${quote.code} ↔ PRES ${presupuestoTarget.code}`);
+          console.log(`   🔗 OC ${quote.code} ↔ PRES ${presupuestoTarget.code}${npCode ? ` | NP: ${npCode}` : ''}`);
           await copyPresupuestoItemsToOC(presupuestoTarget.id, quote.id);
         }
       } catch (e) {

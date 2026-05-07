@@ -486,22 +486,21 @@ router.patch('/:id/link', authMiddleware, async (req, res) => {
     }
     const npToPropagate = presupuesto?.flexxusCode || null;
 
-    // Actualizar vínculo en ambas cotizaciones + propagar flexxusCode a la SOLICITUD
+    // Actualizar vínculo en ambas cotizaciones + propagar flexxusCode a SOLICITUD y OC
+    const propagateToReq = npToPropagate && (solicitud?.id === req.params.id || oc?.id === req.params.id);
+    const propagateToTarget = npToPropagate && (solicitud?.id === target?.id || oc?.id === target?.id);
     await prisma.quote.update({
       where: { id: req.params.id },
-      data: { linkedQuoteId: linkedQuoteId || null },
+      data: { linkedQuoteId: linkedQuoteId || null, ...(propagateToReq ? { flexxusCode: npToPropagate } : {}) },
     });
     if (target) {
       await prisma.quote.update({
         where: { id: target.id },
         data: {
           linkedQuoteId: req.params.id,
-          ...(solicitud?.id === target.id && npToPropagate ? { flexxusCode: npToPropagate } : {}),
+          ...(propagateToTarget ? { flexxusCode: npToPropagate } : {}),
         },
       });
-      if (solicitud?.id === req.params.id && npToPropagate) {
-        await prisma.quote.update({ where: { id: req.params.id }, data: { flexxusCode: npToPropagate } });
-      }
 
       // Si hay una OC en el vínculo y hay un PRESUPUESTO, copiar ítems
       if (oc && presupuesto) {
