@@ -299,17 +299,7 @@ function Sidebar({ role, screen, setScreen }) {
         ))}
       </nav>
 
-      <div className="mx-3 mb-3 rounded-xl bg-white/5 border border-white/10 p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Icon name="sparkles" size={14} className="text-brand"/>
-          <span className="text-[11px] uppercase tracking-wider text-white/60 font-semibold">Novedades</span>
-        </div>
-        <p className="text-[12px] text-white/75 leading-snug">
-          Nueva integración con Flexxus. El código NP se sincroniza automáticamente al cargar una OC.
-        </p>
-      </div>
-
-      <div className="px-4 py-3 border-t border-white/5 text-[11px] text-white/40 font-mono">
+<div className="px-4 py-3 border-t border-white/5 text-[11px] text-white/40 font-mono">
         v2026.04 · conectado
       </div>
     </aside>
