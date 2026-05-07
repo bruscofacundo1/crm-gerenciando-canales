@@ -177,13 +177,16 @@ function runSearch(imap, results, resolve) {
     const mailPromises = [];
 
     fetch.on('message', (msg) => {
-      let buffer = '';
+      // Acumular como Buffers para preservar encoding (base64, UTF-8, Latin-1, etc.)
+      const chunks = [];
       const mailData = { uid: null };
 
       msg.on('attributes', (attrs) => { mailData.uid = attrs.uid; });
       msg.on('body', (stream) => {
-        stream.on('data', (chunk) => { buffer += chunk.toString('utf8'); });
-        stream.on('end', () => { mailData.raw = buffer; });
+        stream.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        stream.on('end', () => { mailData.raw = Buffer.concat(chunks); });
       });
       msg.once('end', () => {
         mailPromises.push(processEmail(mailData, imap));
@@ -623,4 +626,106 @@ async function listRecentMails(limit = 20) {
   });
 }
 
-module.exports = { syncMails, listRecentMails };
+/**
+ * Re-procesa el email de una cotización específica desde IMAP
+ * y actualiza emailFrom / emailBody si estaban mal o vacíos.
+ */
+async function resyncQuoteEmail(quoteId) {
+  const quote = await prisma.quote.findUnique({ where: { id: quoteId } });
+  if (!quote?.emailMessageId) return { ok: false, error: 'Sin messageId guardado' };
+
+  if (!process.env.MAIL_USER || !process.env.MAIL_PASSWORD) {
+    return { ok: false, error: 'Credenciales de mail no configuradas' };
+  }
+
+  return new Promise((resolve) => {
+    const imap = new Imap({
+      user: process.env.MAIL_USER,
+      password: process.env.MAIL_PASSWORD,
+      host: process.env.MAIL_HOST || 'imap.gmail.com',
+      port: parseInt(process.env.MAIL_PORT || '993'),
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+    });
+
+    imap.once('ready', () => {
+      const GMAIL_ALL = process.env.MAIL_ALL_FOLDER || '[Gmail]/All Mail';
+      imap.openBox(GMAIL_ALL, true, async (err) => {
+        if (err) { imap.end(); return resolve({ ok: false, error: err.message }); }
+
+        imap.search([['HEADER', 'MESSAGE-ID', quote.emailMessageId]], async (err, uids) => {
+          if (err || !uids?.length) {
+            imap.end();
+            return resolve({ ok: false, error: `Email no encontrado: ${quote.emailMessageId}` });
+          }
+
+          const chunks = [];
+          const fetch = imap.fetch([uids[0]], { bodies: '' });
+
+          fetch.on('message', (msg) => {
+            msg.on('body', (stream) => {
+              stream.on('data', (chunk) => {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+              });
+            });
+          });
+
+          fetch.once('end', async () => {
+            imap.end();
+            try {
+              const raw = Buffer.concat(chunks);
+              const parsed = await simpleParser(raw);
+              const directFrom = parsed.from?.value?.[0]?.address || '';
+
+              let bodyText = parsed.text || (parsed.html ? stripHtml(parsed.html) : '');
+
+              let embeddedFrom = '';
+              if (!bodyText.trim()) {
+                const embeddedMsg = (parsed.attachments || []).find(a =>
+                  (a.contentType || '').toLowerCase().startsWith('message/')
+                );
+                if (embeddedMsg?.content) {
+                  try {
+                    const embParsed = await simpleParser(embeddedMsg.content);
+                    bodyText = embParsed.text || (embParsed.html ? stripHtml(embParsed.html) : '');
+                    embeddedFrom = embParsed.from?.value?.[0]?.address?.toLowerCase()?.trim() || '';
+                  } catch (_) {}
+                }
+              }
+
+              const replyToAddr = parsed.replyTo?.value?.[0]?.address?.toLowerCase()?.trim() || '';
+              const forwardMatch = bodyText.match(FORWARD_FROM_RE);
+              const extractedSender = embeddedFrom || forwardMatch?.[1]?.toLowerCase()?.trim() || '';
+              const isOwnForward = OWN_ADDRESSES.has(directFrom.toLowerCase());
+
+              let newFrom;
+              if (extractedSender) newFrom = extractedSender;
+              else if (isOwnForward && replyToAddr) newFrom = replyToAddr;
+              else newFrom = directFrom.toLowerCase();
+
+              await prisma.quote.update({
+                where: { id: quoteId },
+                data: {
+                  emailFrom: newFrom.trim(),
+                  emailBody: bodyText.substring(0, 20000),
+                },
+              });
+
+              console.log(`   ✅ Resync ${quote.code}: from=${newFrom} body=${bodyText.length}ch`);
+              resolve({ ok: true, emailFrom: newFrom, bodyLength: bodyText.length });
+            } catch (e) {
+              resolve({ ok: false, error: e.message });
+            }
+          });
+
+          fetch.once('error', (e) => { imap.end(); resolve({ ok: false, error: e.message }); });
+        });
+      });
+    });
+
+    imap.once('error', (e) => resolve({ ok: false, error: e.message }));
+    imap.connect();
+  });
+}
+
+module.exports = { syncMails, listRecentMails, resyncQuoteEmail };
