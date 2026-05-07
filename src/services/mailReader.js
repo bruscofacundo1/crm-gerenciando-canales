@@ -12,9 +12,35 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// ─── Regex: extrae email del remitente original en reenvíos Outlook ───
-// Formato: "De: Nombre < email@dominio.com >" (con o sin espacios)
-const OUTLOOK_FORWARD_RE = /De:\s*.+?<\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*>/i;
+// ─── Regex: extrae email del remitente real en reenvíos ──────────────────────
+// Maneja Outlook ES ("De:"), Gmail EN ("From:"), con o sin ángulos, al inicio de línea
+const FORWARD_FROM_RE = /(?:^|\r?\n)[ \t]*(?:De|From):[ \t]*(?:[^<\r\n]*?<[ \t]*)?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})[ \t]*>?/im;
+
+// Nuestras propias direcciones de reenvío — si directFrom es una de estas,
+// siempre buscamos el remitente real en el cuerpo del mensaje.
+const OWN_ADDRESSES = new Set([
+  'ventas@myselec.com.ar',
+  'iamyselec@gmail.com',
+  'info@myselec.com.ar',
+  'compras@myselec.com.ar',
+]);
+
+// ─── Strip HTML conservando texto legible ─────────────────────────────────────
+function stripHtml(html) {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')  // eliminar bloques CSS
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // eliminar bloques JS
+    .replace(/<br\s*\/?>/gi, '\n')                    // <br> → salto de línea
+    .replace(/<\/p>/gi, '\n\n')                       // </p> → párrafo
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, '')                          // quitar etiquetas restantes
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]{2,}/g, ' ')                       // espacios múltiples
+    .replace(/\n{3,}/g, '\n\n')                       // saltos excesivos
+    .trim();
+}
 
 // ─── Tipos de adjunto que ignoramos (firmas de mail, imágenes inline) ───
 const IMAGE_MIME_PREFIXES = ['image/'];
@@ -184,10 +210,6 @@ async function processEmail(mailData, imap) {
       ? parsed.inReplyTo.replace(/[<>]/g, '').trim()
       : null;
 
-    // Texto plano del cuerpo (fallback a HTML sin tags)
-    const bodyText = parsed.text
-      || (parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim() : '');
-
     // ── Chequeo de duplicado ──────────────────────────────────────────────
     const existing = await prisma.quote.findFirst({ where: { emailMessageId: messageId } });
     if (existing) {
@@ -195,10 +217,47 @@ async function processEmail(mailData, imap) {
       return null;
     }
 
-    // ── Extraer remitente real (puede ser un reenvío de Outlook) ──────────
-    const forwardMatch = bodyText.match(OUTLOOK_FORWARD_RE)
-      || subject.match(OUTLOOK_FORWARD_RE);
-    const originalSender = (forwardMatch?.[1] || directFrom).toLowerCase().trim();
+    // ── Extraer texto del cuerpo (múltiples estrategias) ─────────────────
+    let bodyText = parsed.text
+      || (parsed.html ? stripHtml(parsed.html) : '');
+
+    // Si el cuerpo sigue vacío, buscar en mensajes embebidos (message/rfc822)
+    // Gmail a veces empaqueta el email original como adjunto de tipo message/rfc822
+    let embeddedFrom = '';
+    if (!bodyText.trim()) {
+      const embeddedMsg = (parsed.attachments || []).find(a =>
+        (a.contentType || '').toLowerCase().startsWith('message/')
+      );
+      if (embeddedMsg?.content) {
+        try {
+          const embParsed = await simpleParser(embeddedMsg.content);
+          bodyText = embParsed.text || (embParsed.html ? stripHtml(embParsed.html) : '');
+          embeddedFrom = embParsed.from?.value?.[0]?.address?.toLowerCase()?.trim() || '';
+          if (embeddedFrom) console.log(`   📨 Remitente del mensaje embebido: ${embeddedFrom}`);
+        } catch (e) {
+          console.error('   ⚠️  Error parseando mensaje embebido:', e.message);
+        }
+      }
+    }
+
+    // ── Extraer remitente real (puede ser un reenvío) ─────────────────────
+    // Prioridad: (1) embedded message From, (2) regex en cuerpo, (3) Reply-To, (4) directFrom
+    const isOwnForward = OWN_ADDRESSES.has(directFrom.toLowerCase());
+    const replyToAddr  = parsed.replyTo?.value?.[0]?.address?.toLowerCase()?.trim() || '';
+
+    const forwardMatch = bodyText.match(FORWARD_FROM_RE) || subject.match(FORWARD_FROM_RE);
+    const extractedSender = embeddedFrom || forwardMatch?.[1]?.toLowerCase()?.trim() || '';
+
+    let originalSender;
+    if (extractedSender) {
+      originalSender = extractedSender;
+    } else if (isOwnForward && replyToAddr) {
+      originalSender = replyToAddr;
+      console.log(`   📨 Remitente via Reply-To: ${replyToAddr}`);
+    } else {
+      originalSender = directFrom.toLowerCase();
+    }
+    originalSender = originalSender.trim();
 
     // ── Filtrar adjuntos reales (ignorar imágenes/firmas) ─────────────────
     const realAttachments = (parsed.attachments || []).filter(a => !isImageAttachment(a));

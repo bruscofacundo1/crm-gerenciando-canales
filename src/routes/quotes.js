@@ -2,6 +2,7 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
 const { onStageChange } = require('../services/notifier');
+const { resyncQuoteEmail } = require('../services/mailReader');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -274,6 +275,17 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
     res.json({ ...quote, unifiedHistory });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
+  }
+});
+
+// POST /api/quotes/:id/resync-email - Re-fetch email from IMAP and update emailFrom/emailBody
+router.post('/:id/resync-email', authMiddleware, async (req, res) => {
+  try {
+    const result = await resyncQuoteEmail(req.params.id);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al re-sincronizar email' });
   }
 });
 

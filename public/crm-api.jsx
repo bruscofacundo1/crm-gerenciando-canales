@@ -72,6 +72,7 @@ const CrmApi = {
     method: 'PATCH', body: JSON.stringify(data)
   }),
   getQuoteDetail: (id) => apiFetch(`/quotes/${id}/detail`),
+  resyncQuoteEmail: (id) => apiFetch(`/quotes/${id}/resync-email`, { method: 'POST' }),
   deleteQuote: (id) => apiFetch(`/quotes/${id}`, { method: 'DELETE' }),
   addQuoteNote: (id, text) => apiFetch(`/quotes/${id}/notes`, {
     method: 'POST', body: JSON.stringify({ text })

@@ -866,7 +866,31 @@ function QuoteDetail({ code, onClose, canReassign }) {
                   {detailEmailBody}
                 </pre>
               ) : (
-                <div className="text-[13px] text-ink-400 py-8 text-center">Sin cuerpo de mail guardado</div>
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <div className="text-[13px] text-ink-400">Sin cuerpo de mail guardado</div>
+                  {q.emailMessageId && (
+                    <button
+                      disabled={uploading}
+                      onClick={async () => {
+                        setUploading(true);
+                        try {
+                          await CrmApi.resyncQuoteEmail(q.id);
+                          // Reload detail to get updated fields
+                          const detail = await CrmApi.getQuoteDetail(q.id);
+                          setDetailEmailBody(detail.emailBody || '');
+                          pushToast('Email re-sincronizado');
+                        } catch (e) {
+                          pushToast(e.message || 'Error al re-sincronizar', 'bad');
+                        } finally {
+                          setUploading(false);
+                        }
+                      }}
+                      className="btn-ghost text-[12px] py-1.5 px-3 flex items-center gap-1.5">
+                      {uploading ? <Spinner size={12}/> : <Icon name="refresh-cw" size={12}/>}
+                      {uploading ? 'Sincronizando…' : 'Re-sincronizar desde Gmail'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
