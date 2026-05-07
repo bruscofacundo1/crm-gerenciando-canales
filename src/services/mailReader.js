@@ -236,6 +236,11 @@ async function processEmail(mailData, imap) {
     // ── Crear cotización ──────────────────────────────────────────────────
     const code = await nextCode(prisma.quote, 'COT-2026');
 
+    // Calcular monto total de ítems Flexxus (solo los aceptados)
+    const flexxusTotal = flexxusData?.items?.length
+      ? flexxusData.items.filter(i => i.accepted).reduce((s, i) => s + (i.total || 0), 0)
+      : null;
+
     const quote = await prisma.quote.create({
       data: {
         code,
@@ -245,6 +250,7 @@ async function processEmail(mailData, imap) {
         source:         'EMAIL',
         mailType,
         flexxusCode:    flexxusData?.npCode || null,
+        amount:         flexxusTotal || null,
         emailSubject:   subject.substring(0, 500),
         emailMessageId: messageId,
         emailFrom:      originalSender,
