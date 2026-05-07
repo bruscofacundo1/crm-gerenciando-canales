@@ -254,12 +254,14 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
         activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
         items: { orderBy: { sortOrder: 'asc' } },
         linkedQuote: {
-          select: { id: true, code: true, mailType: true, stage: true, flexxusCode: true, createdAt: true, emailSubject: true, amount: true },
-          include: { activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } } },
+          include: {
+            activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
+          },
         },
         linkedBy: {
-          select: { id: true, code: true, mailType: true, stage: true, flexxusCode: true, createdAt: true, emailSubject: true, amount: true },
-          include: { activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } } },
+          include: {
+            activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
+          },
           take: 5,
         },
       },
@@ -277,6 +279,7 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
 
     res.json({ ...quote, unifiedHistory });
   } catch (err) {
+    console.error('Error en detail endpoint:', err);
     res.status(500).json({ error: 'Error' });
   }
 });
