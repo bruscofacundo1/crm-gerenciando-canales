@@ -386,7 +386,7 @@ function NewQuoteModal({ defaultClient }) {
         <FormGroup label="Fecha límite de armado">
           <input type="date" className="inp w-full" value={form.fechaLimite} onChange={e=>set('fechaLimite',e.target.value)}/>
         </FormGroup>
-        <FormGroup label="Monto estimado (USD)" hint="Opcional — se completa al armar el presupuesto" cols={2}>
+        <FormGroup label="Monto estimado (ARS)" hint="Opcional — se completa al armar el presupuesto" cols={2}>
           <input type="number" className="inp w-full" placeholder="Ej: 45200" value={form.monto} onChange={e=>set('monto',e.target.value)}/>
         </FormGroup>
         <FormGroup label="Observaciones" cols={2}>
@@ -1093,10 +1093,10 @@ function MoreFiltersPopover({ onClose, which='quote' }) {
       <div className="absolute right-0 top-full mt-2 w-[340px] bg-white rounded-xl shadow-pop border border-line modal-enter z-40 p-4">
         <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-3">Filtros avanzados</div>
         <div className="space-y-3">
-          <FormGroup label="Monto mínimo (USD)">
+          <FormGroup label="Monto mínimo (ARS)">
             <input type="number" className="inp w-full" value={f.min||''} onChange={e=>set(s=>({...s, min:e.target.value}))} placeholder="0"/>
           </FormGroup>
-          <FormGroup label="Monto máximo (USD)">
+          <FormGroup label="Monto máximo (ARS)">
             <input type="number" className="inp w-full" value={f.max||''} onChange={e=>set(s=>({...s, max:e.target.value}))} placeholder="Sin límite"/>
           </FormGroup>
           <FormGroup label="Zona">

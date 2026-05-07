@@ -286,7 +286,7 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
               {isOC ? 'Total OC (confirmado)' : 'Total presupuesto'}
             </td>
             <td className="mono text-right font-bold text-[13px] pr-3 py-2">
-              U$S {totalOC.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              $ {totalOC.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </td>
             {isOC && (
               <td className="!px-2">

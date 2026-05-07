@@ -2,7 +2,7 @@
 
 // ---------- helpers ----------
 const cx = (...xs) => xs.filter(Boolean).join(' ');
-const fmtMoney = (n) => n == null ? '—' : 'USD ' + n.toLocaleString('es-AR');
+const fmtMoney = (n) => n == null ? '—' : '$ ' + n.toLocaleString('es-AR');
 const fmtDate  = (d) => {
   const o = typeof d === 'string' ? new Date(d) : d;
   return o.toLocaleDateString('es-AR', { day:'2-digit', month:'short' }).replace('.','');
@@ -181,7 +181,7 @@ const COMMENTS = {
     { by:'u-vl', at:'2026-04-20T10:12:00', text:'Cliente prioritario, Argencraft confirmó que comparan 3 ofertas. Plazo de respuesta: viernes 26.' },
     { by:'u-lp', at:'2026-04-20T15:40:00', text:'Pedí cotización a Prysmian y Trefilcon. Espero respuesta de ambos.' },
     { by:'u-lp', at:'2026-04-21T09:28:00', text:'Trefilcon respondió, precio 6% arriba de lo esperado. Ajusto margen.' },
-    { by:'u-lp', at:'2026-04-22T14:02:00', text:'Presupuesto enviado por mail. Total USD 45.200 + IVA.' },
+    { by:'u-lp', at:'2026-04-22T14:02:00', text:'Presupuesto enviado por mail. Total $ 45.200 + IVA.' },
   ]
 };
 

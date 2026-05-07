@@ -442,7 +442,7 @@ function Dashboard() {
     { label:'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
     { label:'OC en curso',           value: kv(kpisData?.ocEnCurso) },
     { label:'Entregas este mes',     value: kv(kpisData?.entregasEsteMes) },
-    { label:'Monto total cotizado',  value: kpisLoading ? '...' : (kpisData?.montoTotal ? `USD ${(kpisData.montoTotal/1000).toFixed(0)}k` : '—') },
+    { label:'Monto total cotizado',  value: kpisLoading ? '...' : (kpisData?.montoTotal ? `$ ${(kpisData.montoTotal/1000).toFixed(0)}k` : '—') },
     { label:'Tasa de conversión',    value: kpisLoading ? '...' : (kpisData?.tasaConversion != null ? `${Number(kpisData.tasaConversion).toFixed(0)}%` : '—') },
   ];
 

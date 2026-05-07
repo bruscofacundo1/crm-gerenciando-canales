@@ -447,7 +447,7 @@ function Clients({ readonly=false }) {
             {[
               { k:'Cotizaciones (6m)', v:cliQuotes.length, sub:`${cliQuotes.filter(q=>q.stage==='aceptada').length} ganadas` },
               { k:'OCs activas',       v:cliOrders.filter(o=>o.stage!=='entregada').length, sub:`${cliOrders.length} totales` },
-              { k:'Facturación anual', v:'USD 148k', sub:'estimado' },
+              { k:'Facturación anual', v:'$ 148k', sub:'estimado' },
             ].map((k,i)=>(
               <div key={i} className="bg-white border border-line rounded-xl p-4">
                 <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.k}</div>
