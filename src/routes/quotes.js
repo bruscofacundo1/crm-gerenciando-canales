@@ -1,8 +1,10 @@
 const express = require('express');
+const fs = require('fs');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
 const { onStageChange } = require('../services/notifier');
 const { resyncQuoteEmail } = require('../services/mailReader');
+const { parseFlexxusPDF } = require('../services/flexxusParser');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -276,6 +278,57 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
     res.json({ ...quote, unifiedHistory });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
+  }
+});
+
+// POST /api/quotes/:id/reparse-items - Re-parse Flexxus PDF from stored attachment
+router.post('/:id/reparse-items', authMiddleware, async (req, res) => {
+  try {
+    const quote = await prisma.quote.findUnique({
+      where: { id: req.params.id },
+      include: { attachments: true },
+    });
+    if (!quote) return res.status(404).json({ error: 'Cotización no encontrada' });
+
+    const pdfAtt = (quote.attachments || []).find(a =>
+      (a.mimeType || '').includes('pdf') || (a.filename || '').toLowerCase().endsWith('.pdf')
+    );
+    if (!pdfAtt) return res.status(404).json({ error: 'No se encontró adjunto PDF' });
+    if (!fs.existsSync(pdfAtt.path)) return res.status(404).json({ error: 'Archivo no encontrado en disco' });
+
+    const buffer = fs.readFileSync(pdfAtt.path);
+    const flexxusData = await parseFlexxusPDF(buffer);
+
+    if (!flexxusData?.items?.length) {
+      return res.status(400).json({ error: 'El PDF no contiene ítems Flexxus reconocibles' });
+    }
+
+    await prisma.quoteItem.deleteMany({ where: { quoteId: quote.id } });
+    await prisma.quoteItem.createMany({
+      data: flexxusData.items.map((item, i) => ({
+        quoteId:     quote.id,
+        sku:         item.sku || null,
+        description: (item.description || '').substring(0, 500),
+        quantity:    item.quantity || 0,
+        unit:        item.unit || null,
+        unitPrice:   item.unitPrice || null,
+        total:       item.total || null,
+        accepted:    item.accepted !== false,
+        sortOrder:   i,
+      })),
+    });
+
+    const flexxusTotal = flexxusData.items
+      .filter(i => i.accepted !== false)
+      .reduce((s, i) => s + (i.total || 0), 0);
+    if (flexxusTotal > 0) {
+      await prisma.quote.update({ where: { id: quote.id }, data: { amount: flexxusTotal } });
+    }
+
+    res.json({ ok: true, itemCount: flexxusData.items.length, total: flexxusTotal });
+  } catch (err) {
+    console.error('Error re-parseando PDF:', err);
+    res.status(500).json({ error: err.message || 'Error al re-parsear PDF' });
   }
 });
 
