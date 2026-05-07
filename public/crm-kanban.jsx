@@ -74,16 +74,21 @@ function OrderCard({ o, onOpen, compact }) {
   const { clients, users } = useApp();
   const cli = clients.find(c=>c.code===o.client);
   const sel = users.find(u=>u.id===o.seller);
+  const isEmailOC = o._source === 'QUOTE';
+  const displayName = cli?.name || o.clientName || o.emailSubject || 'Sin cliente';
   return (
     <div onClick={onOpen} className="kcard bg-white border border-line rounded-lg p-3 cursor-pointer">
       <div className="flex items-start justify-between gap-2">
         <div className="mono text-[11px] font-semibold text-navy-900">{o.code}</div>
         <div className="flex items-center gap-1">
-          <Badge tone={o.entrega==='AMBA' ? 'blue' : 'purple'}>{o.entrega}</Badge>
+          {isEmailOC
+            ? <Badge tone="purple">EMAIL</Badge>
+            : <Badge tone={o.entrega==='AMBA' ? 'blue' : 'purple'}>{o.entrega}</Badge>}
+          {o.flexxus && <Badge tone="slate">{o.flexxus}</Badge>}
         </div>
       </div>
-      <div className="text-[13px] font-semibold text-ink-900 mt-1 leading-snug truncate">{cli?.name}</div>
-      <div className="mono text-[11px] text-ink-500 truncate">← {o.fromQuote}</div>
+      <div className="text-[13px] font-semibold text-ink-900 mt-1 leading-snug truncate">{displayName}</div>
+      <div className="mono text-[11px] text-ink-500 truncate">{o.fromQuote ? `← ${o.fromQuote}` : '— sin presupuesto vinculado'}</div>
 
       {o.transp && o.transp !== '—' && (
         <div className="mt-2 text-[11px] text-ink-700 inline-flex items-center gap-1.5">
@@ -307,11 +312,16 @@ function KanbanQuotes({ onOpen }) {
 function KanbanOrders({ onOpen, logisticsMode }) {
   const { orders, clients, orderFilters, openModal } = useApp();
   const filtered = applyOrderFilters(orders, orderFilters, clients);
+  // Abrir detail correcto: Quote-OC de email → quoteDetail, OC manual → orderDetail
+  const handleOpen = (code) => {
+    const item = filtered.find(i => i.code === code);
+    onOpen(code, item?._source === 'QUOTE' ? 'quote' : 'order');
+  };
   return (
     <KanbanBoard
       title={logisticsMode ? 'Órdenes en operación' : 'Órdenes de Compra'}
       subtitle="Fase 2 · del OC recibido al remito conformado"
-      stages={STAGES_F2} items={filtered} kind="order" onOpen={onOpen}
+      stages={STAGES_F2} items={filtered} kind="order" onOpen={handleOpen}
       logisticsActions={logisticsMode}
       actions={
         <>

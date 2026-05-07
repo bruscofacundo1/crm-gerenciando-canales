@@ -18,12 +18,27 @@ router.get('/', authMiddleware, async (req, res) => {
     const where = {};
     if (req.user.role === 'VENDEDOR') where.sellerId = req.user.id;
 
+    // Órdenes de compra manuales (modelo Order)
     const orders = await prisma.order.findMany({
       where,
       include: {
         client: { select: { code: true, name: true, city: true, province: true } },
         seller: { select: { id: true, name: true } },
         fromQuote: { select: { code: true } },
+        _count: { select: { notes: true, attachments: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // OCs ingresadas por email (modelo Quote con mailType='OC')
+    const quoteWhere = { mailType: 'OC' };
+    if (req.user.role === 'VENDEDOR') quoteWhere.sellerId = req.user.id;
+    const emailOCs = await prisma.quote.findMany({
+      where: quoteWhere,
+      include: {
+        client: { select: { code: true, name: true, city: true, province: true } },
+        seller: { select: { id: true, name: true } },
+        linkedQuote: { select: { code: true } },
         _count: { select: { notes: true, attachments: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -45,9 +60,32 @@ router.get('/', authMiddleware, async (req, res) => {
       guia: o.trackingNumber || '',
       invoiceIssued: o.invoiceIssued,
       waybillReceived: o.waybillReceived,
+      monto: null,
+      _source: 'ORDER',
     }));
 
-    res.json(formatted);
+    const formattedEmailOCs = emailOCs.map(q => ({
+      id: q.id,
+      code: q.code,
+      client: q.client?.code || '',
+      clientName: q.client?.name || q.emailSubject || 'Sin cliente',
+      seller: q.sellerId || '',
+      sellerName: q.seller?.name || '',
+      stage: q.stage,
+      fromQuote: q.linkedQuote?.code || '',
+      entrega: 'EMAIL',
+      transp: '—',
+      flexxus: q.flexxusCode || '',
+      fecha: q.createdAt.toISOString(),
+      guia: '',
+      invoiceIssued: false,
+      waybillReceived: false,
+      monto: q.amount || null,
+      emailSubject: q.emailSubject || '',
+      _source: 'QUOTE',
+    }));
+
+    res.json([...formatted, ...formattedEmailOCs]);
   } catch (err) {
     console.error('Error fetching orders:', err);
     res.status(500).json({ error: 'Error' });
@@ -98,10 +136,23 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/orders/:id/stage
+// PATCH /api/orders/:id/stage — maneja tanto Order como Quote(mailType=OC)
 router.patch('/:id/stage', authMiddleware, async (req, res) => {
   try {
     const { stage } = req.body;
+
+    // Verificar si es un Quote-OC de email
+    const emailOC = await prisma.quote.findFirst({
+      where: { id: req.params.id, mailType: 'OC' },
+    });
+    if (emailOC) {
+      await prisma.quote.update({ where: { id: req.params.id }, data: { stage } });
+      await prisma.activity.create({
+        data: { action: 'STAGE_CHANGE', detail: `Etapa → ${stage}`, userId: req.user.id, quoteId: req.params.id },
+      });
+      return res.json({ ok: true, stage });
+    }
+
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!order) return res.status(404).json({ error: 'OC no encontrada' });
 

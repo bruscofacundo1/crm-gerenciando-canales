@@ -19,7 +19,8 @@ async function nextCode(model, prefix) {
 // GET /api/quotes - All quotes (admin sees all, seller sees own)
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const where = {};
+    // Excluir OCs de email — esas van en el board de Fase 2 (órdenes)
+    const where = { NOT: { mailType: 'OC' } };
     if (req.user.role === 'VENDEDOR') {
       // Vendedor ve: sus propias quotes + las sin asignar (recibida, sin seller)
       where.OR = [
