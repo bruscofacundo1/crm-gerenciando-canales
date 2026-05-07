@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { onStageChange } = require('../services/notifier');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -17,7 +18,11 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const where = {};
     if (req.user.role === 'VENDEDOR') {
-      where.sellerId = req.user.id;
+      // Vendedor ve: sus propias quotes + las sin asignar (recibida, sin seller)
+      where.OR = [
+        { sellerId: req.user.id },
+        { sellerId: null, stage: 'recibida' },
+      ];
     }
 
     const quotes = await prisma.quote.findMany({
@@ -123,6 +128,28 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
 
     const oldStage = quote.stage;
 
+    // Validar etapas obligatorias (solo al avanzar, no al rechazar ni retroceder)
+    if (stage !== 'rechazada') {
+      const allStages = await prisma.stageDefinition.findMany({
+        where: { active: true, phase: 'COTIZACION' },
+        orderBy: { order: 'asc' },
+      });
+      const orderedKeys = allStages.map(s => s.stageKey);
+      const currentIdx = orderedKeys.indexOf(oldStage);
+      const targetIdx  = orderedKeys.indexOf(stage);
+
+      if (currentIdx !== -1 && targetIdx > currentIdx + 1) {
+        // Hay etapas entre currentIdx y targetIdx — verificar si alguna es obligatoria
+        const skipped = allStages.slice(currentIdx + 1, targetIdx);
+        const blockers = skipped.filter(s => s.mandatory);
+        if (blockers.length > 0) {
+          return res.status(400).json({
+            error: `No podés saltear la etapa obligatoria "${blockers[0].label}"`,
+          });
+        }
+      }
+    }
+
     const updateData = { stage };
     if (stage === 'rechazada' && rejectReason) {
       updateData.rejectReason = rejectReason;
@@ -138,6 +165,9 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
       where: { id: req.params.id },
       data: updateData,
     });
+
+    // Disparar notificaciones de cambio de etapa (async, no bloquea respuesta)
+    onStageChange(quote.id, oldStage, stage).catch(() => {});
 
     // Log activity
     await prisma.activity.create({
@@ -295,20 +325,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/quotes/:id/items/:itemId — update item accepted status
-router.patch('/:id/items/:itemId', authMiddleware, async (req, res) => {
-  try {
-    const { accepted } = req.body;
-    const item = await prisma.quoteItem.update({
-      where: { id: req.params.itemId },
-      data: { accepted: Boolean(accepted) },
-    });
-    res.json(item);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al actualizar ítem' });
-  }
-});
-
 // PATCH /api/quotes/:id/client — assign client (and optionally seller)
 router.patch('/:id/client', authMiddleware, async (req, res) => {
   try {
@@ -359,7 +375,25 @@ router.patch('/:id/client', authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/quotes/:id/link — vincular SOLICITUD ↔ PRESUPUESTO
+// Helper: copia ítems aceptados de PRESUPUESTO a OC (si la OC no tiene ítems aún)
+async function copyPresupuestoItemsToOC(presupuestoId, ocId) {
+  const existing = await prisma.quoteItem.count({ where: { quoteId: ocId } });
+  if (existing > 0) return;
+  const items = await prisma.quoteItem.findMany({
+    where: { quoteId: presupuestoId, accepted: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+  if (!items.length) return;
+  await prisma.quoteItem.createMany({
+    data: items.map((it, i) => ({
+      quoteId: ocId, sku: it.sku, description: it.description,
+      quantity: it.quantity, unit: it.unit, unitPrice: it.unitPrice,
+      total: it.total, accepted: true, checked: true, sortOrder: i,
+    })),
+  });
+}
+
+// PATCH /api/quotes/:id/link — vincular quotes (SOLICITUD ↔ PRESUPUESTO ↔ OC)
 // body: { linkedQuoteId } — o null para desvincular
 router.patch('/:id/link', authMiddleware, async (req, res) => {
   try {
@@ -374,11 +408,12 @@ router.patch('/:id/link', authMiddleware, async (req, res) => {
       if (!target) return res.status(404).json({ error: 'Cotización destino no encontrada' });
     }
 
-    // Determinar cuál es PRESUPUESTO y cuál SOLICITUD para propagar NP
-    let presupuesto = null, solicitud = null;
+    // Determinar cuál es PRESUPUESTO para propagar NP y copiar ítems a OC
+    let presupuesto = null, solicitud = null, oc = null;
     if (target) {
       presupuesto = quote.mailType === 'PRESUPUESTO' ? quote : (target.mailType === 'PRESUPUESTO' ? target : null);
       solicitud   = quote.mailType === 'SOLICITUD'   ? quote : (target.mailType === 'SOLICITUD'   ? target : null);
+      oc          = quote.mailType === 'OC'          ? quote : (target.mailType === 'OC'          ? target : null);
     }
     const npToPropagate = presupuesto?.flexxusCode || null;
 
@@ -395,9 +430,13 @@ router.patch('/:id/link', authMiddleware, async (req, res) => {
           ...(solicitud?.id === target.id && npToPropagate ? { flexxusCode: npToPropagate } : {}),
         },
       });
-      // Si la solicitud es la quote actual, propagar NP a ella
       if (solicitud?.id === req.params.id && npToPropagate) {
         await prisma.quote.update({ where: { id: req.params.id }, data: { flexxusCode: npToPropagate } });
+      }
+
+      // Si hay una OC en el vínculo y hay un PRESUPUESTO, copiar ítems
+      if (oc && presupuesto) {
+        await copyPresupuestoItemsToOC(presupuesto.id, oc.id);
       }
     }
 
@@ -422,6 +461,73 @@ router.patch('/:id/link', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Error linking quotes:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/quotes/:id/items/:itemId — actualizar ítem (accepted, checked, quantity, description, sku, unitPrice)
+router.patch('/:id/items/:itemId', authMiddleware, async (req, res) => {
+  try {
+    const { accepted, checked, quantity, description, sku, unitPrice } = req.body;
+    const data = {};
+    if (accepted   !== undefined) data.accepted   = accepted;
+    if (checked    !== undefined) data.checked    = checked;
+    if (quantity   !== undefined) data.quantity   = parseFloat(quantity);
+    if (description !== undefined) data.description = description;
+    if (sku        !== undefined) data.sku        = sku || null;
+    if (unitPrice  !== undefined) {
+      data.unitPrice = unitPrice != null ? parseFloat(unitPrice) : null;
+      if (data.unitPrice != null && data.quantity != null) {
+        data.total = data.unitPrice * data.quantity;
+      }
+    }
+    // recalcular total si cambia quantity y hay unitPrice
+    if (quantity !== undefined && unitPrice === undefined) {
+      const item = await prisma.quoteItem.findUnique({ where: { id: req.params.itemId } });
+      if (item?.unitPrice != null) data.total = item.unitPrice * data.quantity;
+    }
+    const updated = await prisma.quoteItem.update({ where: { id: req.params.itemId }, data });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/quotes/:id/items — agregar ítem manualmente a una OC
+router.post('/:id/items', authMiddleware, async (req, res) => {
+  try {
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
+    if (!quote) return res.status(404).json({ error: 'Cotización no encontrada' });
+
+    const { description, sku, quantity = 1, unit, unitPrice } = req.body;
+    if (!description) return res.status(400).json({ error: 'description es requerida' });
+
+    const last = await prisma.quoteItem.findFirst({
+      where: { quoteId: req.params.id }, orderBy: { sortOrder: 'desc' },
+    });
+    const sortOrder = (last?.sortOrder ?? -1) + 1;
+    const qty  = parseFloat(quantity) || 1;
+    const up   = unitPrice != null ? parseFloat(unitPrice) : null;
+    const item = await prisma.quoteItem.create({
+      data: {
+        quoteId: req.params.id,
+        description, sku: sku || null, quantity: qty, unit: unit || null,
+        unitPrice: up, total: up != null ? up * qty : null,
+        accepted: true, checked: true, sortOrder,
+      },
+    });
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/quotes/:id/items/:itemId — eliminar ítem definitivamente
+router.delete('/:id/items/:itemId', authMiddleware, async (req, res) => {
+  try {
+    await prisma.quoteItem.delete({ where: { id: req.params.itemId } });
+    res.json({ ok: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

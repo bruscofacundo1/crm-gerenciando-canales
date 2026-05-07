@@ -19,6 +19,8 @@ const OUTLOOK_FORWARD_RE = /De:\s*.+?<\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a
 // ─── Tipos de adjunto que ignoramos (firmas de mail, imágenes inline) ───
 const IMAGE_MIME_PREFIXES = ['image/'];
 const IGNORED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.ico'];
+// Extensiones que clasifican un adjunto como posible OC
+const OC_EXTENSIONS = ['.pdf', '.doc', '.docx'];
 
 function isImageAttachment(att) {
   if (!att) return true;
@@ -31,6 +33,38 @@ function isImageAttachment(att) {
   // Inline embebidos (firma) sin filename real también los ignoramos
   if (!att.filename) return true;
   return false;
+}
+
+function isOCAttachment(att) {
+  if (!att?.filename) return false;
+  const ext = path.extname(att.filename).toLowerCase();
+  return OC_EXTENSIONS.includes(ext);
+}
+
+// Copia los ítems aceptados de un PRESUPUESTO a una OC (si la OC no tiene ítems aún)
+async function copyPresupuestoItemsToOC(presupuestoId, ocId) {
+  const existing = await prisma.quoteItem.count({ where: { quoteId: ocId } });
+  if (existing > 0) return; // ya tiene ítems, no pisar
+  const items = await prisma.quoteItem.findMany({
+    where: { quoteId: presupuestoId, accepted: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+  if (!items.length) return;
+  await prisma.quoteItem.createMany({
+    data: items.map((it, i) => ({
+      quoteId:     ocId,
+      sku:         it.sku,
+      description: it.description,
+      quantity:    it.quantity,
+      unit:        it.unit,
+      unitPrice:   it.unitPrice,
+      total:       it.total,
+      accepted:    true,
+      checked:     true,
+      sortOrder:   i,
+    })),
+  });
+  console.log(`   📋 ${items.length} ítems copiados de PRESUPUESTO ${presupuestoId} → OC ${ocId}`);
 }
 
 async function nextCode(model, prefix) {
@@ -182,7 +216,8 @@ async function processEmail(mailData, imap) {
     }
 
     // ── Clasificar tipo de mail ───────────────────────────────────────────
-    const mailType = flexxusData ? 'PRESUPUESTO' : 'SOLICITUD';
+    const hasOCAttachment = !flexxusData && realAttachments.some(a => isOCAttachment(a));
+    const mailType = flexxusData ? 'PRESUPUESTO' : (hasOCAttachment ? 'OC' : 'SOLICITUD');
 
     console.log(`   📩 ${subject} | from: ${originalSender} | adjuntos reales: ${realAttachments.length} | tipo: ${mailType}`);
 
@@ -318,6 +353,51 @@ async function processEmail(mailData, imap) {
         }
       } catch (e) {
         console.error('   ❌ Error al auto-vincular:', e.message);
+      }
+    }
+
+    // ── Auto-vincular OC con PRESUPUESTO existente ───────────────────────
+    if (mailType === 'OC') {
+      try {
+        let presupuestoTarget = null;
+        const cutoffOC = new Date(); cutoffOC.setDate(cutoffOC.getDate() - 90);
+
+        // 1. Match por hilo
+        if (inReplyTo) {
+          presupuestoTarget = await prisma.quote.findFirst({
+            where: { emailMessageId: inReplyTo, mailType: 'PRESUPUESTO', linkedQuoteId: null },
+          });
+          if (presupuestoTarget) console.log(`   🔗 OC: match por hilo email → ${presupuestoTarget.code}`);
+        }
+
+        // 2. Fallback: mismo cliente, presupuesto abierto, últimos 90 días
+        if (!presupuestoTarget && client) {
+          const candidatas = await prisma.quote.findMany({
+            where: {
+              clientId:      client.id,
+              mailType:      'PRESUPUESTO',
+              linkedQuoteId: null,
+              stage:         { notIn: ['rechazada', 'aceptada'] },
+              createdAt:     { gte: cutoffOC },
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (candidatas.length === 1) {
+            presupuestoTarget = candidatas[0];
+            console.log(`   🔗 OC: match por cliente único → ${presupuestoTarget.code}`);
+          } else if (candidatas.length > 1) {
+            console.log(`   ⚠️  OC: ${candidatas.length} presupuestos abiertos del cliente — vínculo manual requerido`);
+          }
+        }
+
+        if (presupuestoTarget) {
+          await prisma.quote.update({ where: { id: quote.id },             data: { linkedQuoteId: presupuestoTarget.id } });
+          await prisma.quote.update({ where: { id: presupuestoTarget.id }, data: { linkedQuoteId: quote.id } });
+          console.log(`   🔗 OC ${quote.code} ↔ PRES ${presupuestoTarget.code}`);
+          await copyPresupuestoItemsToOC(presupuestoTarget.id, quote.id);
+        }
+      } catch (e) {
+        console.error('   ❌ Error al auto-vincular OC:', e.message);
       }
     }
 

@@ -410,7 +410,7 @@ function NewQuoteModal({ defaultClient }) {
 
 // --- 2. Nueva OC ---
 function NewOrderModal() {
-  const { closeModal, quotes, clients, setOrders, pushToast } = useApp();
+  const { closeModal, quotes, clients, users, setOrders, pushToast } = useApp();
   const accepted = quotes.filter(q => q.stage === 'aceptada');
   const [form, setForm] = useS({
     fromQuote: accepted[0]?.code || '',
@@ -475,7 +475,7 @@ function NewOrderModal() {
         {cli && (
           <div className="col-span-2 bg-surface rounded-lg px-3 py-2.5 border border-line text-[12px] text-ink-700 flex items-center gap-3">
             <Icon name="info" size={13} className="text-brand"/>
-            <span>Auto-completado: <b>{cli.name}</b> · Vendedor: <b>{USERS.find(u=>u.id===q.seller)?.name}</b> · Monto: <span className="mono">{fmtMoney(q.monto)}</span></span>
+            <span>Auto-completado: <b>{cli.name}</b> · Vendedor: <b>{users.find(u=>u.id===q.seller)?.name}</b> · Monto: <span className="mono">{fmtMoney(q.monto)}</span></span>
           </div>
         )}
 
@@ -900,9 +900,14 @@ function SearchPaletteModal() {
   const query = norm(q);
 
   const matchedQuotes = !query ? quotes.slice(0,3) :
-    quotes.filter(x => norm(x.code).includes(query) || norm(clients.find(c=>c.code===x.client)?.name||'').includes(query)).slice(0,5);
+    quotes.filter(x => norm(x.code).includes(query)
+      || norm(clients.find(c=>c.code===x.client)?.name||'').includes(query)
+      || norm(x.flexxus||'').includes(query)
+      || norm(x.mailSubject||'').includes(query)
+      || norm(x.mailType||'').includes(query)
+    ).slice(0,5);
   const matchedClients = !query ? clients.slice(0,3) :
-    clients.filter(c => norm(c.name).includes(query) || norm(c.cuit).includes(query) || norm(c.city).includes(query)).slice(0,5);
+    clients.filter(c => norm(c.name).includes(query) || norm(c.cuit).includes(query) || norm(c.city).includes(query) || norm(c.email||'').includes(query)).slice(0,5);
   const matchedOrders = !query ? orders.slice(0,3) :
     orders.filter(o => norm(o.code).includes(query) || norm(clients.find(c=>c.code===o.client)?.name||'').includes(query)).slice(0,5);
 
@@ -935,9 +940,9 @@ function SearchPaletteModal() {
                     <Icon name="clipboard-list" size={15} className="text-ink-500"/>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] font-semibold truncate"><span className="mono text-navy-900">{x.code}</span> — {c?.name}</div>
-                      <div className="text-[11px] text-ink-500">{c?.city} · {fmtMoney(x.monto)}</div>
+                      <div className="text-[11px] text-ink-500">{c?.city}{c?.city&&x.monto?' · ':''}{x.monto?fmtMoney(x.monto):''}</div>
                     </div>
-                    <Badge tone={stg.tone} dot>{stg.label}</Badge>
+                    {stg && <Badge tone={stg.tone} dot>{stg.label}</Badge>}
                   </button>
                 );
               })}
@@ -971,9 +976,9 @@ function SearchPaletteModal() {
                     <Icon name="package" size={15} className="text-ink-500"/>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] font-semibold truncate"><span className="mono text-navy-900">{o.code}</span> — {c?.name}</div>
-                      <div className="text-[11px] text-ink-500">Entrega {o.entrega} · {o.transp}</div>
+                      <div className="text-[11px] text-ink-500">{[o.entrega&&`Entrega ${o.entrega}`, o.transp].filter(Boolean).join(' · ')}</div>
                     </div>
-                    <Badge tone={stg.tone} dot>{stg.label}</Badge>
+                    {stg && <Badge tone={stg.tone} dot>{stg.label}</Badge>}
                   </button>
                 );
               })}
