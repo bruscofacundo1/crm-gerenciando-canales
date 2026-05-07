@@ -223,6 +223,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
               {q.mailType}
             </Badge>
           )}
+          {q.flexxus && (
+            <Badge tone="slate"><span className="mono">{q.flexxus}</span></Badge>
+          )}
           <button className="btn-ghost"><Icon name="download" size={13}/>PDF</button>
           {canReassign && (
             <div className="relative">

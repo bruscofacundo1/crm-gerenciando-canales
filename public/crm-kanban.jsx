@@ -36,7 +36,7 @@ function QuoteCard({ q, onOpen, compact }) {
           {q.mailType === 'SOLICITUD'   && <Badge tone="sky">SOL</Badge>}
           {q.mailType === 'PRESUPUESTO' && <Badge tone="blue">PRES</Badge>}
           {q.mailType === 'OC'          && <Badge tone="purple">OC</Badge>}
-          {q.flexxus && <Badge tone="slate">NP</Badge>}
+          {q.flexxus && <Badge tone="slate">{q.flexxus}</Badge>}
           {overdue && <Badge tone="red" dot>{q.dias}d</Badge>}
         </div>
       </div>

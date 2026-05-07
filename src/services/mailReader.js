@@ -3,6 +3,7 @@ const { simpleParser } = require('mailparser');
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const path = require('path');
+const { parseFlexxusPDF, isFlexxusPDF } = require('./flexxusParser');
 
 const prisma = new PrismaClient();
 
@@ -163,24 +164,53 @@ async function processEmail(mailData, imap) {
     // ── Filtrar adjuntos reales (ignorar imágenes/firmas) ─────────────────
     const realAttachments = (parsed.attachments || []).filter(a => !isImageAttachment(a));
 
+    // ── Detectar PDF Flexxus ──────────────────────────────────────────────
+    const flexxusAtt = realAttachments.find(a => isFlexxusPDF(a));
+    let flexxusData  = null;
+    if (flexxusAtt) {
+      try {
+        flexxusData = await parseFlexxusPDF(flexxusAtt.content);
+        console.log(`   📄 Flexxus detectado: ${flexxusData.npCode} | CUIT: ${flexxusData.cuit} | ${flexxusData.clientName}`);
+      } catch (e) {
+        console.error('   ❌ Error parseando PDF Flexxus:', e.message);
+      }
+    }
+
     // ── Clasificar tipo de mail ───────────────────────────────────────────
-    // Por ahora: sin adjuntos reales = SOLICITUD
-    // (PRESUPUESTO y OC se agregan cuando tengamos flexxusParser)
-    const mailType = 'SOLICITUD';
+    const mailType = flexxusData ? 'PRESUPUESTO' : 'SOLICITUD';
 
     console.log(`   📩 ${subject} | from: ${originalSender} | adjuntos reales: ${realAttachments.length} | tipo: ${mailType}`);
 
     // ── Matcheo de cliente (orden de prioridad) ───────────────────────────
     let client = null;
 
-    // 1. ClientEmail exacto
-    try {
-      const ce = await prisma.clientEmail.findFirst({
-        where: { email: originalSender },
-        include: { client: { include: { defaultSeller: true } } },
+    // Para PRESUPUESTO: buscar primero por CUIT del PDF, luego por razón social
+    if (flexxusData?.cuit) {
+      client = await prisma.client.findFirst({
+        where: { cuit: { equals: flexxusData.cuit, mode: 'insensitive' } },
+        include: { defaultSeller: true },
       });
-      if (ce) { client = ce.client; console.log(`   ✅ Match ClientEmail: ${client.name}`); }
-    } catch (_) { /* ClientEmail puede no existir en esquemas viejos */ }
+      if (client) console.log(`   ✅ Match CUIT Flexxus: ${client.name}`);
+    }
+    if (!client && flexxusData?.clientName) {
+      client = await prisma.client.findFirst({
+        where: { name: { contains: flexxusData.clientName.substring(0, 20), mode: 'insensitive' } },
+        include: { defaultSeller: true },
+      });
+      if (client) console.log(`   ✅ Match nombre Flexxus: ${client.name}`);
+    }
+
+    // Para SOLICITUD y fallback: matchear por email del remitente
+    // 1. ClientEmail exacto
+    if (!client) {
+      try {
+        const ce = await prisma.clientEmail.findFirst({
+          where: { email: originalSender },
+          include: { client: { include: { defaultSeller: true } } },
+        });
+        if (ce) { client = ce.client; console.log(`   ✅ Match ClientEmail: ${client.name}`); }
+      } catch (_) { /* ClientEmail puede no existir en esquemas viejos */ }
+    }
 
     // 2. Client.email exacto
     if (!client) {
@@ -209,18 +239,39 @@ async function processEmail(mailData, imap) {
     const quote = await prisma.quote.create({
       data: {
         code,
-        clientId:      client?.id || null,
-        sellerId:      client?.defaultSellerId || null,
-        stage:         client ? 'asignada' : 'recibida',
-        source:        'EMAIL',
+        clientId:       client?.id || null,
+        sellerId:       client?.defaultSellerId || null,
+        stage:          client ? 'asignada' : 'recibida',
+        source:         'EMAIL',
         mailType,
-        emailSubject:  subject.substring(0, 500),
+        flexxusCode:    flexxusData?.npCode || null,
+        emailSubject:   subject.substring(0, 500),
         emailMessageId: messageId,
-        emailFrom:     originalSender,
-        emailBody:     bodyText.substring(0, 20000),
-        createdAt:     date,
+        emailFrom:      originalSender,
+        emailBody:      bodyText.substring(0, 20000),
+        createdAt:      date,
       },
     });
+
+    // ── Crear ítems del presupuesto Flexxus ───────────────────────────────
+    if (flexxusData?.items?.length) {
+      try {
+        await prisma.quoteItem.createMany({
+          data: flexxusData.items.map(item => ({
+            quoteId:     quote.id,
+            description: item.description.substring(0, 500),
+            quantity:    item.quantity || 0,
+            unitPrice:   item.unitPrice || null,
+            total:       item.total || null,
+            accepted:    item.accepted !== false,
+            sortOrder:   item.sortOrder || 0,
+          })),
+        });
+        console.log(`   📋 ${flexxusData.items.length} ítems creados para ${code}`);
+      } catch (e) {
+        console.error('   ❌ Error creando ítems:', e.message);
+      }
+    }
 
     // ── Guardar adjuntos reales (no imágenes) ─────────────────────────────
     for (const att of realAttachments) {
@@ -245,12 +296,18 @@ async function processEmail(mailData, imap) {
     }
 
     // ── Log de actividad ──────────────────────────────────────────────────
+    const actDetail = flexxusData
+      ? (client
+          ? `Cotización ${code} [${flexxusData.npCode}] ingresada desde PDF Flexxus — ${client.name}`
+          : `Cotización ${code} [${flexxusData.npCode}] ingresada desde PDF Flexxus — cliente sin asignar`)
+      : (client
+          ? `Cotización ${code} ingresada desde mail — ${client.name} (${originalSender})`
+          : `Cotización ${code} ingresada desde mail — cliente sin asignar · ${originalSender}`);
+
     await prisma.activity.create({
       data: {
-        action: 'CREATED',
-        detail: client
-          ? `Cotización ${code} ingresada desde mail — ${client.name} (${originalSender})`
-          : `Cotización ${code} ingresada desde mail — cliente sin asignar · ${originalSender}`,
+        action:  'CREATED',
+        detail:  actDetail,
         quoteId: quote.id,
       },
     });
@@ -265,13 +322,15 @@ async function processEmail(mailData, imap) {
     console.log(`   ✅ Creada ${code} ← ${originalSender} → ${client?.name || 'sin cliente'}`);
 
     return {
-      code:       quote.code,
-      from:       originalSender,
+      code:        quote.code,
+      from:        originalSender,
       subject,
       mailType,
-      clientName: client?.name || null,
-      sellerName: client?.defaultSeller?.name || null,
-      date:       date.toISOString(),
+      flexxusCode: flexxusData?.npCode || null,
+      clientName:  client?.name || null,
+      sellerName:  client?.defaultSeller?.name || null,
+      itemCount:   flexxusData?.items?.length || 0,
+      date:        date.toISOString(),
     };
 
   } catch (err) {
