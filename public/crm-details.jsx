@@ -311,15 +311,11 @@ function QuoteDetail({ code, onClose, canReassign }) {
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setClientDropOpen(false)}/>
                       <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-xl shadow-pop max-h-56 overflow-y-auto scroll-thin">
-                        {filteredClients.slice(0, 25).map(c => (
+                        {filteredClients.slice(0, 80).map(c => (
                           <button key={c.id}
-                            className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0 flex items-start justify-between gap-2"
+                            className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
                             onClick={() => { setAssignClientId(c.id); setClientDropOpen(false); setClientSearch(''); }}>
-                            <div>
-                              <div className="text-[12.5px] font-medium text-ink-900">{c.name}</div>
-                              {c.cuit && <div className="text-[11px] text-ink-400 mono">{c.cuit}</div>}
-                            </div>
-                            {c.email && <span className="text-[11px] text-ink-400 shrink-0">{c.email}</span>}
+                            <div className="text-[12.5px] font-medium text-ink-900">{c.name}</div>
                           </button>
                         ))}
                         {filteredClients.length === 0 && (
