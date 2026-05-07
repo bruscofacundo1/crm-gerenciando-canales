@@ -58,6 +58,7 @@ router.get('/', authMiddleware, async (req, res) => {
       isDraft: q.isDraft,
       emailSubject: q.emailSubject,
       emailFrom: q.emailFrom,
+      emailMessageId: q.emailMessageId || null,
       mailType: q.mailType || null,
       followUpDate: q.followUpDate?.toISOString() || null,
       rejectReason: q.rejectReason,

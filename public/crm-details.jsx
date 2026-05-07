@@ -868,7 +868,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
               ) : (
                 <div className="flex flex-col items-center gap-3 py-8">
                   <div className="text-[13px] text-ink-400">Sin cuerpo de mail guardado</div>
-                  {q.emailMessageId && (
+                  {q.source === 'EMAIL' && (
                     <button
                       disabled={uploading}
                       onClick={async () => {
