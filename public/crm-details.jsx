@@ -100,6 +100,11 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [detailAttachments, setDetailAttachments] = useState([]);
   const [detailEmailBody, setDetailEmailBody] = useState('');
   const [emailBodyOpen, setEmailBodyOpen] = useState(false);
+  const [linkedQuotes, setLinkedQuotes] = useState({ linkedQuote: null, linkedBy: [] });
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkDropOpen, setLinkDropOpen] = useState(false);
+  const [linkSaving, setLinkSaving] = useState(false);
+  const noteInputRef = React.useRef(null);
 
   const handleAssignClient = async () => {
     if (!assignClientId) return;
@@ -154,6 +159,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
         setDetailItems(detail.items || []);
         setDetailAttachments(detail.attachments || []);
         setDetailEmailBody(detail.emailBody || '');
+        setLinkedQuotes({ linkedQuote: detail.linkedQuote || null, linkedBy: detail.linkedBy || [] });
         setNotesLoading(false);
       })
       .catch(() => setNotesLoading(false));
@@ -171,6 +177,38 @@ function QuoteDetail({ code, onClose, canReassign }) {
       pushToast(err.message || 'Error al guardar nota', 'bad');
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  const handleLinkQuote = async (targetId) => {
+    if (!targetId) return;
+    setLinkSaving(true);
+    try {
+      await CrmApi.linkQuote(q.id, targetId);
+      const [freshQuotes, detail] = await Promise.all([CrmApi.getQuotes(), CrmApi.getQuoteDetail(q.id)]);
+      setQuotes(freshQuotes);
+      setLinkedQuotes({ linkedQuote: detail.linkedQuote || null, linkedBy: detail.linkedBy || [] });
+      setHistory(detail.activities || []);
+      setLinkDropOpen(false);
+      setLinkSearch('');
+      pushToast('Cotizaciones vinculadas');
+    } catch (err) {
+      pushToast(err.message || 'Error al vincular', 'bad');
+    } finally {
+      setLinkSaving(false);
+    }
+  };
+
+  const handleUnlinkQuote = async () => {
+    if (!window.confirm('¿Desvincular esta cotización?')) return;
+    try {
+      await CrmApi.linkQuote(q.id, null);
+      const [freshQuotes, detail] = await Promise.all([CrmApi.getQuotes(), CrmApi.getQuoteDetail(q.id)]);
+      setQuotes(freshQuotes);
+      setLinkedQuotes({ linkedQuote: detail.linkedQuote || null, linkedBy: detail.linkedBy || [] });
+      pushToast('Vínculo eliminado');
+    } catch (err) {
+      pushToast(err.message || 'Error', 'bad');
     }
   };
 
@@ -251,11 +289,73 @@ function QuoteDetail({ code, onClose, canReassign }) {
       }
       footer={
         <>
-          <button className="btn-ghost"><Icon name="message-square" size={13}/>Agregar nota</button>
-          <button className="btn-ghost"><Icon name="paperclip" size={13}/>Adjuntar</button>
+          <button className="btn-ghost" onClick={() => { setTab('notas'); setTimeout(() => noteInputRef.current?.focus(), 80); }}>
+            <Icon name="message-square" size={13}/>Agregar nota
+          </button>
+          <button className="btn-ghost" onClick={() => setTab('adj')}>
+            <Icon name="paperclip" size={13}/>Adjuntar
+          </button>
+          {/* ── Vincular ─────────────────────────────────────── */}
+          {(() => {
+            const linked = linkedQuotes.linkedQuote || linkedQuotes.linkedBy?.[0];
+            if (linked) return (
+              <div className="flex items-center gap-1.5 text-[12px] text-ink-600 border border-line rounded-lg px-2.5 py-1.5">
+                <Icon name="link" size={12} className="text-brand shrink-0"/>
+                <span className="font-medium mono">{linked.code}</span>
+                <Badge tone={linked.mailType==='SOLICITUD'?'sky':linked.mailType==='PRESUPUESTO'?'blue':'gray'} className="text-[10px]">
+                  {linked.mailType||'—'}
+                </Badge>
+                <button onClick={handleUnlinkQuote} className="ml-1 text-ink-400 hover:text-bad" title="Desvincular">
+                  <Icon name="x" size={11}/>
+                </button>
+              </div>
+            );
+            return (
+              <div className="relative">
+                <button className="btn-ghost text-[12px]" onClick={() => setLinkDropOpen(o=>!o)}>
+                  <Icon name="link" size={13}/>Vincular cotización
+                </button>
+                {linkDropOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setLinkDropOpen(false)}/>
+                    <div className="absolute bottom-full mb-1 left-0 z-20 w-72 bg-white border border-line rounded-xl shadow-pop overflow-hidden">
+                      <div className="p-2 border-b border-line">
+                        <input autoFocus className="inp w-full text-xs" placeholder="Buscar por código…"
+                          value={linkSearch} onChange={e => setLinkSearch(e.target.value)}/>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto scroll-thin">
+                        {quotes.filter(x =>
+                          x.id !== q.id &&
+                          !x.linkedQuoteId &&
+                          (!linkSearch || x.code.toLowerCase().includes(linkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(linkSearch.toLowerCase()))
+                        ).slice(0,15).map(x => (
+                          <button key={x.id} disabled={linkSaving}
+                            className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0 flex items-center gap-2"
+                            onClick={() => handleLinkQuote(x.id)}>
+                            <span className="mono text-[12px] font-semibold text-ink-900">{x.code}</span>
+                            <Badge tone={x.mailType==='SOLICITUD'?'sky':x.mailType==='PRESUPUESTO'?'blue':'gray'} className="text-[10px]">
+                              {x.mailType||'MANUAL'}
+                            </Badge>
+                            <span className="text-[11px] text-ink-500 truncate">{x.clientName||'sin cliente'}</span>
+                          </button>
+                        ))}
+                        {quotes.filter(x => x.id !== q.id && !x.linkedQuoteId && (!linkSearch || x.code.toLowerCase().includes(linkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(linkSearch.toLowerCase()))).length === 0 && (
+                          <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin resultados</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex-1"/>
-          <button className="btn-ghost text-bad border-red-200 hover:bg-red-50">Marcar rechazada</button>
-          <button className="btn-accent"><Icon name="check" size={14}/>Marcar aceptada</button>
+          <button className="btn-ghost text-bad border-red-200 hover:bg-red-50" onClick={() => setRejectPending(true)}>
+            Marcar rechazada
+          </button>
+          <button className="btn-accent" onClick={() => handleQuoteStage('enviado')}>
+            <Icon name="check" size={14}/>Marcar aceptada
+          </button>
         </>
       }
     >
@@ -430,6 +530,37 @@ function QuoteDetail({ code, onClose, canReassign }) {
           )}
         </div>
       )}
+
+      {/* ── Bloque de vinculación SOLICITUD ↔ PRESUPUESTO ── */}
+      {(() => {
+        const linked = linkedQuotes.linkedQuote || linkedQuotes.linkedBy?.[0];
+        if (!linked) return null;
+        const isSol  = linked.mailType === 'SOLICITUD' || !linked.mailType;
+        const isPres = linked.mailType === 'PRESUPUESTO';
+        return (
+          <div className="mx-6 mb-4 px-4 py-3 bg-white border border-line rounded-xl flex items-center gap-3">
+            <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', isSol ? 'bg-sky-50 text-sky-600' : 'bg-blue-50 text-blue-600')}>
+              <Icon name={isSol ? 'inbox' : 'file-text'} size={15}/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-0.5">
+                {isSol ? 'Solicitud origen' : 'Presupuesto vinculado'}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="mono text-[13px] font-semibold text-ink-900">{linked.code}</span>
+                <Badge tone={isSol ? 'sky' : 'blue'}>{linked.mailType || 'MANUAL'}</Badge>
+                {linked.flexxusCode && <Badge tone="slate"><span className="mono">{linked.flexxusCode}</span></Badge>}
+                {linked.stage && <StageDot tone={STAGES_F1.find(s=>s.id===linked.stage)?.tone||'gray'}/>}
+                <span className="text-[11.5px] text-ink-500">{linked.stage}</span>
+              </div>
+            </div>
+            <button className="btn-ghost text-[12px] py-1 px-2.5 shrink-0"
+              onClick={() => openModal('quoteDetail', { code: linked.code })}>
+              Ver <Icon name="arrow-right" size={11}/>
+            </button>
+          </div>
+        );
+      })()}
 
       {(() => {
         const nonImageAdj = detailAttachments.filter(a => !a.mimeType?.startsWith('image/'));
@@ -704,7 +835,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
             </div>
           ))}
           <div className="bg-white border border-line rounded-xl p-3">
-            <textarea rows="3" value={newNote} onChange={e=>setNewNote(e.target.value)}
+            <textarea ref={noteInputRef} rows="3" value={newNote} onChange={e=>setNewNote(e.target.value)}
               className="w-full outline-none text-[13px] placeholder:text-ink-400 resize-none" placeholder="Escribir una nota para el equipo…"/>
             <div className="flex items-center justify-between pt-2 border-t border-line">
               <div className="flex gap-1.5 text-ink-500">

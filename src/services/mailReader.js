@@ -259,6 +259,32 @@ async function processEmail(mailData, imap) {
       },
     });
 
+    // ── Auto-vincular PRESUPUESTO con SOLICITUD existente ────────────────
+    if (mailType === 'PRESUPUESTO' && client) {
+      try {
+        const solicitudes = await prisma.quote.findMany({
+          where: {
+            clientId:      client.id,
+            mailType:      'SOLICITUD',
+            linkedQuoteId: null,          // sin vincular aún
+            stage:         { notIn: ['rechazada', 'aceptada'] },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (solicitudes.length === 1) {
+          // Vínculo automático: exactamente una solicitud abierta
+          await prisma.quote.update({ where: { id: quote.id },          data: { linkedQuoteId: solicitudes[0].id } });
+          await prisma.quote.update({ where: { id: solicitudes[0].id }, data: { linkedQuoteId: quote.id } });
+          console.log(`   🔗 Auto-vinculado con ${solicitudes[0].code}`);
+        } else if (solicitudes.length > 1) {
+          console.log(`   ⚠️  ${solicitudes.length} solicitudes abiertas — vínculo manual requerido`);
+        }
+      } catch (e) {
+        console.error('   ❌ Error al auto-vincular:', e.message);
+      }
+    }
+
     // ── Crear ítems del presupuesto Flexxus ───────────────────────────────
     if (flexxusData?.items?.length) {
       try {

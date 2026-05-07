@@ -25,6 +25,7 @@ router.get('/', authMiddleware, async (req, res) => {
       include: {
         client: { select: { id: true, code: true, name: true, city: true, province: true, zone: true } },
         seller: { select: { id: true, name: true, email: true, zone: true } },
+        linkedQuote: { select: { id: true, code: true, mailType: true, stage: true, flexxusCode: true } },
         _count: { select: { notes: true, attachments: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -54,6 +55,11 @@ router.get('/', authMiddleware, async (req, res) => {
       mailType: q.mailType || null,
       followUpDate: q.followUpDate?.toISOString() || null,
       rejectReason: q.rejectReason,
+      linkedQuoteId:   q.linkedQuoteId || null,
+      linkedQuoteCode: q.linkedQuote?.code || null,
+      linkedQuoteType: q.linkedQuote?.mailType || null,
+      linkedQuoteStage: q.linkedQuote?.stage || null,
+      linkedQuoteFlexxus: q.linkedQuote?.flexxusCode || null,
     }));
 
     res.json(formatted);
@@ -213,6 +219,8 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
         attachments: { orderBy: { createdAt: 'desc' } },
         activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' } },
         items: { orderBy: { sortOrder: 'asc' } },
+        linkedQuote: { select: { id: true, code: true, mailType: true, stage: true, flexxusCode: true, createdAt: true, emailSubject: true, amount: true } },
+        linkedBy:    { select: { id: true, code: true, mailType: true, stage: true, flexxusCode: true, createdAt: true, emailSubject: true, amount: true }, take: 5 },
       },
     });
     if (!quote) return res.status(404).json({ error: 'No encontrada' });
@@ -330,6 +338,48 @@ router.patch('/:id/client', authMiddleware, async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error('Error assigning client:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/quotes/:id/link — vincular SOLICITUD ↔ PRESUPUESTO
+// body: { linkedQuoteId } — o null para desvincular
+router.patch('/:id/link', authMiddleware, async (req, res) => {
+  try {
+    const { linkedQuoteId } = req.body;
+
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
+    if (!quote) return res.status(404).json({ error: 'Cotización no encontrada' });
+
+    let target = null;
+    if (linkedQuoteId) {
+      target = await prisma.quote.findUnique({ where: { id: linkedQuoteId } });
+      if (!target) return res.status(404).json({ error: 'Cotización destino no encontrada' });
+    }
+
+    // Actualizar vínculo en ambas cotizaciones
+    await prisma.quote.update({
+      where: { id: req.params.id },
+      data: { linkedQuoteId: linkedQuoteId || null },
+    });
+    if (target) {
+      await prisma.quote.update({
+        where: { id: target.id },
+        data: { linkedQuoteId: req.params.id },
+      });
+    }
+
+    // Log actividad
+    const detail = target
+      ? `Vinculada con ${target.code} (${target.mailType || target.source})`
+      : 'Vínculo eliminado';
+    await prisma.activity.create({
+      data: { action: 'LINKED', detail, userId: req.user.id, quoteId: req.params.id },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error linking quotes:', err);
     res.status(500).json({ error: err.message });
   }
 });

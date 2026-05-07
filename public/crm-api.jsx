@@ -64,6 +64,9 @@ const CrmApi = {
   updateQuoteItem: (quoteId, itemId, data) => apiFetch(`/quotes/${quoteId}/items/${itemId}`, {
     method: 'PATCH', body: JSON.stringify(data)
   }),
+  linkQuote: (id, linkedQuoteId) => apiFetch(`/quotes/${id}/link`, {
+    method: 'PATCH', body: JSON.stringify({ linkedQuoteId })
+  }),
 
   // Orders
   getOrders: () => apiFetch('/orders'),

@@ -111,6 +111,9 @@ model Quote {
   emailBody      String?   @db.Text         // Cuerpo del mail
   mailType       String?                    // SOLICITUD | PRESUPUESTO | OC
   followUpDate   DateTime?                  // Alerta a los 4 días del paso 2
+  linkedQuoteId  String?                    // Vinculación SOLICITUD ↔ PRESUPUESTO
+  linkedQuote    Quote?    @relation("QuoteLink", fields: [linkedQuoteId], references: [id])
+  linkedBy       Quote[]   @relation("QuoteLink")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
