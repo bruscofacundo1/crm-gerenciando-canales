@@ -428,13 +428,22 @@ async function processEmail(mailData, imap) {
     }
 
     // 3. Dominio del remitente vs Client.emailDomain
+    // Solo aplica para dominios corporativos — ignorar proveedores de mail gratuitos
+    const FREE_DOMAINS = new Set([
+      'gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'yahoo.com.ar',
+      'live.com', 'icloud.com', 'protonmail.com', 'aol.com', 'zoho.com',
+    ]);
     if (!client && originalSender.includes('@')) {
-      const domain = originalSender.split('@')[1];
-      client = await prisma.client.findFirst({
-        where: { emailDomain: { equals: domain, mode: 'insensitive' } },
-        include: { defaultSeller: true },
-      });
-      if (client) console.log(`   ✅ Match dominio @${domain}: ${client.name}`);
+      const domain = originalSender.split('@')[1]?.toLowerCase();
+      if (domain && !FREE_DOMAINS.has(domain)) {
+        client = await prisma.client.findFirst({
+          where: { emailDomain: { equals: domain, mode: 'insensitive' } },
+          include: { defaultSeller: true },
+        });
+        if (client) console.log(`   ✅ Match dominio @${domain}: ${client.name}`);
+      } else if (domain && FREE_DOMAINS.has(domain)) {
+        console.log(`   ⚠️  Dominio genérico @${domain} ignorado para matcheo`);
+      }
     }
 
     if (!client) console.log(`   ⚠️  Sin match de cliente para ${originalSender}`);
