@@ -210,10 +210,10 @@ async function syncAccount(account) {
         const inboxSince = new Date();
         inboxSince.setDate(inboxSince.getDate() - lookbackDays);
 
-        // Fuente 1: etiqueta CRM — últimos N días (dedup por messageId)
-        const labelMails = await fetchRawFromFolder(imap, CRM_LABEL, [['SINCE', inboxSince]], false);
+        // Fuente 1: etiqueta CRM — TODOS (la etiqueta ya es filtro fuerte, dedup por messageId)
+        const labelMails = await fetchRawFromFolder(imap, CRM_LABEL, ['ALL'], false);
 
-        // Fuente 2: All Mail con "crm" en asunto — últimos N días
+        // Fuente 2: All Mail con "crm" en asunto — últimos N días (acotado para no traer miles)
         const subjectMails = await fetchRawFromFolder(imap, GMAIL_ALL, [['SINCE', inboxSince], ['SUBJECT', 'crm']], true);
 
         // Fuente 3: Enviados — últimos N días (dedup por messageId, filtramos Flexxus en processEmail)
