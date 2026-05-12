@@ -614,14 +614,31 @@ async function processEmail(mailData, imap) {
       return await processSentMail(parsed, mailData, imap);
     }
 
+    // ── Ignorar mails de cuentas propias en entrantes ─────────────────────
+    // Las respuestas del vendedor quedan en la carpeta crm (hilo) pero deben
+    // procesarse desde Enviados como PRESUPUESTO, no como SOLICITUD entrante.
+    if (isOwnAddress(directFrom)) {
+      console.log(`   ⏭️  Ignorado en entrantes (cuenta propia): ${directFrom}`);
+      return null;
+    }
+
     const date        = parsed.date || new Date();
     const messageId   = parsed.messageId || `uid-${mailData.uid}`;
-
-    // Header de threading: apunta al mail al que se responde
-    const inReplyTo = parsed.inReplyTo
+    const inReplyTo   = parsed.inReplyTo
       ? parsed.inReplyTo.replace(/[<>]/g, '').trim()
       : null;
 
+    // ── Ignorar respuestas de cliente a un PRESUPUESTO existente ──────────
+    // Si el cliente responde al hilo del presupuesto, no es una nueva solicitud.
+    if (inReplyTo) {
+      const replyTarget = await prisma.quote.findFirst({
+        where: { emailMessageId: inReplyTo, mailType: { in: ['PRESUPUESTO', 'OC'] } },
+      });
+      if (replyTarget) {
+        console.log(`   ⏭️  Ignorado: respuesta del cliente al ${replyTarget.mailType} ${replyTarget.code}`);
+        return null;
+      }
+    }
     // ── Extraer texto del cuerpo (múltiples estrategias) ─────────────────
     let bodyText = parsed.text
       || (parsed.html ? stripHtml(parsed.html) : '');
