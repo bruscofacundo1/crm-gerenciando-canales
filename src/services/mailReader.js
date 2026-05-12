@@ -231,15 +231,15 @@ async function syncAccount(account) {
 
         console.log(`📧 [${tag}] Total: ${allMails.length} (label: ${labelMails.length}, asunto: ${subjectMails.length}, enviados: ${sentMails.length})`);
 
-        const processed = await Promise.allSettled(allMails.map(m => processEmail(m, imap)));
-        processed.forEach(p => {
-          if (p.status === 'fulfilled' && p.value) {
-            results.synced++;
-            results.mails.push(p.value);
-          } else if (p.status === 'rejected') {
-            results.errors.push(p.reason?.message || 'Unknown error');
+        // Procesar secuencialmente para evitar race condition en nextCode()
+        for (const m of allMails) {
+          try {
+            const result = await processEmail(m, imap);
+            if (result) { results.synced++; results.mails.push(result); }
+          } catch (err) {
+            results.errors.push(err.message || 'Unknown error');
           }
-        });
+        }
       } catch (err) {
         results.errors.push(`[${tag}] Sync error: ${err.message}`);
       }
