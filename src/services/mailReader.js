@@ -16,6 +16,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 const CRM_SUBJECT_PREFIXES = ['[crm]', 'crm:', 'crm -', '#crm', 'crm '];
 const CRM_LABEL = process.env.MAIL_CRM_LABEL || 'crm';
 
+// ─── Carpeta Enviados y ventana de búsqueda ───────────────────────────────────
+const GMAIL_SENT        = process.env.MAIL_SENT_FOLDER       || '[Gmail]/Sent Mail';
+const SENT_LOOKBACK_DAYS = parseInt(process.env.MAIL_SENT_LOOKBACK_DAYS || '30');
+
 function hasCrmSubject(subject) {
   const s = (subject || '').toLowerCase().trim();
   return CRM_SUBJECT_PREFIXES.some(p => s.startsWith(p));
@@ -136,11 +140,12 @@ async function nextCode(model, prefix) {
 }
 
 /**
- * Abre una carpeta IMAP y devuelve los emails UNSEEN como array de {uid, raw, requiresPrefixCheck}.
+ * Abre una carpeta IMAP y devuelve emails como array de {uid, raw, requiresPrefixCheck, isSent}.
  * requiresPrefixCheck=false → vino del label CRM (no necesita verificar prefijo)
  * requiresPrefixCheck=true  → vino de All Mail por subject (hay que verificar prefijo exacto)
+ * isSent=true               → vino de Enviados (usar To: para cliente, solo PRESUPUESTO)
  */
-function fetchRawFromFolder(imap, folder, searchCriteria, requiresPrefixCheck) {
+function fetchRawFromFolder(imap, folder, searchCriteria, requiresPrefixCheck, isSent = false) {
   return new Promise((resolve) => {
     imap.openBox(folder, false, (err) => {
       if (err) {
@@ -154,7 +159,7 @@ function fetchRawFromFolder(imap, folder, searchCriteria, requiresPrefixCheck) {
         const fetch = imap.fetch(uids, { bodies: '', markSeen: false });
         fetch.on('message', (msg) => {
           const chunks = [];
-          const mailData = { uid: null, requiresPrefixCheck };
+          const mailData = { uid: null, requiresPrefixCheck, isSent };
           msg.on('attributes', (attrs) => { mailData.uid = attrs.uid; });
           msg.on('body', (stream) => {
             stream.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
@@ -203,8 +208,13 @@ async function syncMails() {
         // Fuente 2: All Mail con "crm" en asunto (pre-filtro amplio, verificamos prefijo exacto en processEmail)
         const subjectMails = await fetchRawFromFolder(imap, GMAIL_ALL, ['UNSEEN', ['SUBJECT', 'crm']], true);
 
-        // Si All Mail falla, intentar INBOX
-        const allMails = [...labelMails, ...subjectMails];
+        // Fuente 3: Enviados — últimos N días (mails ya vistos, usamos dedup por messageId)
+        // Solo nos interesan los que tengan PDF Flexxus → se filtra en processEmail
+        const sinceDate = new Date();
+        sinceDate.setDate(sinceDate.getDate() - SENT_LOOKBACK_DAYS);
+        const sentMails = await fetchRawFromFolder(imap, GMAIL_SENT, ['SINCE', sinceDate], false, true);
+
+        const allMails = [...labelMails, ...subjectMails, ...sentMails];
 
         if (allMails.length === 0) {
           console.log('📧 No hay emails CRM nuevos');
@@ -212,7 +222,7 @@ async function syncMails() {
           return resolve(results);
         }
 
-        console.log(`📧 Total a procesar: ${allMails.length} (label: ${labelMails.length}, asunto: ${subjectMails.length})`);
+        console.log(`📧 Total a procesar: ${allMails.length} (label: ${labelMails.length}, asunto: ${subjectMails.length}, enviados: ${sentMails.length})`);
 
         const processed = await Promise.allSettled(allMails.map(m => processEmail(m, imap)));
         processed.forEach(p => {
@@ -241,6 +251,291 @@ async function syncMails() {
   });
 }
 
+/**
+ * Procesa un mail de la carpeta Enviados para detectar PRESUPUESTO con PDF Flexxus.
+ * Diferencias clave vs. mail entrante:
+ *  - From: = cuenta propia del vendedor → usar para sellerId
+ *  - To:   = cliente → usar para matcheo de cliente
+ *  - mailType siempre = 'PRESUPUESTO'
+ *  - Si no tiene PDF Flexxus → ignorar silenciosamente
+ *  - Si asunto empieza con "presupuesto" → log informativo (no bloquea)
+ */
+async function processSentMail(parsed, mailData, imap) {
+  const subject    = parsed.subject || '(sin asunto)';
+  const date       = parsed.date    || new Date();
+  const messageId  = parsed.messageId || `uid-${mailData.uid}`;
+  const fromAddr   = parsed.from?.value?.[0]?.address?.toLowerCase()?.trim() || '';
+  const toAddr     = parsed.to?.value?.[0]?.address?.toLowerCase()?.trim()   || '';
+  const inReplyTo  = parsed.inReplyTo ? parsed.inReplyTo.replace(/[<>]/g, '').trim() : null;
+
+  // Log informativo: asunto "presupuesto" (opcional, no filtra)
+  const hasPrestupuestoSubject = (subject || '').toLowerCase().trim().startsWith('presupuesto');
+  if (hasPrestupuestoSubject) {
+    console.log(`   📋 Asunto con prefijo "Presupuesto" detectado: "${subject}"`);
+  }
+
+  // Filtrar adjuntos y buscar Flexxus — si no hay, ignorar
+  const realAttachments = (parsed.attachments || []).filter(a => !isImageAttachment(a));
+  const flexxusAtt = realAttachments.find(a => isFlexxusPDF(a));
+  if (!flexxusAtt) {
+    // Mail enviado sin PDF Flexxus → no es un presupuesto para nosotros
+    return null;
+  }
+
+  console.log(`   📤 Enviado a: ${toAddr} | Asunto: "${subject}"`);
+
+  // Chequeo de duplicado por messageId
+  const existing = await prisma.quote.findFirst({
+    where: { emailMessageId: messageId },
+    include: { _count: { select: { items: true } } },
+  });
+  if (existing) {
+    // Intentar recuperar ítems si faltaban
+    if (existing.mailType === 'PRESUPUESTO' && existing._count.items === 0) {
+      try {
+        const fd = await parseFlexxusPDF(flexxusAtt.content);
+        if (fd?.items?.length) {
+          await prisma.quoteItem.createMany({
+            data: fd.items.map((item, i) => ({
+              quoteId:     existing.id,
+              sku:         item.sku || null,
+              description: (item.description || '').substring(0, 500),
+              quantity:    item.quantity || 0,
+              unit:        item.unit || null,
+              unitPrice:   item.unitPrice || null,
+              total:       item.total || null,
+              accepted:    item.accepted !== false,
+              sortOrder:   i,
+            })),
+          });
+          const total = fd.items.filter(i => i.accepted !== false).reduce((s, i) => s + (i.total || 0), 0);
+          if (total > 0) await prisma.quote.update({ where: { id: existing.id }, data: { amount: total } });
+          console.log(`   📋 ${fd.items.length} ítems recuperados para ${existing.code} (enviado)`);
+        }
+      } catch (e) {
+        console.error(`   ❌ Error recuperando ítems (enviado) ${existing.code}:`, e.message);
+      }
+    }
+    console.log(`   ⏭️  Ya existente (enviado): ${existing.code}`);
+    return null;
+  }
+
+  // Parsear PDF Flexxus
+  let flexxusData = null;
+  try {
+    flexxusData = await parseFlexxusPDF(flexxusAtt.content);
+    console.log(`   📄 Flexxus (enviado): ${flexxusData.npCode} | CUIT: ${flexxusData.cuit} | ${flexxusData.clientName}`);
+  } catch (e) {
+    console.error('   ❌ Error parseando PDF Flexxus (enviado):', e.message);
+    return null;
+  }
+
+  // ── Matcheo de cliente (From: del PDF → To: del mail) ────────────────────
+  const FREE_DOMAINS = new Set([
+    'gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'yahoo.com.ar',
+    'live.com', 'icloud.com', 'protonmail.com', 'aol.com', 'zoho.com',
+  ]);
+
+  let client = null;
+
+  // 1. CUIT del PDF (más confiable)
+  if (flexxusData?.cuit) {
+    client = await prisma.client.findFirst({
+      where: { cuit: { equals: flexxusData.cuit, mode: 'insensitive' } },
+      include: { defaultSeller: true },
+    });
+    if (client) console.log(`   ✅ Match CUIT Flexxus (enviado): ${client.name}`);
+  }
+
+  // 2. Nombre del PDF
+  if (!client && flexxusData?.clientName) {
+    client = await prisma.client.findFirst({
+      where: { name: { contains: flexxusData.clientName.substring(0, 20), mode: 'insensitive' } },
+      include: { defaultSeller: true },
+    });
+    if (client) console.log(`   ✅ Match nombre Flexxus (enviado): ${client.name}`);
+  }
+
+  // 3. Email exacto del To:
+  if (!client && toAddr) {
+    client = await prisma.client.findFirst({
+      where: { email: { equals: toAddr, mode: 'insensitive' } },
+      include: { defaultSeller: true },
+    });
+    if (client) console.log(`   ✅ Match Client.email (To:): ${client.name}`);
+  }
+
+  // 4. Dominio corporativo del To:
+  if (!client && toAddr.includes('@')) {
+    const domain = toAddr.split('@')[1]?.toLowerCase();
+    if (domain && !FREE_DOMAINS.has(domain)) {
+      client = await prisma.client.findFirst({
+        where: { emailDomain: { equals: domain, mode: 'insensitive' } },
+        include: { defaultSeller: true },
+      });
+      if (client) console.log(`   ✅ Match dominio To: @${domain}: ${client.name}`);
+    }
+  }
+
+  if (!client) console.log(`   ⚠️  Sin match de cliente para To: ${toAddr}`);
+
+  // ── Determinar vendedor: buscar usuario por dirección From: ───────────────
+  let sellerId = client?.defaultSellerId || null;
+  if (fromAddr) {
+    try {
+      const vendedor = await prisma.user.findFirst({ where: { email: { equals: fromAddr, mode: 'insensitive' } } });
+      if (vendedor) {
+        sellerId = vendedor.id;
+        console.log(`   👤 Vendedor detectado por From:: ${vendedor.name}`);
+      }
+    } catch (_) {}
+  }
+
+  // ── Crear Quote ───────────────────────────────────────────────────────────
+  const code = await nextCode(prisma.quote, 'COT-2026');
+  const flexxusTotal = flexxusData?.items?.length
+    ? flexxusData.items.filter(i => i.accepted !== false).reduce((s, i) => s + (i.total || 0), 0)
+    : null;
+
+  const bodyText = parsed.text || (parsed.html ? stripHtml(parsed.html) : '');
+
+  const quote = await prisma.quote.create({
+    data: {
+      code,
+      clientId:       client?.id || null,
+      sellerId:       sellerId,
+      stage:          'enviado',
+      source:         'EMAIL',
+      mailType:       'PRESUPUESTO',
+      flexxusCode:    flexxusData?.npCode || null,
+      amount:         flexxusTotal || null,
+      emailSubject:   subject.substring(0, 500),
+      emailMessageId: messageId,
+      emailFrom:      fromAddr,
+      emailBody:      bodyText.substring(0, 20000),
+      inReplyTo:      inReplyTo,
+      createdAt:      date,
+    },
+  });
+
+  // ── Auto-vincular con SOLICITUD existente ─────────────────────────────────
+  try {
+    let solicitudTarget = null;
+
+    // 1. Por hilo de email (In-Reply-To → el mail del cliente = la SOLICITUD)
+    if (inReplyTo) {
+      solicitudTarget = await prisma.quote.findFirst({
+        where: { emailMessageId: inReplyTo, mailType: 'SOLICITUD', linkedQuoteId: null },
+      });
+      if (solicitudTarget) console.log(`   🔗 Hilo email → SOLICITUD: ${solicitudTarget.code}`);
+    }
+
+    // 2. Fallback: cliente con SOLICITUD abierta (últimos 90 días)
+    if (!solicitudTarget && client) {
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+      const candidatas = await prisma.quote.findMany({
+        where: {
+          clientId:      client.id,
+          mailType:      'SOLICITUD',
+          linkedQuoteId: null,
+          stage:         { notIn: ['rechazada', 'aceptada'] },
+          createdAt:     { gte: cutoff },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (candidatas.length === 1) {
+        solicitudTarget = candidatas[0];
+        console.log(`   🔗 Match por cliente único → SOLICITUD: ${solicitudTarget.code}`);
+      } else if (candidatas.length > 1) {
+        console.log(`   ⚠️  ${candidatas.length} solicitudes abiertas del cliente — vínculo manual requerido`);
+      }
+    }
+
+    if (solicitudTarget) {
+      const npCode = flexxusData?.npCode || null;
+      await prisma.quote.update({
+        where: { id: quote.id },
+        data:  { linkedQuoteId: solicitudTarget.id },
+      });
+      await prisma.quote.update({
+        where: { id: solicitudTarget.id },
+        data:  { linkedQuoteId: quote.id, ...(npCode ? { flexxusCode: npCode } : {}) },
+      });
+      console.log(`   🔗 Vinculado ${quote.code} ↔ ${solicitudTarget.code}${npCode ? ` | NP: ${npCode}` : ''}`);
+    }
+  } catch (e) {
+    console.error('   ❌ Error al auto-vincular (enviado):', e.message);
+  }
+
+  // ── Crear ítems Flexxus ───────────────────────────────────────────────────
+  if (flexxusData?.items?.length) {
+    try {
+      await prisma.quoteItem.createMany({
+        data: flexxusData.items.map((item, i) => ({
+          quoteId:     quote.id,
+          sku:         item.sku || null,
+          description: (item.description || '').substring(0, 500),
+          quantity:    item.quantity || 0,
+          unit:        item.unit || null,
+          unitPrice:   item.unitPrice || null,
+          total:       item.total || null,
+          accepted:    item.accepted !== false,
+          sortOrder:   i,
+        })),
+      });
+      console.log(`   📋 ${flexxusData.items.length} ítems creados para ${code} (enviado)`);
+    } catch (e) {
+      console.error('   ❌ Error creando ítems (enviado):', e.message);
+    }
+  }
+
+  // ── Guardar adjuntos reales ───────────────────────────────────────────────
+  for (const att of realAttachments) {
+    try {
+      const rawName = att.filename || att.name || `adjunto-${Date.now()}`;
+      const safeName = `${quote.id}-${rawName.replace(/[^a-zA-Z0-9._\-]/g, '_')}`;
+      const filePath = path.join(UPLOADS_DIR, safeName);
+      fs.writeFileSync(filePath, att.content);
+      await prisma.attachment.create({
+        data: {
+          filename: safeName,
+          path:     filePath,
+          size:     att.size || att.content?.length || null,
+          mimeType: att.contentType || null,
+          quoteId:  quote.id,
+        },
+      });
+      console.log(`   📎 Adjunto guardado (enviado): ${safeName}`);
+    } catch (e) {
+      console.error(`   ❌ Error guardando adjunto (enviado) ${att.filename}:`, e.message);
+    }
+  }
+
+  // ── Actividad ─────────────────────────────────────────────────────────────
+  const actDetail = client
+    ? `Presupuesto ${code} [${flexxusData.npCode}] enviado a ${client.name} — capturado desde Enviados`
+    : `Presupuesto ${code} [${flexxusData.npCode}] capturado desde Enviados — cliente sin asignar (To: ${toAddr})`;
+
+  await prisma.activity.create({
+    data: { action: 'CREATED', detail: actDetail, quoteId: quote.id },
+  });
+
+  console.log(`   ✅ Creada ${code} (enviado) → ${client?.name || 'sin cliente'} | To: ${toAddr}`);
+
+  return {
+    code:        quote.code,
+    from:        fromAddr,
+    to:          toAddr,
+    subject,
+    mailType:    'PRESUPUESTO',
+    flexxusCode: flexxusData?.npCode || null,
+    clientName:  client?.name || null,
+    sellerName:  client?.defaultSeller?.name || null,
+    itemCount:   flexxusData?.items?.length || 0,
+    date:        date.toISOString(),
+  };
+}
+
 async function processEmail(mailData, imap) {
   try {
     const parsed = await simpleParser(mailData.raw);
@@ -251,8 +546,14 @@ async function processEmail(mailData, imap) {
     // ── Filtro CRM: si vino de All Mail por subject, verificar prefijo exacto ──
     if (mailData.requiresPrefixCheck && !hasCrmSubject(subject)) {
       console.log(`   ⏭️  Ignorado (no tiene prefijo CRM): "${subject}"`);
-      return null; // No marcar como leído
+      return null;
     }
+
+    // ── Mail ENVIADO: lógica especial para PRESUPUESTO desde Sent Mail ───────
+    if (mailData.isSent) {
+      return await processSentMail(parsed, mailData, imap);
+    }
+
     const date        = parsed.date || new Date();
     const messageId   = parsed.messageId || `uid-${mailData.uid}`;
 
