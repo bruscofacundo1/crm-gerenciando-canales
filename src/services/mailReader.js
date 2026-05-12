@@ -209,7 +209,7 @@ async function syncAccount(account) {
         // Fuente 3: Enviados — últimos N días (dedup por messageId, filtramos Flexxus en processEmail)
         const sinceDate = new Date();
         sinceDate.setDate(sinceDate.getDate() - SENT_LOOKBACK_DAYS);
-        const sentMails = await fetchRawFromFolder(imap, GMAIL_SENT, ['SINCE', sinceDate], false, true);
+        const sentMails = await fetchRawFromFolder(imap, GMAIL_SENT, [['SINCE', sinceDate]], false, true);
 
         const allMails = [...labelMails, ...subjectMails, ...sentMails];
 
