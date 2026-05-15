@@ -98,6 +98,7 @@ function App() {
           {screen === 'my-orders'  && <MySalesView user={user} initialTab="orders" onOpen={openDetail}/>}
           {screen === 'ops'        && <LogisticsView onOpen={(c)=>openDetail(c,'order')}/>}
           {screen === 'clients'    && <Clients readonly={roleKey!=='admin'}/>}
+          {screen === 'articles'   && <Articles/>}
           {screen === 'team'       && <Team/>}
           {screen === 'config'     && <Config/>}
         </main>
@@ -252,6 +253,7 @@ function Sidebar({ role, screen, setScreen }) {
     { id:'quotes',    label:'Cotizaciones',          icon:'clipboard-list', sub:'Fase 1' },
     { id:'orders',    label:'Órdenes de Compra',     icon:'package',        sub:'Fase 2' },
     { id:'clients',   label:'Clientes',              icon:'building-2' },
+    { id:'articles',  label:'Artículos',             icon:'box',        sub:'Catálogo' },
     { id:'team',      label:'Equipo',                icon:'users' },
     { id:'config',    label:'Configuración',         icon:'settings' },
   ];
@@ -261,6 +263,7 @@ function Sidebar({ role, screen, setScreen }) {
     { id:'quotes',    label:'Pipeline Cotizaciones', icon:'layout',     sub:'Kanban Fase 1' },
     { id:'orders',    label:'Pipeline OCs',          icon:'columns',    sub:'Kanban Fase 2' },
     { id:'clients',   label:'Clientes',              icon:'building-2', sub:'solo lectura' },
+    { id:'articles',  label:'Artículos',             icon:'box',        sub:'Catálogo' },
   ];
   const navLog = [
     { id:'ops',       label:'Operaciones',           icon:'truck', sub:'Fase 2' },
@@ -419,32 +422,66 @@ function Dashboard() {
   const [chartSellers, setChartSellers] = useState(null);
   const [chartStages, setChartStages] = useState(null);
   const [chartMonthly, setChartMonthly] = useState(null);
+  const [chartFunnel, setChartFunnel] = useState(null);
+  const [chartRejections, setChartRejections] = useState(null);
+  const [chartsLoading, setChartsLoading] = useState(true);
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+
+  // ── Filtros del dashboard ───────────────────────────────────────────────────
+  const [filters, setFilters] = useState({ sellerId: '', from: '', to: '' });
+  const setFilter = (key, val) => setFilters(f => ({ ...f, [key]: val }));
+  const resetFilters = () => setFilters({ sellerId: '', from: '', to: '' });
+  const hasFilters = filters.sellerId || filters.from || filters.to;
 
   useEffect(() => {
+    setKpisLoading(true);
+    setAlertsLoading(true);
+    setChartsLoading(true);
+
+    // Pasada 1: KPIs + Alertas (prioritarios — aparecen primero)
     Promise.all([
-      CrmApi.getDashboard(),
-      CrmApi.getChartSellers(),
-      CrmApi.getChartStages(),
-      CrmApi.getChartMonthly(),
-    ]).then(([dash, sellers, stages, monthly]) => {
+      CrmApi.getDashboard(filters),
+      CrmApi.getAlerts({ sellerId: filters.sellerId }),
+    ]).then(([dash, alertsData]) => {
       setKpisData(dash);
+      setAlerts(alertsData || []);
+      setKpisLoading(false);
+      setAlertsLoading(false);
+    }).catch(() => { setKpisLoading(false); setAlertsLoading(false); });
+
+    // Pasada 2: Gráficos (se cargan solos con su loading state)
+    Promise.all([
+      CrmApi.getChartSellers(filters),
+      CrmApi.getChartStages(filters),
+      CrmApi.getChartMonthly({ sellerId: filters.sellerId }),
+      CrmApi.getChartFunnel(filters),
+      CrmApi.getChartRejections(filters),
+    ]).then(([sellers, stages, monthly, funnel, rejections]) => {
       setChartSellers(sellers);
       setChartStages(stages);
       setChartMonthly(monthly);
-      setKpisLoading(false);
-    }).catch(() => setKpisLoading(false));
-  }, []);
+      setChartFunnel(funnel || []);
+      setChartRejections(rejections || []);
+      setChartsLoading(false);
+    }).catch(() => setChartsLoading(false));
+  }, [filters.sellerId, filters.from, filters.to]);
 
-  const kv = (val) => kpisLoading ? '...' : (val ?? '—');
+  const kv  = (val) => kpisLoading ? '...' : (val ?? '—');
+  const kMoney = (val) => kpisLoading ? '...' : (val ? `$ ${(val / 1000).toFixed(0)}k` : '—');
 
   const kpis = [
-    { label:'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas) },
-    { label:'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
-    { label:'OC en curso',           value: kv(kpisData?.ocEnCurso) },
-    { label:'Entregas este mes',     value: kv(kpisData?.entregasEsteMes) },
-    { label:'Monto total cotizado',  value: kpisLoading ? '...' : (kpisData?.montoTotal ? `$ ${(kpisData.montoTotal/1000).toFixed(0)}k` : '—') },
-    { label:'Tasa de conversión',    value: kpisLoading ? '...' : (kpisData?.tasaConversion != null ? `${Number(kpisData.tasaConversion).toFixed(0)}%` : '—') },
+    { label: 'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas) },
+    { label: 'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
+    { label: 'OC en curso',           value: kv(kpisData?.ocEnCurso) },
+    { label: 'Entregas este mes',     value: kv(kpisData?.entregasEsteMes) },
+    { label: 'Monto cotizado',        value: kMoney(kpisData?.montoTotal), sub: 'presupuestos' },
+    { label: 'Monto confirmado',      value: kMoney(kpisData?.montoConfirmado), sub: 'notas de pedido', highlight: true },
+    { label: 'Tasa de conversión',    value: kpisLoading ? '...' : (kpisData?.tasaConversion != null ? `${Number(kpisData.tasaConversion).toFixed(0)}%` : '—') },
   ];
+
+  // ── Vendedores disponibles para el filtro ───────────────────────────────────
+  const sellerUsers = users.filter(u => ['VENDEDOR', 'ADMIN', 'Vendedor', 'Administrador'].includes(u.role));
 
   const loggedUser = CrmAuth.getUser();
   const firstName = loggedUser?.name?.split(' ')[0] || 'Usuario';
@@ -469,20 +506,121 @@ function Dashboard() {
         }
       />
       <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
-        <div className="grid grid-cols-6 gap-3">
+
+        {/* ── Filter bar ─────────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={filters.sellerId}
+            onChange={e => setFilter('sellerId', e.target.value)}
+            className="h-8 rounded-lg border border-line bg-white px-3 text-sm text-ink-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          >
+            <option value="">Todos los vendedores</option>
+            {sellerUsers.map(u => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-ink-500 font-medium">Desde</span>
+            <input
+              type="date"
+              value={filters.from}
+              onChange={e => setFilter('from', e.target.value)}
+              className="h-8 rounded-lg border border-line bg-white px-2 text-sm text-ink-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-ink-500 font-medium">Hasta</span>
+            <input
+              type="date"
+              value={filters.to}
+              onChange={e => setFilter('to', e.target.value)}
+              className="h-8 rounded-lg border border-line bg-white px-2 text-sm text-ink-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+
+          {hasFilters && (
+            <button
+              onClick={resetFilters}
+              className="h-8 px-3 rounded-lg border border-line bg-white text-xs text-ink-500 hover:text-red-500 hover:border-red-200 transition-colors flex items-center gap-1"
+            >
+              <span>✕</span> Limpiar filtros
+            </button>
+          )}
+
+          {kpisLoading && (
+            <span className="text-xs text-ink-400 italic ml-auto">Actualizando...</span>
+          )}
+        </div>
+
+        {/* ── KPI cards ──────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           {kpis.map((k,i) => (
-            <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card">
-              <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.label}</div>
-              <div className="text-2xl font-bold text-ink-900 mt-2">{k.value}</div>
+            <div key={i} className={`bg-white rounded-xl border p-4 shadow-card ${k.highlight ? 'border-blue-200 bg-blue-50' : 'border-line'}`}>
+              <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold leading-tight">{k.label}</div>
+              <div className={`text-2xl font-bold mt-2 ${k.highlight ? 'text-blue-700' : 'text-ink-900'}`}>{k.value}</div>
+              {k.sub && <div className="text-[10px] text-ink-400 mt-0.5">{k.sub}</div>}
             </div>
           ))}
         </div>
+
+        {/* ── Alertas: presupuestos enviados sin respuesta ───────────────── */}
+        {(alertsLoading || alerts.length > 0) && (
+          <div className="bg-white rounded-xl border border-amber-200 shadow-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-100 bg-amber-50">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              <div className="text-sm font-semibold text-amber-800">Presupuestos enviados sin respuesta</div>
+              {!alertsLoading && (
+                <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">
+                  {alerts.length} {alerts.length === 1 ? 'cotización' : 'cotizaciones'}
+                </span>
+              )}
+            </div>
+            {alertsLoading ? (
+              <div className="px-5 py-4 text-sm text-ink-400">Cargando...</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wider text-ink-400 border-b border-line bg-surface">
+                    <th className="text-left px-4 py-2 font-medium">Código</th>
+                    <th className="text-left px-4 py-2 font-medium">Cliente</th>
+                    <th className="text-left px-4 py-2 font-medium">Vendedor</th>
+                    <th className="text-right px-4 py-2 font-medium">Monto</th>
+                    <th className="text-right px-4 py-2 font-medium">Sin respuesta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alerts.map(a => (
+                    <tr key={a.id} className="border-b border-line last:border-0 hover:bg-surface cursor-pointer transition-colors"
+                        onClick={() => openModal('quoteDetail', { code: a.code })}>
+                      <td className="px-4 py-2.5 font-mono text-[12px] font-semibold text-blue-600">{a.code}</td>
+                      <td className="px-4 py-2.5 text-ink-800 font-medium">{a.clientName}</td>
+                      <td className="px-4 py-2.5 text-ink-500">{a.sellerName}</td>
+                      <td className="px-4 py-2.5 text-right text-ink-700 font-mono text-[13px]">
+                        {a.amount ? `$ ${(a.amount / 1000).toFixed(0)}k` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full ${a.daysWaiting >= 7 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                          {a.daysWaiting}d
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-5 bg-white rounded-xl border border-line shadow-card p-4">
             <div className="mb-2">
               <div className="text-sm font-semibold text-ink-900">Cotizaciones por vendedor</div>
-              <div className="text-xs text-ink-500">Mes corriente · cotizadas vs. ganadas</div>
+              <div className="text-xs text-ink-500">
+                {filters.from || filters.to
+                  ? `${filters.from || '—'} → ${filters.to || 'hoy'} · cotizadas vs. ganadas`
+                  : 'Período seleccionado · cotizadas vs. ganadas'}
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartSellers ?? CH_SELLERS} barCategoryGap={18}>
@@ -500,7 +638,10 @@ function Dashboard() {
           <div className="col-span-3 bg-white rounded-xl border border-line shadow-card p-4">
             <div className="mb-2">
               <div className="text-sm font-semibold text-ink-900">Distribución por etapa</div>
-              <div className="text-xs text-ink-500">{chartStages?.total ?? '...'} cotizaciones activas</div>
+              <div className="text-xs text-ink-500">
+                {chartStages?.total ?? '...'} cotizaciones
+                {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name || ''}` : ''}
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -525,7 +666,10 @@ function Dashboard() {
           <div className="col-span-4 bg-white rounded-xl border border-line shadow-card p-4">
             <div className="mb-2">
               <div className="text-sm font-semibold text-ink-900">Evolución mensual</div>
-              <div className="text-xs text-ink-500">Últimos 6 meses · recibidas vs. ganadas</div>
+              <div className="text-xs text-ink-500">
+                Últimos 6 meses · recibidas vs. ganadas
+                {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={chartMonthly ?? CH_MONTHLY}>
@@ -548,6 +692,62 @@ function Dashboard() {
                 <Area type="monotone" dataKey="ganadas"   name="Ganadas"   stroke="#10B981" strokeWidth={2} fill="url(#g2)"/>
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* ── Embudo + Motivos de rechazo ────────────────────────────────── */}
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-6 bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-ink-900">Embudo de conversión</div>
+              <div className="text-xs text-ink-500">
+                Del total recibido, cuántas llegaron a cada etapa
+                {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+              </div>
+            </div>
+            {chartsLoading ? (
+              <div className="h-[180px] flex items-center justify-center text-xs text-ink-400">Cargando...</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={chartFunnel ?? []} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
+                  <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="label" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false} width={80}/>
+                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
+                  <Bar dataKey="value" radius={[0,4,4,0]}>
+                    {(chartFunnel ?? []).map((e,i) => <Cell key={i} fill={e.color}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="col-span-6 bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-ink-900">Motivos de rechazo</div>
+              <div className="text-xs text-ink-500">
+                Por qué se perdieron cotizaciones en el período
+                {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+              </div>
+            </div>
+            {chartsLoading ? (
+              <div className="h-[180px] flex items-center justify-center text-xs text-ink-400">Cargando...</div>
+            ) : !chartRejections?.length ? (
+              <div className="h-[180px] flex items-center justify-center flex-col gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span className="text-xs text-ink-400">Sin rechazos en el período</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={chartRejections} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
+                  <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#64748B'}} axisLine={false} tickLine={false} width={100}/>
+                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
+                  <Bar dataKey="value" fill="#EF4444" radius={[0,4,4,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 

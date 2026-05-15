@@ -72,6 +72,65 @@ function TabBar({ tabs, active, onChange }) {
   );
 }
 
+// ── Autocomplete de artículos por código/descripción ─────────────────────
+function ArticleSearchInput({ value, onChange, onSelect, placeholder = 'SKU', autoFocus = false }) {
+  const [results, setResults] = useState([]);
+  const [open, setOpen]       = useState(false);
+  const debounceRef           = useRef(null);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    onChange(val);
+    clearTimeout(debounceRef.current);
+    if (val.length >= 2) {
+      debounceRef.current = setTimeout(() => {
+        CrmApi.searchArticles(val)
+          .then(r => { setResults(r); setOpen(r.length > 0); })
+          .catch(() => {});
+      }, 200);
+    } else {
+      setResults([]); setOpen(false);
+    }
+  };
+
+  const pick = (a) => {
+    onSelect(a);
+    setResults([]); setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <input
+        autoFocus={autoFocus}
+        className="inp text-xs py-0.5 w-full"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onFocus={() => { if (results.length > 0) setOpen(true); }}
+      />
+      {open && (
+        <div className="absolute top-full left-0 z-50 mt-1 w-[400px] bg-white border border-line rounded-xl shadow-pop max-h-56 overflow-y-auto scroll-thin">
+          {results.map(a => (
+            <button
+              key={a.code}
+              type="button"
+              onMouseDown={() => pick(a)}
+              className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-0 flex flex-col"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] mono font-semibold text-blue-600">{a.code}</span>
+                {a.category && <span className="text-[10px] text-ink-400 truncate">{a.category}</span>}
+              </div>
+              <div className="text-[12px] text-ink-700 leading-snug line-clamp-1">{a.description}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tab Ítems completo (PRESUPUESTO: vista, OC: checklist editable) ──────
 function OCItemsTab({ q, detailItems, setDetailItems }) {
   const { pushToast } = useApp();
@@ -84,6 +143,20 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
   // Estado para nueva fila
   const [addingNew, setAddingNew] = useState(false);
   const [newItem, setNewItem] = useState({ sku: '', description: '', quantity: 1, unitPrice: '' });
+
+  // Verificación de SKUs contra el catálogo de artículos
+  const [verifiedCodes, setVerifiedCodes] = useState({}); // { [sku]: true|false }
+  useEffect(() => {
+    const skus = [...new Set(detailItems.map(i => i.sku).filter(Boolean))];
+    if (!skus.length) return;
+    Promise.all(skus.map(sku =>
+      CrmApi.getArticleByCode(sku)
+        .then(() => [sku, true])
+        .catch(() => [sku, false])
+    )).then(results => {
+      setVerifiedCodes(Object.fromEntries(results));
+    });
+  }, [detailItems.length]);
 
   const toggleChecked = async (it) => {
     const newVal = !it.checked;
@@ -190,8 +263,13 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
               return (
                 <tr key={it.id} className="bg-sky-50">
                   {isOC && <td className="!px-2"><input type="checkbox" checked={it.checked} readOnly className="opacity-40"/></td>}
-                  <td><input className="inp text-xs py-0.5 w-full" value={editVal.sku}
-                    onChange={e => setEditVal(v => ({...v, sku: e.target.value}))}/></td>
+                  <td>
+                    <ArticleSearchInput
+                      value={editVal.sku}
+                      onChange={val => setEditVal(v => ({...v, sku: val}))}
+                      onSelect={a => setEditVal(v => ({...v, sku: a.code, description: a.description}))}
+                    />
+                  </td>
                   <td><input className="inp text-xs py-0.5 w-full" value={editVal.description}
                     onChange={e => setEditVal(v => ({...v, description: e.target.value}))}/></td>
                   <td><input type="number" className="inp text-xs py-0.5 w-full text-right" value={editVal.quantity}
@@ -226,7 +304,13 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
                       onChange={() => toggleChecked(it)}/>
                   </td>
                 )}
-                <td className={cx('mono text-[12px]', unchecked && 'line-through')}>{it.sku || '—'}</td>
+                <td className={cx('mono text-[12px]', unchecked && 'line-through')}>
+                  <div className="flex items-center gap-1">
+                    <span>{it.sku || '—'}</span>
+                    {it.sku && verifiedCodes[it.sku] === true  && <span title="Artículo en catálogo" className="text-green-500 text-[10px]">✓</span>}
+                    {it.sku && verifiedCodes[it.sku] === false && <span title="No encontrado en catálogo" className="text-amber-400 text-[10px]">?</span>}
+                  </div>
+                </td>
                 <td className={cx(unchecked && 'line-through')}>
                   {ncItem && <span className="text-[10px] font-bold text-red-500 mr-1.5 bg-red-50 border border-red-200 px-1 rounded">NC</span>}
                   {it.description}
@@ -258,8 +342,15 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
           {isOC && addingNew && (
             <tr className="bg-surface border-t border-dashed border-line">
               <td className="!px-2"><Icon name="plus" size={12} className="text-ink-400"/></td>
-              <td><input autoFocus className="inp text-xs py-0.5 w-full" placeholder="SKU"
-                value={newItem.sku} onChange={e => setNewItem(n => ({...n, sku: e.target.value}))}/></td>
+              <td>
+                <ArticleSearchInput
+                  autoFocus
+                  value={newItem.sku}
+                  placeholder="SKU"
+                  onChange={val => setNewItem(n => ({...n, sku: val}))}
+                  onSelect={a => setNewItem(n => ({...n, sku: a.code, description: a.description}))}
+                />
+              </td>
               <td><input className="inp text-xs py-0.5 w-full" placeholder="Descripción *"
                 value={newItem.description} onChange={e => setNewItem(n => ({...n, description: e.target.value}))}/></td>
               <td><input type="number" className="inp text-xs py-0.5 w-full text-right" placeholder="1"

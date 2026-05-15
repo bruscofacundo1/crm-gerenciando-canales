@@ -1468,4 +1468,754 @@ function Config() {
   );
 }
 
-Object.assign(window, { MySalesView, LogisticsView, Clients, Team, Config, PageHead });
+// ---------- ArticleFormModal — crear o editar artículo ----------
+function ArticleFormModal({ article = null, meta, onClose, onSaved }) {
+  const editing = !!article;
+  const [form, setForm] = useState({
+    code:        article?.code        ?? '',
+    description: article?.description ?? '',
+    category:    article?.category    ?? '',
+    type:        article?.type        ?? '',
+    class:       article?.class       ?? '',
+    coefVar:     article?.coefVar     ?? '',
+    active:      article?.active      ?? true,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true); setError('');
+    try {
+      if (editing) {
+        const saved = await CrmApi.updateArticle(article.code, {
+          description: form.description,
+          category:    form.category  || null,
+          type:        form.type      || null,
+          class:       form.class     || null,
+          coefVar:     form.coefVar   !== '' ? parseFloat(form.coefVar) : null,
+          active:      form.active,
+        });
+        onSaved(saved);
+      } else {
+        const saved = await CrmApi.createArticle({
+          code:        form.code,
+          description: form.description,
+          category:    form.category  || null,
+          type:        form.type      || null,
+          class:       form.class     || null,
+          coefVar:     form.coefVar   !== '' ? parseFloat(form.coefVar) : null,
+          active:      form.active,
+        });
+        onSaved(saved);
+      }
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Input con datalist para campos con opciones existentes + texto libre
+  const DatalistInput = ({ id, value, onChange, list, placeholder }) => (
+    <div className="relative">
+      <input
+        id={id} list={`dl-${id}`}
+        className="inp w-full text-sm"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+      <datalist id={`dl-${id}`}>
+        {list.map(o => <option key={o} value={o}/>)}
+      </datalist>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-ink-900/50 backdrop-blur-[2px]" onClick={onClose}/>
+      <form onSubmit={handleSubmit}
+        className="relative bg-white rounded-2xl shadow-pop w-full max-w-lg flex flex-col modal-enter">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-line flex items-center justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">
+              {editing ? 'Editar artículo' : 'Nuevo artículo'}
+            </div>
+            <h3 className="text-base font-bold text-ink-900">
+              {editing ? article.code : 'Agregar al catálogo'}
+            </h3>
+          </div>
+          <button type="button" onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-surface flex items-center justify-center text-ink-500">
+            <Icon name="x" size={16}/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-4 overflow-y-auto">
+
+          {/* Código — solo en creación */}
+          {!editing && (
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">
+                Código <span className="text-red-500">*</span>
+              </label>
+              <input
+                className="inp w-full text-sm font-mono"
+                placeholder="Ej: EK4118-000"
+                value={form.code}
+                onChange={e => set('code', e.target.value.toUpperCase())}
+                required
+              />
+              <div className="text-[11px] text-ink-400 mt-1">Debe ser único. Se convertirá a mayúsculas.</div>
+            </div>
+          )}
+
+          {/* Descripción */}
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">
+              Descripción <span className="text-red-500">*</span>
+            </label>
+            <input
+              className="inp w-full text-sm"
+              placeholder="Nombre completo del artículo"
+              value={form.description}
+              onChange={e => set('description', e.target.value)}
+              required
+            />
+          </div>
+
+          {/* Rubro — datalist con opciones existentes + libre */}
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">
+              Rubro
+            </label>
+            <DatalistInput
+              id="category"
+              value={form.category}
+              onChange={v => set('category', v)}
+              list={meta.categories}
+              placeholder="Ej: TERMOCONTRAIBLES Y CAPUCHONES"
+            />
+            <div className="text-[11px] text-ink-400 mt-1">
+              Seleccioná uno existente o escribí uno nuevo — aparecerá en los filtros.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Tipo */}
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">Tipo</label>
+              <DatalistInput
+                id="type"
+                value={form.type}
+                onChange={v => set('type', v)}
+                list={meta.types}
+                placeholder="Ej: PARTE"
+              />
+            </div>
+
+            {/* Clase */}
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">Clase</label>
+              <select className="inp w-full text-sm" value={form.class} onChange={e => set('class', e.target.value)}>
+                <option value="">Sin clase</option>
+                {(meta.classes.length ? meta.classes : ['A','B','C']).map(c =>
+                  <option key={c} value={c}>Clase {c}</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          {/* Coef. Var. */}
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">
+              Coeficiente de variación
+            </label>
+            <input
+              type="number" step="0.01"
+              className="inp w-full text-sm"
+              placeholder="Ej: 1"
+              value={form.coefVar}
+              onChange={e => set('coefVar', e.target.value)}
+            />
+          </div>
+
+          {/* Activo */}
+          <div className="flex items-center gap-3 p-3 bg-surface rounded-xl border border-line">
+            <div className="flex-1">
+              <div className="text-[13px] font-medium text-ink-800">Artículo activo</div>
+              <div className="text-[11px] text-ink-500 mt-0.5">Los artículos inactivos no aparecen en búsquedas ni autocomplete</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => set('active', !form.active)}
+              className={cx(
+                'w-10 h-6 rounded-full transition-colors relative shrink-0',
+                form.active ? 'bg-brand' : 'bg-ink-300'
+              )}
+            >
+              <span className={cx(
+                'absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all',
+                form.active ? 'left-5' : 'left-1'
+              )}/>
+            </button>
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-line flex items-center justify-end gap-3 bg-surface rounded-b-2xl">
+          <button type="button" onClick={onClose} className="btn-ghost">Cancelar</button>
+          <button type="submit" disabled={loading} className="btn-primary disabled:opacity-50">
+            {loading ? 'Guardando…' : editing ? 'Guardar cambios' : 'Agregar artículo'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ---------- ArticleImportModal ----------
+function ArticleImportModal({ onClose, onDone }) {
+  const STEP = { UPLOAD: 'upload', PREVIEW: 'preview', SYNCING: 'syncing', DONE: 'done' };
+  const [step, setStep]           = useState(STEP.UPLOAD);
+  const [dragging, setDragging]   = useState(false);
+  const [file, setFile]           = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
+  const [preview, setPreview]     = useState(null);   // respuesta del /preview
+  const [deleteSel, setDeleteSel] = useState({});     // { [code]: bool }
+  const [result, setResult]       = useState(null);   // respuesta del /sync
+
+  const pickFile = (f) => {
+    if (!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['xls','xlsx'].includes(ext)) { setError('Solo se aceptan archivos .xls o .xlsx'); return; }
+    setFile(f); setError('');
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragging(false);
+    pickFile(e.dataTransfer.files[0]);
+  };
+
+  const doPreview = async () => {
+    if (!file) return;
+    setLoading(true); setError('');
+    try {
+      const data = await CrmApi.previewArticleXLS(file);
+      setPreview(data);
+      // Por defecto seleccionar todos los que se van a eliminar
+      const sel = {};
+      data.toRemove.forEach(a => { sel[a.code] = true; });
+      setDeleteSel(sel);
+      setStep(STEP.PREVIEW);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const doSync = async () => {
+    setStep(STEP.SYNCING);
+    try {
+      const deleteCodes = Object.entries(deleteSel).filter(([,v])=>v).map(([k])=>k);
+      const res = await CrmApi.syncArticles(preview.token, deleteCodes);
+      setResult(res);
+      setStep(STEP.DONE);
+    } catch (e) {
+      setError(e.message);
+      setStep(STEP.PREVIEW);
+    }
+  };
+
+  const toggleAll = (val) => {
+    const sel = {};
+    preview.toRemove.forEach(a => { sel[a.code] = val; });
+    setDeleteSel(sel);
+  };
+
+  const selectedDeleteCount = Object.values(deleteSel).filter(Boolean).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-ink-900/50 backdrop-blur-[2px]" onClick={step !== STEP.SYNCING ? onClose : undefined}/>
+      <div className="relative bg-white rounded-2xl shadow-pop w-full max-w-2xl max-h-[90vh] flex flex-col modal-enter">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-line flex items-center justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">Catálogo · Flexxus</div>
+            <h3 className="text-base font-bold text-ink-900">Actualizar catálogo de artículos</h3>
+          </div>
+          {step !== STEP.SYNCING && (
+            <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-surface flex items-center justify-center text-ink-500">
+              <Icon name="x" size={16}/>
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto scroll-thin p-6">
+
+          {/* ── Paso 1: Upload ── */}
+          {step === STEP.UPLOAD && (
+            <div className="space-y-4">
+              <p className="text-[13px] text-ink-600">
+                Subí el archivo XLS exportado desde Flexxus. El sistema va a comparar con el catálogo actual y mostrarte qué cambia antes de aplicar nada.
+              </p>
+
+              {/* Drop zone */}
+              <div
+                onDragOver={e=>{e.preventDefault();setDragging(true)}}
+                onDragLeave={()=>setDragging(false)}
+                onDrop={handleDrop}
+                className={cx(
+                  'border-2 border-dashed rounded-xl p-10 flex flex-col items-center gap-3 transition-colors cursor-pointer',
+                  dragging ? 'border-brand bg-brand/5' : 'border-line hover:border-ink-300 hover:bg-surface'
+                )}
+                onClick={()=>document.getElementById('xls-input').click()}
+              >
+                <div className="w-12 h-12 rounded-xl bg-surface border border-line flex items-center justify-center">
+                  <Icon name="upload-cloud" size={22} className="text-ink-400"/>
+                </div>
+                {file ? (
+                  <div className="text-center">
+                    <div className="font-semibold text-ink-900 text-[14px]">{file.name}</div>
+                    <div className="text-[12px] text-ink-500 mt-0.5">{(file.size/1024).toFixed(0)} KB · listo para procesar</div>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <div className="font-medium text-ink-700 text-[13px]">Arrastrá el archivo acá o hacé click para seleccionarlo</div>
+                    <div className="text-[12px] text-ink-400 mt-0.5">Formato: .xls o .xlsx (exportado desde Flexxus)</div>
+                  </div>
+                )}
+                <input id="xls-input" type="file" accept=".xls,.xlsx" className="hidden"
+                  onChange={e=>pickFile(e.target.files[0])}/>
+              </div>
+
+              {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>}
+            </div>
+          )}
+
+          {/* ── Paso 2: Preview ── */}
+          {step === STEP.PREVIEW && preview && (
+            <div className="space-y-5">
+              {/* Resumen */}
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Nuevos',      value: preview.summary.toAdd,     color: 'bg-green-50 border-green-200 text-green-700' },
+                  { label: 'Actualizados',value: preview.summary.toUpdate,  color: 'bg-blue-50 border-blue-200 text-blue-700' },
+                  { label: 'Sin cambios', value: preview.summary.unchanged, color: 'bg-surface border-line text-ink-500' },
+                  { label: 'A eliminar',  value: preview.summary.toRemove,  color: preview.summary.toRemove > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-surface border-line text-ink-500' },
+                ].map(s => (
+                  <div key={s.label} className={cx('border rounded-xl p-4 text-center', s.color)}>
+                    <div className="text-2xl font-bold">{s.value.toLocaleString()}</div>
+                    <div className="text-[11px] font-medium mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Nuevos (preview) */}
+              {preview.toAdd.length > 0 && (
+                <div>
+                  <div className="text-[12px] font-semibold text-ink-700 mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block"/>
+                    Artículos nuevos {preview.summary.toAdd > 20 && <span className="font-normal text-ink-400">(mostrando primeros 20 de {preview.summary.toAdd})</span>}
+                  </div>
+                  <div className="border border-line rounded-xl overflow-hidden max-h-40 overflow-y-auto scroll-thin">
+                    {preview.toAdd.map(a => (
+                      <div key={a.code} className="px-3 py-2 border-b border-line last:border-0 flex gap-3 text-[12px]">
+                        <span className="mono font-semibold text-blue-600 w-32 shrink-0">{a.code}</span>
+                        <span className="text-ink-700 truncate flex-1">{a.description}</span>
+                        <span className="text-ink-400 shrink-0">{a.category || ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* A eliminar — con checkboxes */}
+              {preview.toRemove.length > 0 && (
+                <div>
+                  <div className="text-[12px] font-semibold text-red-700 mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>
+                      Artículos que ya no están en el XLS — elegí cuáles eliminar
+                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={()=>toggleAll(true)}  className="text-[11px] text-brand hover:underline">Todos</button>
+                      <span className="text-ink-300">·</span>
+                      <button onClick={()=>toggleAll(false)} className="text-[11px] text-ink-500 hover:underline">Ninguno</button>
+                    </div>
+                  </div>
+                  <div className="border border-red-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto scroll-thin">
+                    {preview.toRemove.map(a => (
+                      <label key={a.code} className="px-3 py-2 border-b border-red-100 last:border-0 flex gap-3 text-[12px] cursor-pointer hover:bg-red-50 items-center">
+                        <input type="checkbox" className="accent-red-500 shrink-0"
+                          checked={!!deleteSel[a.code]}
+                          onChange={e => setDeleteSel(s => ({...s, [a.code]: e.target.checked}))}/>
+                        <span className="mono font-semibold text-red-600 w-32 shrink-0">{a.code}</span>
+                        <span className="text-ink-700 truncate flex-1">{a.description}</span>
+                        <span className="text-ink-400 shrink-0">{a.category || ''}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedDeleteCount > 0 && (
+                    <div className="mt-2 text-[12px] text-red-600 font-medium">
+                      ⚠ Se van a eliminar {selectedDeleteCount} artículo{selectedDeleteCount !== 1 ? 's' : ''} de forma permanente.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>}
+            </div>
+          )}
+
+          {/* ── Paso 3: Sincronizando ── */}
+          {step === STEP.SYNCING && (
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <div className="w-12 h-12 rounded-full border-4 border-brand border-t-transparent animate-spin"/>
+              <div className="text-[14px] text-ink-600 font-medium">Actualizando catálogo…</div>
+              <div className="text-[12px] text-ink-400">Esto puede tardar unos segundos</div>
+            </div>
+          )}
+
+          {/* ── Paso 4: Resultado ── */}
+          {step === STEP.DONE && result && (
+            <div className="space-y-5">
+              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                  <Icon name="check" size={20} className="text-green-600"/>
+                </div>
+                <div>
+                  <div className="font-semibold text-green-800 text-[14px]">Catálogo actualizado correctamente</div>
+                  <div className="text-[13px] text-green-700 mt-0.5">
+                    {result.upserted.toLocaleString()} artículos procesados
+                    {result.deleted > 0 && ` · ${result.deleted} eliminado${result.deleted !== 1 ? 's' : ''}`}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-surface border border-line rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-ink-900">{result.upserted.toLocaleString()}</div>
+                  <div className="text-[11px] text-ink-500 mt-0.5">Artículos sincronizados</div>
+                </div>
+                <div className="bg-surface border border-line rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-red-600">{result.deleted}</div>
+                  <div className="text-[11px] text-ink-500 mt-0.5">Artículos eliminados</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-line flex items-center justify-end gap-3 bg-surface rounded-b-2xl">
+          {step === STEP.UPLOAD && (
+            <>
+              <button onClick={onClose} className="btn-ghost">Cancelar</button>
+              <button onClick={doPreview} disabled={!file || loading}
+                className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? 'Procesando…' : 'Analizar archivo'}
+              </button>
+            </>
+          )}
+          {step === STEP.PREVIEW && (
+            <>
+              <button onClick={()=>{setStep(STEP.UPLOAD);setPreview(null);}} className="btn-ghost">← Volver</button>
+              <button onClick={doSync} className="btn-primary">
+                Confirmar importación
+                {selectedDeleteCount > 0 && ` (${selectedDeleteCount} eliminaciones)`}
+              </button>
+            </>
+          )}
+          {step === STEP.DONE && (
+            <button onClick={() => { onDone(); onClose(); }} className="btn-primary">
+              Cerrar y actualizar lista
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Articles ----------
+function Articles() {
+  const [search, setSearch]           = useState('');
+  const [filterCat, setFilterCat]     = useState('');
+  const [filterType, setFilterType]   = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+  const [meta, setMeta]               = useState({ categories: [], types: [], classes: [] });
+  const [items, setItems]             = useState([]);
+  const [total, setTotal]             = useState(0);
+  const [loading, setLoading]         = useState(true);
+  const [offset, setOffset]           = useState(0);
+  const [limit, setLimit]             = useState(100);
+  const [sortBy, setSortBy]           = useState('code');
+  const [sortDir, setSortDir]         = useState('asc');
+  const [showImport, setShowImport]   = useState(false);
+  const [articleModal, setArticleModal] = useState(null); // null | { mode:'new' } | { mode:'edit', article }
+  const [reloadKey, setReloadKey]     = useState(0);
+  const isAdmin = CrmAuth.getUser()?.role === 'ADMIN';
+
+  const reload = () => setReloadKey(k => k + 1);
+
+  const handleDelete = async (a) => {
+    if (!window.confirm(`¿Eliminár el artículo ${a.code}?\n"${a.description}"\n\nEsta acción no se puede deshacer.`)) return;
+    try {
+      await CrmApi.deleteArticle(a.code);
+      reload();
+    } catch (err) {
+      alert(err.message || 'Error al eliminar');
+    }
+  };
+
+  const handleSaved = (saved) => {
+    // Si el rubro es nuevo, refrescar el meta también
+    if (saved.category && !meta.categories.includes(saved.category)) {
+      CrmApi.getArticleMeta().then(setMeta).catch(() => {});
+    }
+    reload();
+  };
+
+  // Cargar meta (rubros, tipos, clases) una vez
+  useEffect(() => {
+    CrmApi.getArticleMeta().then(setMeta).catch(() => {});
+  }, []);
+
+  // Cargar artículos cuando cambian filtros / orden / página
+  useEffect(() => {
+    setLoading(true);
+    const params = { limit, offset, sortBy, sortDir };
+    if (search)       params.q        = search;
+    if (filterCat)    params.category = filterCat;
+    if (filterType)   params.type     = filterType;
+    if (filterClass)  params.class    = filterClass;
+    if (!showInactive) params.active  = 'true';
+    CrmApi.getArticles(params)
+      .then(r => { setItems(r.items); setTotal(r.total); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [search, filterCat, filterType, filterClass, showInactive, offset, limit, sortBy, sortDir, reloadKey]);
+
+  // Reset página al cambiar filtros o limit
+  useEffect(() => { setOffset(0); }, [search, filterCat, filterType, filterClass, showInactive, limit]);
+
+  const hasFilters = !!(search || filterCat || filterType || filterClass || showInactive);
+  const totalPages = Math.ceil(total / limit);
+  const currentPage = Math.floor(offset / limit) + 1;
+
+  const handleSort = (col) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortBy !== col) return <span className="text-ink-300 ml-1">↕</span>;
+    return <span className="text-brand ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const CLASS_TONE = { A: 'bg-green-100 text-green-700', B: 'bg-blue-100 text-blue-700', C: 'bg-ink-100 text-ink-600' };
+
+  return (
+    <div className="flex flex-col h-screen">
+      {/* ── Header ── */}
+      <div className="px-6 pt-5 pb-4 border-b border-line bg-white shrink-0">
+        <div className="flex items-end justify-between gap-4 mb-3">
+          <div>
+            <div className="text-[13px] uppercase tracking-wider font-semibold text-ink-500">Catálogo · Flexxus</div>
+            <h2 className="text-xl font-bold text-ink-900 mt-0.5">Artículos</h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-[13px] text-ink-500">
+              {loading ? 'Cargando…' : (
+                hasFilters
+                  ? <><span className="font-semibold text-ink-900">{total.toLocaleString()}</span> resultados</>
+                  : <><span className="font-semibold text-ink-900">{total.toLocaleString()}</span> artículos en catálogo</>
+              )}
+            </div>
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowImport(true)} className="btn-ghost text-xs flex items-center gap-1.5">
+                  <Icon name="upload-cloud" size={13}/> Actualizar catálogo
+                </button>
+                <button onClick={() => setArticleModal({ mode: 'new' })} className="btn-primary text-xs flex items-center gap-1.5">
+                  <Icon name="plus" size={13}/> Nuevo artículo
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {showImport && (
+          <ArticleImportModal
+            onClose={() => setShowImport(false)}
+            onDone={() => { reload(); setShowImport(false); }}
+          />
+        )}
+        {articleModal && (
+          <ArticleFormModal
+            article={articleModal.mode === 'edit' ? articleModal.article : null}
+            meta={meta}
+            onClose={() => setArticleModal(null)}
+            onSaved={handleSaved}
+          />
+        )}
+
+        {/* Barra de filtros */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Icon name="search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"/>
+            <input
+              className="inp pl-8 py-1.5 w-72 text-xs"
+              placeholder="Buscar código o descripción…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <select className="inp text-xs py-1.5 max-w-[200px]" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+            <option value="">Todos los rubros</option>
+            {meta.categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <select className="inp text-xs py-1.5" value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <option value="">Todos los tipos</option>
+            {meta.types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+
+          <select className="inp text-xs py-1.5" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
+            <option value="">Todas las clases</option>
+            {meta.classes.map(c => <option key={c} value={c}>Clase {c}</option>)}
+          </select>
+
+          <label className="flex items-center gap-1.5 text-xs text-ink-500 cursor-pointer select-none ml-1">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded accent-brand"/>
+            Ver inactivos
+          </label>
+
+          {hasFilters && (
+            <button className="btn-ghost text-xs" onClick={() => { setSearch(''); setFilterCat(''); setFilterType(''); setFilterClass(''); setShowInactive(false); }}>
+              <Icon name="x" size={12}/> Limpiar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Tabla ── */}
+      <div className="flex-1 overflow-auto scroll-thin">
+        <table className="w-full text-sm border-collapse min-w-[900px]">
+          <thead className="sticky top-0 z-10 bg-surface border-b border-line">
+            <tr>
+              {[
+                { key: 'code',        label: 'Código',      w: 'w-36' },
+                { key: 'description', label: 'Descripción', w: 'w-auto' },
+                { key: 'category',    label: 'Rubro',       w: 'w-52' },
+                { key: 'type',        label: 'Tipo',        w: 'w-24' },
+                { key: 'class',       label: 'Clase',       w: 'w-16' },
+              ].map(col => (
+                <th key={col.key}
+                    onClick={() => handleSort(col.key)}
+                    className={cx('text-left px-3 py-2.5 text-[11px] uppercase tracking-wider font-semibold text-ink-500 cursor-pointer hover:text-ink-900 select-none whitespace-nowrap', col.w)}>
+                  {col.label}<SortIcon col={col.key}/>
+                </th>
+              ))}
+              <th className="text-center px-3 py-2.5 text-[11px] uppercase tracking-wider font-semibold text-ink-500 w-16">Estado</th>
+              {isAdmin && <th className="w-16"/>}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-line">
+            {loading ? (
+              <tr><td colSpan="6" className="text-center py-16 text-sm text-ink-400">Cargando…</td></tr>
+            ) : items.length === 0 ? (
+              <tr><td colSpan="6" className="text-center py-16 text-sm text-ink-400">Sin resultados para los filtros aplicados</td></tr>
+            ) : items.map(a => (
+              <tr key={a.code} className={cx('group hover:bg-surface/60 transition-colors', !a.active && 'opacity-45')}>
+                <td className="px-3 py-2 font-mono text-[12px] font-semibold text-blue-700 whitespace-nowrap">{a.code}</td>
+                <td className="px-3 py-2 text-[13px] text-ink-800">{a.description}</td>
+                <td className="px-3 py-2 text-[12px] text-ink-500 truncate max-w-[200px]">{a.category || '—'}</td>
+                <td className="px-3 py-2 text-[12px] text-ink-500 whitespace-nowrap">{a.type || '—'}</td>
+                <td className="px-3 py-2 text-center">
+                  {a.class
+                    ? <span className={cx('text-[11px] font-bold px-1.5 py-0.5 rounded', CLASS_TONE[a.class] || 'bg-ink-100 text-ink-600')}>{a.class}</span>
+                    : <span className="text-ink-300 text-[11px]">—</span>}
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <span className={cx('inline-block w-2 h-2 rounded-full', a.active ? 'bg-green-400' : 'bg-ink-300')} title={a.active ? 'Activo' : 'Inactivo'}/>
+                </td>
+                {isAdmin && (
+                  <td className="px-2 py-1 text-right">
+                    <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        title="Editar"
+                        onClick={() => setArticleModal({ mode: 'edit', article: a })}
+                        className="w-7 h-7 rounded-lg hover:bg-blue-50 flex items-center justify-center text-ink-400 hover:text-blue-600 transition-colors">
+                        <Icon name="pencil" size={13}/>
+                      </button>
+                      <button
+                        title="Eliminar"
+                        onClick={() => handleDelete(a)}
+                        className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-ink-400 hover:text-red-500 transition-colors">
+                        <Icon name="trash-2" size={13}/>
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Paginación ── */}
+      <div className="shrink-0 border-t border-line bg-white px-6 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ink-500">Filas por página:</span>
+          {[50, 100, 200].map(n => (
+            <button key={n} onClick={() => setLimit(n)}
+              className={cx('text-xs px-2 py-1 rounded border transition-colors',
+                limit === n ? 'bg-brand text-white border-brand' : 'border-line text-ink-500 hover:border-ink-400')}>
+              {n}
+            </button>
+          ))}
+        </div>
+
+        <div className="text-[12px] text-ink-500">
+          {offset + 1}–{Math.min(offset + limit, total)} de {total.toLocaleString()}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <button disabled={offset === 0}
+            onClick={() => setOffset(0)}
+            className="btn-ghost px-2 py-1 text-xs disabled:opacity-30">«</button>
+          <button disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - limit))}
+            className="btn-ghost px-2 py-1 text-xs disabled:opacity-30">← Anterior</button>
+          <span className="text-xs text-ink-500 px-2">Pág. {currentPage} / {totalPages || 1}</span>
+          <button disabled={offset + limit >= total}
+            onClick={() => setOffset(offset + limit)}
+            className="btn-ghost px-2 py-1 text-xs disabled:opacity-30">Siguiente →</button>
+          <button disabled={offset + limit >= total}
+            onClick={() => setOffset((totalPages - 1) * limit)}
+            className="btn-ghost px-2 py-1 text-xs disabled:opacity-30">»</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { MySalesView, LogisticsView, Clients, Articles, Team, Config, PageHead });

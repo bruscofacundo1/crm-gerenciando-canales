@@ -32,6 +32,7 @@ app.use('/api/mail',          require('./routes/mail'));
 app.use('/api/data',          require('./routes/data'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/settings',      require('./routes/settings'));
+app.use('/api/articles',      require('./routes/articles'));
 
 // POST /api/quotes/:id/attachments — upload de adjunto manual
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'attachments');

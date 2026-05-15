@@ -66,32 +66,56 @@ router.get('/rejection-reasons', authMiddleware, async (req, res) => {
   res.json(reasons);
 });
 
+// ─── Helper: construir filtros de fecha y vendedor desde query params ────────
+function buildBaseFilter({ sellerId, from, to } = {}) {
+  const filter = {};
+  if (sellerId) filter.sellerId = sellerId;
+  if (from || to) {
+    filter.createdAt = {};
+    if (from) filter.createdAt.gte = new Date(from);
+    if (to)   { const d = new Date(to); d.setHours(23, 59, 59, 999); filter.createdAt.lte = d; }
+  }
+  return filter;
+}
+
 // GET /api/data/dashboard - Stats for admin dashboard
+// Acepta query params opcionales: ?sellerId=&from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/dashboard', authMiddleware, async (req, res) => {
   try {
+    const base = buildBaseFilter(req.query);
+
     const [totalQuotes, sentQuotes, activeOrders, deliveredOrders] = await Promise.all([
-      prisma.quote.count({ where: { stage: { notIn: ['aceptada', 'rechazada'] } } }),
-      prisma.quote.count({ where: { stage: 'enviado' } }),
+      prisma.quote.count({ where: { ...base, stage: { notIn: ['aceptada', 'rechazada'] } } }),
+      prisma.quote.count({ where: { ...base, stage: 'enviado' } }),
       prisma.order.count({ where: { stage: { notIn: ['entregada'] } } }),
       prisma.order.count({ where: { stage: 'entregada' } }),
     ]);
 
-    const totalAmount = await prisma.quote.aggregate({
-      _sum: { amount: true },
-      where: { amount: { not: null } },
-    });
+    const [totalAmount, montoConfirmado] = await Promise.all([
+      prisma.quote.aggregate({
+        _sum:  { amount: true },
+        where: { ...base, amount: { not: null } },
+      }),
+      prisma.quote.aggregate({
+        _sum:  { amount: true },
+        where: { ...base, mailType: 'NOTA_PEDIDO', amount: { not: null } },
+      }),
+    ]);
 
-    const accepted = await prisma.quote.count({ where: { stage: 'aceptada' } });
-    const total = await prisma.quote.count();
-    const conversionRate = total > 0 ? Math.round((accepted / total) * 100) : 0;
+    const [accepted, totalInPeriod] = await Promise.all([
+      prisma.quote.count({ where: { ...base, stage: 'aceptada' } }),
+      prisma.quote.count({ where: { ...base } }),
+    ]);
+    const conversionRate = totalInPeriod > 0 ? Math.round((accepted / totalInPeriod) * 100) : 0;
 
     res.json({
-      cotizacionesActivas: totalQuotes,
+      cotizacionesActivas:  totalQuotes,
       presupuestosEnviados: sentQuotes,
-      ocEnCurso: activeOrders,
-      entregasEsteMes: deliveredOrders,
-      montoTotal: totalAmount._sum.amount || 0,
-      tasaConversion: conversionRate,
+      ocEnCurso:            activeOrders,
+      entregasEsteMes:      deliveredOrders,
+      montoTotal:           totalAmount._sum.amount    || 0,
+      montoConfirmado:      montoConfirmado._sum.amount || 0,
+      tasaConversion:       conversionRate,
     });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
@@ -99,16 +123,19 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 });
 
 // GET /data/charts/sellers
+// Acepta: ?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/charts/sellers', authMiddleware, async (req, res) => {
   try {
+    const base = buildBaseFilter(req.query); // from/to aplican; sellerId ignorado (siempre mostramos todos)
+    const { sellerId: _ignored, ...dateFilter } = base; // excluir sellerId del where de vendedores
     const users = await prisma.user.findMany({
       where: { active: true, role: { in: ['VENDEDOR', 'ADMIN'] } },
       select: { id: true, name: true },
     });
     const result = await Promise.all(users.map(async (u) => {
       const [cotiz, ganadas] = await Promise.all([
-        prisma.quote.count({ where: { sellerId: u.id } }),
-        prisma.quote.count({ where: { sellerId: u.id, stage: 'aceptada' } }),
+        prisma.quote.count({ where: { ...dateFilter, sellerId: u.id } }),
+        prisma.quote.count({ where: { ...dateFilter, sellerId: u.id, stage: 'aceptada' } }),
       ]);
       return { name: u.name.split(' ')[0], cotiz, ganadas };
     }));
@@ -119,8 +146,10 @@ router.get('/charts/sellers', authMiddleware, async (req, res) => {
 });
 
 // GET /data/charts/stages
+// Acepta: ?sellerId=&from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/charts/stages', authMiddleware, async (req, res) => {
   try {
+    const base = buildBaseFilter(req.query);
     const stages = await prisma.stageDefinition.findMany({
       where: { active: true, phase: 'COTIZACION' },
       orderBy: { order: 'asc' },
@@ -131,7 +160,7 @@ router.get('/charts/stages', authMiddleware, async (req, res) => {
       purple:'#8B5CF6',
     };
     const result = await Promise.all(stages.map(async (s) => {
-      const value = await prisma.quote.count({ where: { stage: s.stageKey } });
+      const value = await prisma.quote.count({ where: { ...base, stage: s.stageKey } });
       return { name: s.label, value, color: COLORS[s.tone] || '#94A3B8', stageKey: s.stageKey };
     }));
     const total = result.reduce((a, b) => a + b.value, 0);
@@ -250,22 +279,103 @@ router.patch('/stages-reorder', authMiddleware, async (req, res) => {
 });
 
 // GET /data/charts/monthly
+// Acepta: ?sellerId= (filtra por vendedor; siempre muestra últimos 6 meses)
 router.get('/charts/monthly', authMiddleware, async (req, res) => {
   try {
+    const { sellerId } = req.query;
+    const sellerFilter = sellerId ? { sellerId } : {};
     const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const now = new Date();
     const months = [];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const d     = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const start = new Date(d.getFullYear(), d.getMonth(), 1);
       const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
       const [recibidas, ganadas] = await Promise.all([
-        prisma.quote.count({ where: { createdAt: { gte: start, lte: end } } }),
-        prisma.quote.count({ where: { stage: 'aceptada', createdAt: { gte: start, lte: end } } }),
+        prisma.quote.count({ where: { ...sellerFilter, createdAt: { gte: start, lte: end } } }),
+        prisma.quote.count({ where: { ...sellerFilter, stage: 'aceptada', createdAt: { gte: start, lte: end } } }),
       ]);
       months.push({ month: MONTHS_ES[d.getMonth()], recibidas, ganadas });
     }
     res.json(months);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /data/alerts — presupuestos en etapa "enviado" sin movimiento por X días
+// Acepta: ?sellerId=&threshold=3
+router.get('/alerts', authMiddleware, async (req, res) => {
+  try {
+    const { sellerId, threshold = 3 } = req.query;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - parseInt(threshold));
+    const where = { stage: 'enviado', updatedAt: { lte: cutoff } };
+    if (sellerId) where.sellerId = sellerId;
+    const quotes = await prisma.quote.findMany({
+      where,
+      orderBy: { updatedAt: 'asc' },
+      include: {
+        client: { select: { name: true } },
+        seller: { select: { name: true } },
+      },
+      take: 30,
+    });
+    const now = new Date();
+    res.json(quotes.map(q => ({
+      id:          q.id,
+      code:        q.code,
+      clientName:  q.client?.name  || '—',
+      sellerName:  q.seller?.name  || '—',
+      amount:      q.amount,
+      daysWaiting: Math.floor((now - new Date(q.updatedAt)) / (1000 * 60 * 60 * 24)),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /data/charts/funnel — embudo de conversión
+// Acepta: ?sellerId=&from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/charts/funnel', authMiddleware, async (req, res) => {
+  try {
+    const base = buildBaseFilter(req.query);
+    const [total, enviado, aceptada, rechazada] = await Promise.all([
+      prisma.quote.count({ where: base }),
+      prisma.quote.count({ where: { ...base, stage: 'enviado' } }),
+      prisma.quote.count({ where: { ...base, stage: 'aceptada' } }),
+      prisma.quote.count({ where: { ...base, stage: 'rechazada' } }),
+    ]);
+    res.json([
+      { label: 'Recibidas',  value: total,     color: '#1B2A4A' },
+      { label: 'Enviadas',   value: enviado,   color: '#3B82F6' },
+      { label: 'Aceptadas',  value: aceptada,  color: '#10B981' },
+      { label: 'Rechazadas', value: rechazada, color: '#EF4444' },
+    ]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /data/charts/rejections — motivos de rechazo agrupados
+// Acepta: ?sellerId=&from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/charts/rejections', authMiddleware, async (req, res) => {
+  try {
+    const base = buildBaseFilter(req.query);
+    const rejected = await prisma.quote.findMany({
+      where: { ...base, stage: 'rechazada' },
+      select: { rejectReason: true },
+    });
+    const counts = {};
+    for (const q of rejected) {
+      const reason = q.rejectReason?.trim() || 'Sin especificar';
+      counts[reason] = (counts[reason] || 0) + 1;
+    }
+    const result = Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -159,7 +159,7 @@ function fetchRawFromFolder(imap, folder, searchCriteria, requiresPrefixCheck, i
         const fetch = imap.fetch(uids, { bodies: '', markSeen: false });
         fetch.on('message', (msg) => {
           const chunks = [];
-          const mailData = { uid: null, requiresPrefixCheck, isSent };
+          const mailData = { uid: null, requiresPrefixCheck, isSent, sourceFolder: folder };
           msg.on('attributes', (attrs) => { mailData.uid = attrs.uid; });
           msg.on('body', (stream) => {
             stream.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
@@ -207,39 +207,81 @@ async function syncAccount(account) {
           if (setting?.value) lookbackDays = parseFloat(setting.value);
         } catch (_) {}
 
-        const inboxSince = new Date();
-        inboxSince.setDate(inboxSince.getDate() - lookbackDays);
+        // ── Mejora 3: SINCE basado en lastSyncAt por cuenta ──────────────────
+        let lastSyncAt = null;
+        try {
+          const integration = await prisma.emailIntegration.findUnique({
+            where: { accountEmail: account.user },
+          });
+          if (integration?.lastSyncAt) lastSyncAt = integration.lastSyncAt;
+        } catch (_) {}
+
+        // SINCE date: si hay lastSyncAt → desde esa fecha (con 1h de margen para no perder nada)
+        // Si no → usar lookbackDays como ventana desde hoy
+        const computeSince = (fallbackDays) => {
+          if (lastSyncAt) {
+            const d = new Date(lastSyncAt);
+            d.setHours(d.getHours() - 1);
+            return d;
+          }
+          const d = new Date();
+          d.setDate(d.getDate() - fallbackDays);
+          return d;
+        };
+        const inboxSince = computeSince(lookbackDays);
+        const sentSince  = computeSince(SENT_LOOKBACK_DAYS);
+
+        if (lastSyncAt) {
+          console.log(`📧 [${tag}] Último sync: ${lastSyncAt.toISOString()} → buscando desde ${inboxSince.toISOString()}`);
+        }
 
         // Fuente 1: etiqueta CRM — TODOS (la etiqueta ya es filtro fuerte, dedup por messageId)
         const labelMails = await fetchRawFromFolder(imap, CRM_LABEL, ['ALL'], false);
 
-        // Fuente 2: All Mail con "crm" en asunto — últimos N días (acotado para no traer miles)
+        // Fuente 2: All Mail con "crm" en asunto — desde lastSyncAt o lookbackDays
         const subjectMails = await fetchRawFromFolder(imap, GMAIL_ALL, [['SINCE', inboxSince], ['SUBJECT', 'crm']], true);
 
-        // Fuente 3: Enviados — últimos N días (dedup por messageId, filtramos Flexxus en processEmail)
-        const sinceDate = new Date();
-        sinceDate.setDate(sinceDate.getDate() - SENT_LOOKBACK_DAYS);
-        const sentMails = await fetchRawFromFolder(imap, GMAIL_SENT, [['SINCE', sinceDate]], false, true);
+        // Fuente 3: Enviados — desde lastSyncAt o lookbackDays
+        const sentMails = await fetchRawFromFolder(imap, GMAIL_SENT, [['SINCE', sentSince]], false, true);
 
-        const allMails = [...labelMails, ...subjectMails, ...sentMails];
-
-        if (allMails.length === 0) {
-          console.log(`📧 [${tag}] Sin emails nuevos`);
-          imap.end();
-          return resolve(results);
-        }
+        // ── Mejora 1: inyectar accountEmail en cada mailData ─────────────────
+        const allMails = [...labelMails, ...subjectMails, ...sentMails]
+          .map(m => ({ ...m, accountEmail: account.user }));
 
         console.log(`📧 [${tag}] Total: ${allMails.length} (label: ${labelMails.length}, asunto: ${subjectMails.length}, enviados: ${sentMails.length})`);
 
         // Procesar secuencialmente para evitar race condition en nextCode()
+        const successfulMails = []; // mejora 6: mails que crearon quote → para etiquetar
         for (const m of allMails) {
           try {
             const result = await processEmail(m, imap);
-            if (result) { results.synced++; results.mails.push(result); }
+            if (result) {
+              results.synced++;
+              results.mails.push(result);
+              successfulMails.push(m);
+            }
           } catch (err) {
             results.errors.push(err.message || 'Unknown error');
           }
         }
+
+        // ── Mejora 6: aplicar etiqueta 'crm-procesado' a mails procesados ────
+        if (successfulMails.length > 0) {
+          await applyGmailLabel(imap, successfulMails, 'crm-procesado');
+        }
+
+        // ── Mejora 3: actualizar lastSyncAt para esta cuenta ─────────────────
+        try {
+          await prisma.emailIntegration.upsert({
+            where:  { accountEmail: account.user },
+            update: { lastSyncAt: new Date() },
+            create: { accountEmail: account.user, lastSyncAt: new Date() },
+          });
+          console.log(`   🕐 [${tag}] lastSyncAt actualizado`);
+        } catch (e) {
+          console.error(`   ⚠️  [${tag}] No se pudo actualizar lastSyncAt: ${e.message}`);
+        }
+
       } catch (err) {
         results.errors.push(`[${tag}] Sync error: ${err.message}`);
       }
@@ -256,6 +298,39 @@ async function syncAccount(account) {
 
     imap.connect();
   });
+}
+
+/**
+ * Mejora 6: aplica una etiqueta Gmail (keyword IMAP) a los mails que se
+ * procesaron exitosamente. Agrupa por carpeta de origen para abrir cada
+ * box solo una vez. La etiqueta debe existir previamente en Gmail.
+ */
+async function applyGmailLabel(imap, mails, label) {
+  // Agrupar UIDs por carpeta de origen
+  const byFolder = {};
+  for (const m of mails) {
+    if (!m.uid || !m.sourceFolder) continue;
+    (byFolder[m.sourceFolder] = byFolder[m.sourceFolder] || []).push(m.uid);
+  }
+
+  for (const [folder, uids] of Object.entries(byFolder)) {
+    await new Promise((resolve) => {
+      imap.openBox(folder, false, (err) => {
+        if (err) {
+          console.warn(`   ⚠️  Label '${label}': no se pudo abrir "${folder}": ${err.message}`);
+          return resolve();
+        }
+        imap.addFlags(uids, [label], (err) => {
+          if (err) {
+            console.warn(`   ⚠️  Label '${label}' no aplicado en "${folder}" (¿existe la etiqueta en Gmail?): ${err.message}`);
+          } else {
+            console.log(`   🏷️  Label '${label}' aplicado a ${uids.length} mail(s) en "${folder}"`);
+          }
+          resolve();
+        });
+      });
+    });
+  }
 }
 
 /**
@@ -788,6 +863,13 @@ async function processEmail(mailData, imap) {
       return await processSentMail(parsed, mailData, imap);
     }
 
+    // ── Mejora 5: ignorar auto-replies (OOO, delivery reports, etc.) ─────────
+    const autoSubmitted = parsed.headers?.get('auto-submitted');
+    if (autoSubmitted && autoSubmitted.toLowerCase() !== 'no') {
+      console.log(`   ⏭️  Auto-reply ignorado (Auto-Submitted: ${autoSubmitted})`);
+      return null;
+    }
+
     // ── Ignorar mails de cuentas propias en entrantes ─────────────────────
     // Las respuestas del vendedor quedan en la carpeta crm (hilo) pero deben
     // procesarse desde Enviados como PRESUPUESTO, no como SOLICITUD entrante.
@@ -802,14 +884,39 @@ async function processEmail(mailData, imap) {
       ? parsed.inReplyTo.replace(/[<>]/g, '').trim()
       : null;
 
-    // ── Ignorar respuestas de cliente a un PRESUPUESTO existente ──────────
-    // Si el cliente responde al hilo del presupuesto, no es una nueva solicitud.
+    // ── Mejora 2: respuesta del cliente a un PRESUPUESTO/OC → crear Nota ────
+    // En lugar de ignorar silenciosamente, registramos el contenido como actividad.
     if (inReplyTo) {
       const replyTarget = await prisma.quote.findFirst({
-        where: { emailMessageId: inReplyTo, mailType: { in: ['PRESUPUESTO', 'OC'] } },
+        where: { emailMessageId: inReplyTo, mailType: { in: ['PRESUPUESTO', 'OC', 'SOLICITUD'] } },
       });
       if (replyTarget) {
-        console.log(`   ⏭️  Ignorado: respuesta del cliente al ${replyTarget.mailType} ${replyTarget.code}`);
+        console.log(`   📝 Respuesta del cliente al ${replyTarget.mailType} ${replyTarget.code} → creando nota`);
+        const replyBody = parsed.text || (parsed.html ? stripHtml(parsed.html) : '');
+        try {
+          // Dedup: evitar crear dos veces la nota si el mail aparece en label + AllMail
+          const existingNote = await prisma.activity.findFirst({
+            where: {
+              quoteId: replyTarget.id,
+              action:  'NOTE',
+              detail:  { contains: messageId },
+            },
+          });
+          if (!existingNote) {
+            await prisma.activity.create({
+              data: {
+                action:  'NOTE',
+                detail:  `[${messageId}] Respuesta del cliente (${directFrom})${replyBody ? ':\n\n' + replyBody.substring(0, 2900) : ''}`,
+                quoteId: replyTarget.id,
+              },
+            });
+            console.log(`   ✅ Nota creada en ${replyTarget.code} (respuesta de ${directFrom})`);
+          } else {
+            console.log(`   ⏭️  Nota de respuesta ya registrada en ${replyTarget.code}`);
+          }
+        } catch (e) {
+          console.error(`   ❌ Error creando nota de respuesta en ${replyTarget.code}:`, e.message);
+        }
         return null;
       }
     }
@@ -1000,6 +1107,21 @@ async function processEmail(mailData, imap) {
 
     if (!client) console.log(`   ⚠️  Sin match de cliente para ${originalSender}`);
 
+    // ── Mejora 1: vendedor = cuenta IMAP (prioridad) > defaultSeller del cliente ─
+    let sellerId = null;
+    if (mailData.accountEmail) {
+      try {
+        const vendedor = await prisma.user.findFirst({
+          where: { email: { equals: mailData.accountEmail, mode: 'insensitive' } },
+        });
+        if (vendedor) {
+          sellerId = vendedor.id;
+          console.log(`   👤 Vendedor asignado por cuenta IMAP (${mailData.accountEmail}): ${vendedor.name}`);
+        }
+      } catch (_) {}
+    }
+    if (!sellerId) sellerId = client?.defaultSellerId || null;
+
     // ── Crear cotización ──────────────────────────────────────────────────
     const code = await nextCode(prisma.quote, 'COT-2026');
 
@@ -1011,8 +1133,8 @@ async function processEmail(mailData, imap) {
     const quote = await prisma.quote.create({
       data: {
         code,
-        clientId:       client?.id || null,
-        sellerId:       client?.defaultSellerId || null,
+        clientId:  client?.id || null,
+        sellerId:  sellerId,
         stage:          mailType === 'PRESUPUESTO' ? 'enviado' : (mailType === 'OC' ? 'oc' : (client ? 'asignada' : 'recibida')),
         source:         'EMAIL',
         mailType,

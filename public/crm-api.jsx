@@ -38,6 +38,13 @@ async function apiFetch(path, options = {}) {
 }
 
 // ─── API Methods ───
+// Helper: convierte objeto de params a query string (?key=val&...)
+const toQS = (params = {}) => {
+  const entries = Object.entries(params || {}).filter(([, v]) => v != null && v !== '');
+  if (!entries.length) return '';
+  return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+};
+
 const CrmApi = {
   // Auth
   login: (email, password) => apiFetch('/auth/login', {
@@ -123,11 +130,14 @@ const CrmApi = {
     method: 'PATCH', body: JSON.stringify({ ids })
   }),
   getActivity: (limit = 20) => apiFetch(`/data/activity?limit=${limit}`),
-  getDashboard: () => apiFetch('/data/dashboard'),
+  getDashboard:    (p) => apiFetch(`/data/dashboard${toQS(p)}`),
   getRejectionReasons: () => apiFetch('/data/rejection-reasons'),
-  getChartSellers: () => apiFetch('/data/charts/sellers'),
-  getChartStages:  () => apiFetch('/data/charts/stages'),
-  getChartMonthly: () => apiFetch('/data/charts/monthly'),
+  getChartSellers:    (p) => apiFetch(`/data/charts/sellers${toQS(p)}`),
+  getChartStages:     (p) => apiFetch(`/data/charts/stages${toQS(p)}`),
+  getChartMonthly:    (p) => apiFetch(`/data/charts/monthly${toQS(p)}`),
+  getChartFunnel:     (p) => apiFetch(`/data/charts/funnel${toQS(p)}`),
+  getChartRejections: (p) => apiFetch(`/data/charts/rejections${toQS(p)}`),
+  getAlerts:          (p) => apiFetch(`/data/alerts${toQS(p)}`),
 
   // Mail
   syncMail: () => apiFetch('/mail/sync', { method: 'POST' }),
@@ -138,6 +148,26 @@ const CrmApi = {
   createNotificationRule: (data) => apiFetch('/notifications/rules', { method: 'POST', body: JSON.stringify(data) }),
   updateNotificationRule: (id, data) => apiFetch(`/notifications/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteNotificationRule: (id) => apiFetch(`/notifications/rules/${id}`, { method: 'DELETE' }),
+
+  // Articles
+  getArticles:       (p) => apiFetch(`/articles${toQS(p)}`),
+  searchArticles:    (q) => apiFetch(`/articles/search${toQS({ q })}`),
+  getArticleByCode:  (code) => apiFetch(`/articles/${encodeURIComponent(code)}`),
+  getArticleCategories: () => apiFetch('/articles/categories'),
+  getArticleMeta:    () => apiFetch('/articles/meta'),
+  createArticle:     (data) => apiFetch('/articles', { method: 'POST', body: JSON.stringify(data) }),
+  updateArticle:     (code, data) => apiFetch(`/articles/${encodeURIComponent(code)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteArticle:     (code) => apiFetch(`/articles/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  previewArticleXLS: (file) => {
+    const token = CrmAuth.getToken();
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(`${API_BASE}/articles/preview`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+    }).then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(new Error(b.error || `Error ${r.status}`))));
+  },
+  syncArticles: (token, deleteCodes) => apiFetch('/articles/sync', {
+    method: 'POST', body: JSON.stringify({ token, deleteCodes }),
+  }),
 
   // Upload attachments
   uploadAttachments: (quoteId, files) => {
