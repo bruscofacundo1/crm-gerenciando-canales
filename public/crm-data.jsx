@@ -31,17 +31,27 @@ function toPascal(k) {
   return k.split('-').map(s => s[0].toUpperCase() + s.slice(1)).join('');
 }
 
-// ---------- Logo (original, not MySelec trademark) ----------
+// ---------- Logo ----------
 function Logo({ size=28, tone='light' }) {
-  // A stylized "M" shape with an integrated bolt — original mark
-  const fg = tone === 'light' ? '#FFFFFF' : '#1B2A4A';
-  const acc = '#3B82F6';
+  // En fondo claro (login) envolvemos la imagen en un contenedor oscuro
+  if (tone === 'dark') {
+    return (
+      <div style={{
+        width: size, height: size,
+        background: '#1B2A4A',
+        borderRadius: Math.round(size * 0.22),
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+        flexShrink: 0,
+      }}>
+        <img src="/Logo.png" alt="MySelec" style={{ width: size * 0.85, height: size * 0.85, objectFit: 'contain' }}/>
+      </div>
+    );
+  }
   return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-label="MySelec">
-      <rect x="1" y="1" width="38" height="38" rx="9" stroke={fg} strokeOpacity=".15" strokeWidth="1"/>
-      <path d="M8 30V11l7 12 7-12v19" stroke={fg} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M26 10 L32 18 L28.5 19.5 L33 27 L24 19 L27.5 17.5 Z" fill={acc} stroke={acc} strokeWidth="1" strokeLinejoin="round"/>
-    </svg>
+    <img src="/Logo.png" alt="MySelec"
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
+    />
   );
 }
 
