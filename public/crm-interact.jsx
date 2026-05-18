@@ -327,6 +327,7 @@ function NewQuoteModal({ defaultClient }) {
     origin: 'Mail',
     observaciones: '',
     fileName: '',
+    fileObj: null,
   });
   const [saving, setSaving] = useS(false);
   const set = (k,v) => setForm(f => ({...f, [k]: v}));
@@ -338,13 +339,21 @@ function NewQuoteModal({ defaultClient }) {
     const source = sourceMap[form.origin] || 'MANUAL';
     setSaving(true);
     try {
-      await CrmApi.createQuote({
+      const created = await CrmApi.createQuote({
         clientId: client?.id || null,
         sellerId: form.seller || null,
         amount: form.monto ? parseFloat(form.monto) : null,
         source,
         deadline: form.fechaLimite || null,
       });
+      // Upload attachment if one was selected
+      if (form.fileObj && created?.id) {
+        try {
+          await CrmApi.uploadAttachments(created.id, [form.fileObj]);
+        } catch {
+          pushToast('Cotización creada, pero falló la subida del archivo', 'bad');
+        }
+      }
       const freshQuotes = await CrmApi.getQuotes();
       setQuotes(freshQuotes);
       pushToast('Cotización creada correctamente');
@@ -400,7 +409,10 @@ function NewQuoteModal({ defaultClient }) {
               {form.fileName || 'Seleccionar archivo (PDF, XLSX, imagen…)'}
             </span>
             <span className="btn-ghost text-xs py-1 px-2">Buscar</span>
-            <input type="file" className="hidden" onChange={e => set('fileName', e.target.files[0]?.name || '')}/>
+            <input type="file" className="hidden" onChange={e => {
+              const f = e.target.files[0];
+              setForm(prev => ({...prev, fileName: f?.name || '', fileObj: f || null}));
+            }}/>
           </label>
         </FormGroup>
       </div>

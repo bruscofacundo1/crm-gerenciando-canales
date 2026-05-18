@@ -1245,34 +1245,123 @@ function QuoteDetail({ code, onClose, canReassign }) {
 }
 
 function OrderDetail({ code, onClose, canReassign }) {
-  const { orders, clients, users, moveOrderStage } = useApp();
+  const { orders, clients, users, moveOrderStage, pushToast } = useApp();
   const o = orders.find(x=>x.code===code);
   if (!o) return null;
-  const cli = clients.find(c=>c.code===o.client);
-  const sel = users.find(u=>u.id===o.seller);
-  const stg = STAGES_F2.find(s=>s.id===o.stage);
-  const [stageOpen, setStageOpen] = useState(false);
 
-  const history = [
-    { stage:'oc',        at:'2026-04-19 11:20', by:'Luciano',  note:'OC del cliente recibida por mail — PDF adjunto' },
-    { stage:'np',        at:'2026-04-19 14:02', by:'Luciano',  note:`Nota de Pedido ${o.flexxus} cargada en Flexxus` },
-    { stage:'stock',     at:'2026-04-20 09:30', by:'Mariela',  note:'Verificación de stock: 80% disponible en depósito central' },
-    { stage:'proveedor', at:'2026-04-20 11:15', by:'Mariela',  note:'Pedido de reposición enviado a Prysmian — ETA 4 días' },
-    { stage:'armado',    at:'2026-04-22 15:40', by:'Mariela',  note:'Pedido armado y verificado. Listo para facturación' },
+  const cli  = clients.find(c=>c.code===o.client);
+  const sel  = users.find(u=>u.id===o.seller);
+  const stg  = STAGES_F2.find(s=>s.id===o.stage);
+  // For email-OC orders, the record lives in the Quote table → use quote endpoints
+  const isQuoteSource = o._source === 'QUOTE';
+
+  const [tab, setTab]             = useState('resumen');
+  const [stageOpen, setStageOpen] = useState(false);
+  const [notes, setNotes]         = useState([]);
+  const [history, setHistory]     = useState([]);
+  const [attachments, setAtts]    = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [newNote, setNewNote]     = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, filename }
+  const noteInputRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
+
+  // ── Fetch full detail ──
+  useEffect(() => {
+    setLoading(true);
+    const req = isQuoteSource
+      ? CrmApi.getQuoteDetail(o.id)
+      : CrmApi.getOrderDetail(o.id);
+    req
+      .then(detail => {
+        setNotes(detail.notes || []);
+        setHistory(isQuoteSource
+          ? (detail.unifiedHistory || detail.activities || [])
+          : (detail.activities || []));
+        setAtts(detail.attachments || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [o.id]);
+
+  // ── Add note ──
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    setSavingNote(true);
+    try {
+      const fn = isQuoteSource ? CrmApi.addQuoteNote : CrmApi.addOrderNote;
+      const nota = await fn(o.id, newNote.trim());
+      setNotes(ns => [...ns, nota]);
+      setNewNote('');
+    } catch (err) {
+      pushToast(err.message || 'Error al guardar nota', 'bad');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // ── Upload files ──
+  const handleUploadFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const fn = isQuoteSource ? CrmApi.uploadAttachments : CrmApi.uploadOrderAttachments;
+      const created = await fn(o.id, Array.from(files));
+      setAtts(prev => [...prev, ...created]);
+      pushToast(`${created.length} archivo${created.length > 1 ? 's' : ''} subido${created.length > 1 ? 's' : ''}`);
+    } catch (err) {
+      pushToast(err.message || 'Error al subir archivo', 'bad');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // ── Confirm delivery ──
+  const handleConfirmDelivery = () => {
+    if (!window.confirm('¿Confirmar la entrega de esta orden? Se moverá a "Entregada".')) return;
+    moveOrderStage(o.code, 'entregada');
+    onClose();
+  };
+
+  // ── File helpers ──
+  const fmtBytes = (b) => {
+    if (!b) return '';
+    return b >= 1024*1024 ? `${(b/(1024*1024)).toFixed(1)} MB` : `${Math.round(b/1024)} KB`;
+  };
+  const extOf = (filename) => {
+    if (filename && filename.includes('.')) return filename.split('.').pop().toLowerCase();
+    return 'file';
+  };
+  const extBg = (ext) => {
+    if (ext === 'pdf') return 'bg-red-500';
+    if (['xlsx','xls','csv'].includes(ext)) return 'bg-emerald-600';
+    if (['docx','doc'].includes(ext)) return 'bg-blue-500';
+    return 'bg-slate-500';
+  };
+
+  const checklistItems = [
+    ['OC del cliente recibida', true],
+    ['NP cargada en Flexxus',   !!o.flexxus],
+    ['Stock verificado',         ['stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
+    ['Factura emitida',          o.invoiceIssued || ['facturada','transito','entregada'].includes(o.stage)],
+    ['Remito conformado',        o.waybillReceived || o.stage === 'entregada'],
   ];
 
   return (
+    <>
     <Drawer onClose={onClose}
-      subtitle={`Fase 2 · Orden de Compra · ${stg.label}`}
-      title={`${code} — ${cli.name}`}
+      subtitle={`Fase 2 · Orden de Compra · ${stg?.label || o.stage}`}
+      title={`${code}${cli ? ` — ${cli.name}` : ''}`}
       width={960}
       headerExtras={
         <div className="flex items-center gap-2">
-          <Badge tone={stg.tone} dot>{stg.label}</Badge>
-          <button className="btn-ghost"><Icon name="file-text" size={13}/>Remito</button>
+          <Badge tone={stg?.tone || 'gray'} dot>{stg?.label || o.stage}</Badge>
           {canReassign && (
             <div className="relative">
-              <button className="btn-primary" onClick={()=>setStageOpen(o=>!o)}>
+              <button className="btn-primary" onClick={()=>setStageOpen(v=>!v)}>
                 <Icon name="arrow-right" size={13}/>Mover etapa
               </button>
               {stageOpen && (
@@ -1294,84 +1383,257 @@ function OrderDetail({ code, onClose, canReassign }) {
       }
       footer={
         <>
-          <button className="btn-ghost"><Icon name="message-square" size={13}/>Nota</button>
-          <button className="btn-ghost"><Icon name="paperclip" size={13}/>Adjuntar</button>
+          <button className="btn-ghost" onClick={() => { setTab('notas'); setTimeout(() => noteInputRef.current?.focus(), 80); }}>
+            <Icon name="message-square" size={13}/>Agregar nota
+          </button>
+          <button className="btn-ghost" onClick={() => { setTab('adj'); setTimeout(() => fileInputRef.current?.click(), 80); }}>
+            <Icon name="paperclip" size={13}/>Adjuntar
+          </button>
+          <input ref={fileInputRef} type="file" multiple className="hidden"
+            onChange={e => handleUploadFiles(e.target.files)}/>
           <div className="flex-1"/>
-          <button className="btn-accent"><Icon name="check" size={14}/>Confirmar entrega</button>
+          {o.stage !== 'entregada' && (
+            <button className="btn-accent" onClick={handleConfirmDelivery}>
+              <Icon name="check" size={14}/>Confirmar entrega
+            </button>
+          )}
+          {o.stage === 'entregada' && (
+            <span className="flex items-center gap-1.5 text-[13px] text-emerald-700 font-medium">
+              <Icon name="check-circle" size={15} className="text-emerald-500"/>Entregada
+            </span>
+          )}
         </>
       }
     >
+      {/* ── Pipeline ── */}
       <div className="px-6 pt-5 pb-4 bg-gradient-to-b from-surface to-white">
         <StagePipeline stages={STAGES_F2} currentId={o.stage}/>
         <div className="mt-4 grid grid-cols-4 gap-4">
-          <Field label="Cliente" value={cli.name}/>
+          <Field label="Cliente" value={cli?.name || '—'}/>
           <Field label="Vendedor">
-            <div className="flex items-center gap-2"><Avatar name={sel.name} size={20}/>{sel.name}</div>
+            {sel
+              ? <div className="flex items-center gap-2"><Avatar name={sel.name} size={20}/>{sel.name}</div>
+              : <span className="text-ink-400">Sin asignar</span>
+            }
           </Field>
-          <Field label="Nota Pedido" mono value={o.flexxus}/>
-          <Field label="De cotización" mono value={o.fromQuote}/>
-          <Field label="Zona entrega" value={o.entrega}/>
-          <Field label="Transportista" value={o.transp}/>
+          <Field label="Nota Pedido" mono value={o.flexxus || '—'}/>
+          <Field label="De cotización" mono value={o.fromQuote || '—'}/>
+          <Field label="Zona entrega" value={o.entrega || '—'}/>
+          <Field label="Transportista" value={o.transp || '—'}/>
           <Field label="Guía / Remito" mono value={o.guia || '—'}/>
-          <Field label="Fecha OC" mono value={fmtDate(o.fecha)}/>
+          <Field label="Fecha OC" mono value={o.fecha ? fmtDate(o.fecha) : '—'}/>
         </div>
       </div>
 
-      <div className="p-6 grid grid-cols-5 gap-4">
-        <div className="col-span-3 bg-white border border-line rounded-xl p-5">
-          <div className="text-sm font-semibold mb-3">Historial de estado</div>
-          <div className="space-y-3">
-            {history.map((h, i) => {
-              const st = STAGES_F2.find(s=>s.id===h.stage);
-              return (
-                <div key={i} className="relative pl-8 stepline">
-                  <span className="absolute left-1 top-1 w-4 h-4 rounded-full border-2 bg-white" style={{borderColor: STAGE_DOT[st.tone]}}/>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={st.tone} dot>{st.label}</Badge>
-                    <span className="text-[11px] text-ink-500 mono">{h.at}</span>
-                    <span className="text-[11px] text-ink-500">· {h.by}</span>
-                  </div>
-                  <div className="text-[13px] text-ink-700 mt-1">{h.note}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {/* ── Tabs ── */}
+      <TabBar
+        tabs={[
+          { id:'resumen',  label:'Resumen' },
+          { id:'historial',label:'Historial', count: loading ? null : history.length },
+          { id:'notas',    label:'Notas',     count: loading ? null : notes.length },
+          { id:'adj',      label:'Adjuntos',  count: loading ? null : attachments.length },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
 
-        <div className="col-span-2 space-y-4">
-          <div className="bg-white border border-line rounded-xl p-4">
-            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Checklist de entrega</div>
-            <ul className="text-[12.5px] space-y-1.5">
-              {[
-                ['OC del cliente recibida', true],
-                ['NP cargada en Flexxus',  true],
-                ['Stock verificado',        true],
-                ['Factura emitida',         o.stage==='facturada'||o.stage==='transito'||o.stage==='entregada'],
-                ['Remito conformado',       o.stage==='entregada'],
-              ].map(([l,done])=>(
-                <li key={l} className="flex items-center gap-2">
-                  <span className={cx('w-4 h-4 rounded-full inline-flex items-center justify-center',
-                    done ? 'bg-emerald-500 text-white' : 'bg-ink-300/50')}>
-                    {done && <Icon name="check" size={10}/>}
+      {/* ── Tab: Resumen ── */}
+      {tab === 'resumen' && (
+        <div className="p-6 grid grid-cols-5 gap-4">
+          {/* Checklist */}
+          <div className="col-span-3 bg-white border border-line rounded-xl p-5">
+            <div className="text-sm font-semibold mb-3">Checklist de entrega</div>
+            <ul className="text-[13px] space-y-2">
+              {checklistItems.map(([label, done]) => (
+                <li key={label} className="flex items-center gap-2.5">
+                  <span className={cx('w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0',
+                    done ? 'bg-emerald-500 text-white' : 'bg-ink-200')}>
+                    {done && <Icon name="check" size={11}/>}
                   </span>
-                  <span className={done ? 'text-ink-900' : 'text-ink-500'}>{l}</span>
+                  <span className={done ? 'text-ink-900' : 'text-ink-400'}>{label}</span>
                 </li>
               ))}
             </ul>
           </div>
-          <div className="bg-white border border-line rounded-xl p-4">
+
+          {/* Dirección */}
+          <div className="col-span-2 bg-white border border-line rounded-xl p-4">
             <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Dirección de entrega</div>
-            <div className="text-[13px] text-ink-900">{cli.address}</div>
-            <div className="text-[12px] text-ink-500 mt-0.5">{cli.city} — {cli.prov}</div>
-            <div className="mt-3 pt-3 border-t border-line text-[12px] space-y-1">
-              <div className="flex justify-between"><span className="text-ink-500">Contacto</span><span>Juan M. Rivas</span></div>
-              <div className="flex justify-between"><span className="text-ink-500">Tel.</span><span className="mono">{cli.phone}</span></div>
-              <div className="flex justify-between"><span className="text-ink-500">Horario</span><span>L-V 08-17hs</span></div>
-            </div>
+            {cli ? (
+              <>
+                <div className="text-[13px] text-ink-900">{cli.address || '—'}</div>
+                <div className="text-[12px] text-ink-500 mt-0.5">
+                  {[cli.city, cli.prov].filter(Boolean).join(' — ') || '—'}
+                </div>
+                <div className="mt-3 pt-3 border-t border-line text-[12px] space-y-1.5">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-ink-500">Teléfono</span>
+                    <span className="mono">{cli.phone || '—'}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-ink-500">Email</span>
+                    <span className="truncate max-w-[140px]">{cli.email || '—'}</span>
+                  </div>
+                  {cli.zone && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-ink-500">Zona</span>
+                      <span>{cli.zone}</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-[13px] text-ink-400">Sin datos de cliente</div>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Tab: Historial ── */}
+      {tab === 'historial' && (
+        <div className="p-6">
+          {loading ? (
+            <div className="text-center py-8 text-ink-400 text-[13px]">Cargando historial…</div>
+          ) : history.length === 0 ? (
+            <div className="text-center py-8 text-ink-400 text-[13px]">Sin movimientos registrados</div>
+          ) : (
+            <div className="space-y-3">
+              {history.map((h, i) => {
+                const st = STAGES_F2.find(s=>s.id===h.detail?.match(/→\s*(\S+)/)?.[1]) || null;
+                const dotColor = st ? (STAGE_DOT[st.tone] || '#94A3B8') : '#94A3B8';
+                return (
+                  <div key={h.id || i} className="relative pl-8 stepline">
+                    <span className="absolute left-1 top-1 w-4 h-4 rounded-full border-2 bg-white"
+                      style={{borderColor: dotColor}}/>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-ink-800">{h.action}</span>
+                      {h.user?.name && <span className="text-[11px] text-ink-500">· {h.user.name}</span>}
+                      <span className="text-[11px] text-ink-400 mono ml-auto">
+                        {h.createdAt ? fmtDateTime(h.createdAt) : ''}
+                      </span>
+                    </div>
+                    <div className="text-[13px] text-ink-700 mt-0.5">{h.detail}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Notas ── */}
+      {tab === 'notas' && (
+        <div className="p-6">
+          {loading ? (
+            <div className="text-center py-8 text-ink-400 text-[13px]">Cargando notas…</div>
+          ) : (
+            <div className="space-y-3 mb-4">
+              {notes.length === 0 && (
+                <div className="text-center py-6 text-ink-400 text-[13px]">Sin notas aún</div>
+              )}
+              {notes.map((n, i) => (
+                <div key={n.id || i} className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Avatar name={n.user?.name || '?'} size={20}/>
+                    <span className="text-[12px] font-semibold text-ink-800">{n.user?.name || '—'}</span>
+                    <span className="text-[11px] text-ink-400 mono ml-auto">
+                      {n.createdAt ? fmtDateTime(n.createdAt) : ''}
+                    </span>
+                  </div>
+                  <div className="text-[13px] text-ink-800 whitespace-pre-wrap">{n.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            <textarea
+              ref={noteInputRef}
+              className="inp flex-1 resize-none text-[13px]"
+              rows={2}
+              placeholder="Escribir nota…"
+              value={newNote}
+              onChange={e => setNewNote(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddNote(); }}
+            />
+            <button className="btn-primary self-end" onClick={handleAddNote} disabled={savingNote || !newNote.trim()}>
+              {savingNote ? '…' : <Icon name="send" size={14}/>}
+            </button>
+          </div>
+          <div className="text-[11px] text-ink-400 mt-1">Ctrl+Enter para enviar</div>
+        </div>
+      )}
+
+      {/* ── Tab: Adjuntos ── */}
+      {tab === 'adj' && (
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[13px] font-semibold text-ink-800">
+              {attachments.length} adjunto{attachments.length !== 1 ? 's' : ''}
+            </div>
+            <button className="btn-ghost text-xs" disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}>
+              {uploading
+                ? <><Icon name="loader" size={13} className="animate-spin"/>Subiendo…</>
+                : <><Icon name="upload" size={13}/>Subir archivo</>}
+            </button>
+          </div>
+          {loading ? (
+            <div className="text-center py-8 text-ink-400 text-[13px]">Cargando adjuntos…</div>
+          ) : attachments.length === 0 ? (
+            <div className="text-center py-8 text-ink-400 text-[13px]">Sin archivos adjuntos</div>
+          ) : (
+            <div className="space-y-2">
+              {attachments.map((a, i) => {
+                const ext = extOf(a.filename);
+                const fileUrl = `/uploads/attachments/${a.filename}`;
+                return (
+                  <div key={a.id || i} className="flex items-center gap-3 p-3 border border-line rounded-xl hover:bg-surface">
+                    <span className={cx('w-8 h-8 rounded-lg text-white text-[10px] font-bold inline-flex items-center justify-center uppercase shrink-0', extBg(ext))}>
+                      {ext}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium text-ink-900 truncate">{a.filename}</div>
+                      <div className="text-[11px] text-ink-400">{fmtBytes(a.size)}{a.createdAt ? ` · ${fmtDate(a.createdAt)}` : ''}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {ext === 'pdf' && (
+                        <button className="btn-ghost text-xs py-1 px-2"
+                          onClick={() => setPdfPreview({ url: fileUrl, filename: a.filename })}>
+                          <Icon name="eye" size={12}/>Ver
+                        </button>
+                      )}
+                      <a href={fileUrl} download={a.filename} className="btn-ghost text-xs py-1 px-2">
+                        <Icon name="download" size={12}/>Descargar
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </Drawer>
+
+    {/* ── PDF Preview modal ── */}
+    {pdfPreview && (
+      <div className="fixed inset-0 z-50 flex flex-col" style={{background:'rgba(0,0,0,0.85)'}}>
+        <div className="flex items-center gap-3 px-4 py-3" style={{background:'#1B2A4A'}}>
+          <button onClick={() => setPdfPreview(null)} className="text-white/70 hover:text-white">
+            <Icon name="x" size={18}/>
+          </button>
+          <span className="text-white text-[13px] font-medium truncate flex-1">{pdfPreview.filename}</span>
+          <a href={pdfPreview.url} download={pdfPreview.filename}
+            className="text-white/70 hover:text-white flex items-center gap-1.5 text-[13px]">
+            <Icon name="download" size={15}/>Descargar
+          </a>
+        </div>
+        <div className="flex-1 min-h-0">
+          <iframe src={pdfPreview.url} className="w-full h-full border-0" title={pdfPreview.filename}/>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

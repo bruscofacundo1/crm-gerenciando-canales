@@ -64,6 +64,26 @@ app.post('/api/quotes/:id/attachments', authMiddleware, upload.array('files', 10
   }
 });
 
+// POST /api/orders/:id/attachments — upload de adjunto a una OC
+app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10), async (req, res) => {
+  try {
+    const created = await Promise.all((req.files || []).map(f =>
+      prisma.attachment.create({
+        data: {
+          filename: f.filename,
+          path:     f.path,
+          size:     f.size,
+          mimeType: f.mimetype,
+          orderId:  req.params.id,
+        },
+      })
+    ));
+    res.json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
