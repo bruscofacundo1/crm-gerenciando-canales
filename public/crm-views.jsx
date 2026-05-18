@@ -52,7 +52,7 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
           {[
             { k:'Cotizaciones activas',  v:activas,   d:'mes corriente', tone:'blue', icon:'clipboard-list' },
             { k:'Presupuestos enviados', v:enviadas,  d:'esperando respuesta', tone:'orange', icon:'mail' },
-            { k:'Ganadas (abril)',       v:ganadas,   d:`tasa ${Math.round((ganadas/Math.max(myQuotes.length,1))*100)}%`, tone:'green', icon:'trophy' },
+            { k:`Ganadas (${new Date().toLocaleString('es-AR',{month:'long'})})`, v:ganadas, d:`tasa ${Math.round((ganadas/Math.max(myQuotes.length,1))*100)}%`, tone:'green', icon:'trophy' },
             { k:'Monto cotizado',        v:fmtMoney(monto), d:'en presupuestos vigentes', tone:'navy', icon:'banknote' },
           ].map((k,i) => (
             <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card flex items-start gap-3">
@@ -237,7 +237,7 @@ function LogisticsView({ onOpen }) {
             { k:'OCs en armado',      v:enArmado,   d:'en depósito', tone:'navy',   icon:'boxes' },
             { k:'Pendiente stock',    v:pendStock,  d:'o proveedor', tone:'orange', icon:'alert-triangle' },
             { k:'En tránsito',        v:enTransito, d:'con transportista', tone:'sky', icon:'truck' },
-            { k:'Entregadas (abril)', v:entregadas, d:'mes corriente', tone:'green', icon:'check-circle' },
+            { k:`Entregadas (${new Date().toLocaleString('es-AR',{month:'long'})})`, v:entregadas, d:'mes corriente', tone:'green', icon:'check-circle' },
           ].map((k,i) => (
             <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card flex items-start gap-3">
               <div className={cx('w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
@@ -528,7 +528,7 @@ function Clients({ readonly=false }) {
             {[
               { k:'Cotizaciones (6m)', v:cliQuotes.length, sub:`${cliQuotes.filter(q=>q.stage==='aceptada').length} ganadas` },
               { k:'OCs activas',       v:cliOrders.filter(o=>o.stage!=='entregada').length, sub:`${cliOrders.length} totales` },
-              { k:'Facturación anual', v:'$ 148k', sub:'estimado' },
+              { k:'OCs entregadas', v:cliOrders.filter(o=>o.stage==='entregada').length, sub:'historial completo' },
             ].map((k,i)=>(
               <div key={i} className="bg-white border border-line rounded-xl p-4">
                 <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.k}</div>
