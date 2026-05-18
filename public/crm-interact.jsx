@@ -58,7 +58,7 @@ function AppProvider({ children }) {
   const [orderFilters, setOrderFilters] = useS({ seller:'', client:'', period:'30d', delivery:'', transport:'', min:'', max:'' });
 
   // Logged-in user (for notes)
-  const [currentUserId, setCurrentUserId] = useS('u-vl');
+  const [currentUserId, setCurrentUserId] = useS('');
   // role view
   const [roleKey, setRoleKey] = useS('admin');
 
@@ -75,12 +75,12 @@ function AppProvider({ children }) {
   const nextQuoteCode = useCallback((qs) => {
     const nums = qs.map(q => parseInt(q.code.split('-').pop(),10)).filter(n => !isNaN(n));
     const next = (Math.max(0, ...nums) + 1).toString().padStart(3, '0');
-    return `COT-2026-${next}`;
+    return `COT-${new Date().getFullYear()}-${next}`;
   }, []);
   const nextOrderCode = useCallback((os) => {
     const nums = os.map(o => parseInt(o.code.split('-').pop(),10)).filter(n => !isNaN(n));
     const next = (Math.max(0, ...nums) + 1).toString().padStart(3, '0');
-    return `OC-2026-${next}`;
+    return `OC-${new Date().getFullYear()}-${next}`;
   }, []);
   const nextClientCode = useCallback((cs) => {
     const nums = cs.map(c => parseInt(c.code.split('-').pop(),10)).filter(n => !isNaN(n));
@@ -317,10 +317,10 @@ function ModalHost() {
 
 // --- 1. Nueva Cotización ---
 function NewQuoteModal({ defaultClient }) {
-  const { closeModal, addQuote, clients, users, setQuotes, pushToast } = useApp();
+  const { closeModal, addQuote, clients, users, setQuotes, pushToast, currentUserId } = useApp();
   const [form, setForm] = useS({
     client: defaultClient || '',
-    seller: 'u-lp',
+    seller: currentUserId || '',
     ingreso: new Date().toISOString().slice(0,10),
     fechaLimite: '',
     monto: '',
