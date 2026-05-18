@@ -179,6 +179,7 @@ const CrmApi = {
   getChartFunnel:     (p) => apiFetch(`/data/charts/funnel${toQS(p)}`),
   getChartRejections: (p) => apiFetch(`/data/charts/rejections${toQS(p)}`),
   getAlerts:          (p) => apiFetch(`/data/alerts${toQS(p)}`),
+  getComparativa:     (p) => apiFetch(`/data/comparativa${toQS(p)}`),
 
   // Mail
   syncMail: () => apiFetch('/mail/sync', { method: 'POST' }),

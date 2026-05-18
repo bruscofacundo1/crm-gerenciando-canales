@@ -190,29 +190,73 @@ const NP_PEDIDO_RE = /^\d{4}-\d{7,}$/;
 
 /**
  * Parsea líneas de ítems de una Nota de Pedido Flexxus.
- * Formato por línea: {descripción+código+cantidades}U$S {total}U$S {unitario}
+ *
+ * El PDF genera DOS tipos de líneas para cada ítem:
+ *  a) Descripción limpia (sin precios): "ETA 0063 - TERMINAL TERMOC. 1KV 3X185/95 A 3X300/1"
+ *  b) Línea completa (con precios):     "ETA 0063 - TERMINAL TERMOC...1893710-0002000U$S 4896,00U$S 24,48"
+ *
+ * Estrategia:
+ *  1. Primero recolectamos las líneas de descripción limpia (sin U$S).
+ *  2. Para cada línea completa, buscamos si empieza con alguna descripción limpia conocida.
+ *  3. Lo que sigue a la descripción es: {SKU}{qty}{remitida} — extraemos el SKU con /^(\d{6}-\d{3})/.
+ *
+ * Notas sobre el formato:
+ *  - El PDF concatena sin espacios separadores.
+ *  - El primer U$S es el TOTAL, el segundo es el precio UNITARIO.
  */
 function parseNotaPedidoItems(lines) {
+  // Líneas candidatas a ser descripciones puras (sin precios, con texto)
+  const descCandidates = lines.filter(l =>
+    !l.includes('U$S') && l.length > 8 && /[A-Za-z]/.test(l) &&
+    !/^(NOTA|DATOS|DETALLE|MYSELEC|ROWING|COMENTARIO|TRABAJO|Forma|Anticipo|Firma|FLETE|ORDEN|PRESUP|Responsable|Vendedor|Fecha|Operaci|Transpor|Dep|Localidad|Direcci|Telef|E-mail|C\.U\.I|Barrio|Provin|Condic|R\. Social)/i.test(l)
+  );
+
   const items = [];
   for (const line of lines) {
     const usdCount = (line.match(/U\$S/g) || []).length;
     if (usdCount < 2) continue;
-    // Ignorar líneas que empiezan con U$S (son totales, no ítems)
     if (line.startsWith('U$S')) continue;
-    const m = line.match(/^(.+?)U\$S\s*([\d,.]+)\s*U\$S\s*([\d,.]+)/);
-    if (!m) continue;
-    const descBlob  = m[1].trim();
-    const total     = parseArFloat(m[2]);
-    const unitPrice = parseArFloat(m[3]);
-    const qty       = (unitPrice > 0) ? Math.round(total / unitPrice) : 0;
+
+    // Extraer los dos precios: "U$S {total}U$S {unitario}"
+    const priceM = line.match(/U\$S\s*([\d,.]+)U\$S\s*([\d,.]+)/);
+    if (!priceM) continue;
+
+    const total     = parseArFloat(priceM[1]); // primero = total
+    const unitPrice = parseArFloat(priceM[2]); // segundo = unitario
+    const qty       = (unitPrice > 0 && total > 0) ? Math.round(total / unitPrice) : 0;
+    if (total === 0) continue;
+
+    const beforePrices = line.slice(0, line.indexOf('U$S')).trim();
+
+    let sku         = null;
+    let description = beforePrices;
+
+    // Buscar descripción limpia que sea prefijo de la línea completa
+    const matchDesc = descCandidates.find(d => beforePrices.startsWith(d) && beforePrices.length > d.length);
+    if (matchDesc) {
+      description = matchDesc.trim();
+      const afterDesc = beforePrices.slice(matchDesc.length);
+      // afterDesc = "{SKU}{qty}{remitida}", ej: "893710-0002000"
+      const skuM = afterDesc.match(/^(\d{5,7}-\d{3})/);
+      if (skuM) sku = skuM[1].toUpperCase();
+    } else {
+      // Fallback: buscar patrón SKU al final del blob (antes de las cantidades)
+      const skuM = beforePrices.match(/(\d{5,7}-\d{3})\d*$/);
+      if (skuM) {
+        sku = skuM[1].toUpperCase();
+        description = beforePrices.slice(0, skuM.index).trim() || beforePrices;
+      }
+    }
+
     items.push({
-      description: descBlob,
-      quantity:    qty,
-      unit:        null,
-      unitPrice:   unitPrice || null,
-      total:       total || null,
-      accepted:    true,
-      sortOrder:   items.length,
+      sku,
+      description,
+      quantity:  qty,
+      unit:      null,
+      unitPrice: unitPrice || null,
+      total:     total     || null,
+      accepted:  true,
+      sortOrder: items.length,
     });
   }
   return items;
@@ -272,28 +316,30 @@ async function parseNotaPedidoPDF(buffer) {
       }
     }
 
-    // ── Presupuesto de referencia (sección COMENTARIO) ────────────────────────
-    let comentIdx = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i] === 'COMENTARIO') { comentIdx = i; break; }
-    }
-    if (comentIdx >= 0) {
-      const SKIP_LABELS = new Set(['Forma de pago:', 'Anticipo:', 'Firma ClienteAclaración',
-        'TRABAJO REALIZADO', 'FLETE:RETIRAN', 'ORDEN DE COMPRA']);
-      for (let j = comentIdx + 1; j < Math.min(comentIdx + 6, lines.length); j++) {
-        const l = lines[j];
-        if (!l || SKIP_LABELS.has(l) || l.startsWith('U$S') || /^\d{4}$/.test(l)) continue;
-        result.presupuestoRef = l; // texto raw
-        // Intentar extraer referencia al presupuesto: "PR-17680", "NP-17680", número solo, etc.
-        const prMatch = l.match(/PR[-\s]?(\d+)/i)
-          || l.match(/NP[-\s]?(\d+)/i)
-          || l.match(/presupuesto\s+(\d+)/i)
-          || l.match(/\b(\d{4,6})\b/);
-        if (prMatch) {
-          result.presupuestoNP = `PR-${prMatch[1]}`;  // siempre formateamos como PR-
-        }
-        break;
+    // ── Presupuesto de referencia y OC del cliente (sección COMENTARIO) ─────
+    // IMPORTANTE: pdf-parse concatena los valores sin espacio separador.
+    // Ejemplos reales:
+    //   "ORDEN DE COMPRA4500038388"   (sin espacio)
+    //   "FLETE:RETIRAN"
+    //   "PRESUPUESTO18009"            (sin espacio)
+    // La sección COMENTARIO puede aparecer antes o después de firma/forma de pago.
+    // Buscamos todas las líneas del PDF completo, no solo las inmediatas al label.
+    for (const line of lines) {
+      if (!result.ocNumber) {
+        // "ORDEN DE COMPRA4500038388" o "ORDEN DE COMPRA 4500038388"
+        const ocM = line.match(/ORDEN\s+DE\s+COMPRA\s*([A-Z0-9]+)/i);
+        if (ocM) result.ocNumber = ocM[1];
       }
+      if (!result.presupuestoNP) {
+        // "PRESUPUESTO18009" o "PRESUPUESTO 18009" o "PR-18009"
+        const prM = line.match(/PRESUPUESTO\s*(\d+)/i)
+          || line.match(/\bPR[-\s](\d+)\b/i);
+        if (prM) {
+          result.presupuestoRef = line;
+          result.presupuestoNP  = `PR-${prM[1]}`;
+        }
+      }
+      if (result.ocNumber && result.presupuestoNP) break;
     }
 
     // ── Fecha ─────────────────────────────────────────────────────────────────

@@ -381,4 +381,164 @@ router.get('/charts/rejections', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── GET /api/data/comparativa ───────────────────────────────────────────────
+// Compara ítems de un PRESUPUESTO vs su NOTA_DE_PEDIDO vinculada.
+// Filtros: clientId, sellerId, quoteId (presupuesto), npCode, from, to
+// Devuelve: array de pares { presupuesto, notaPedido, items[] } con diferencias por ítem.
+router.get('/comparativa', authMiddleware, async (req, res) => {
+  try {
+    const { clientId, sellerId, quoteId, npCode, from, to } = req.query;
+
+    // ── Construir filtro base para buscar PRESUPUESTOS ──────────────────────
+    const where = { mailType: 'PRESUPUESTO' };
+    if (clientId) where.clientId = clientId;
+    if (sellerId) where.sellerId = sellerId;
+    if (quoteId)  where.id       = quoteId;
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to)   where.createdAt.lte = new Date(new Date(to).setHours(23, 59, 59, 999));
+    }
+
+    // Si se filtra por npCode, buscar la NP y tomar su linkedQuoteId
+    if (npCode) {
+      const np = await prisma.quote.findFirst({ where: { mailType: 'NOTA_PEDIDO', flexxusCode: { contains: npCode } } });
+      if (np?.linkedQuoteId) where.id = np.linkedQuoteId;
+      else return res.json([]);
+    }
+
+    // ── Buscar presupuestos que tengan al menos una NP vinculada ────────────
+    const presupuestos = await prisma.quote.findMany({
+      where: {
+        ...where,
+        linkedBy: { some: { mailType: 'NOTA_PEDIDO' } },
+      },
+      include: {
+        client:  { select: { id: true, name: true, code: true } },
+        seller:  { select: { id: true, name: true } },
+        items:   { orderBy: { sortOrder: 'asc' } },
+        linkedBy: {
+          where: { mailType: 'NOTA_PEDIDO' },
+          include: { items: { orderBy: { sortOrder: 'asc' } } },
+          orderBy: { createdAt: 'desc' },
+          take: 1, // la NP más reciente
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    // ── Construir respuesta con comparativa por ítem ────────────────────────
+    const result = presupuestos.map(pres => {
+      const np = pres.linkedBy[0] || null;
+
+      // Índice de ítems NP por SKU y descripción normalizada
+      const npBySku  = {};
+      const npByDesc = {};
+      for (const it of (np?.items || [])) {
+        if (it.sku)  npBySku[it.sku.toUpperCase()] = it;
+        const dk = it.description.toLowerCase().trim().substring(0, 40);
+        npByDesc[dk] = it;
+      }
+
+      // ── Comparar ítems del presupuesto vs NP ────────────────────────────
+      const rows = [];
+      const npUsed = new Set();
+
+      for (const pi of pres.items) {
+        const key  = pi.sku?.toUpperCase();
+        const dkey = pi.description.toLowerCase().trim().substring(0, 40);
+        const ni   = (key && npBySku[key]) || npByDesc[dkey] || null;
+
+        if (ni) npUsed.add(ni.id);
+
+        const qtyPres = pi.quantity || 0;
+        const qtyNP   = ni?.quantity || 0;
+        const totPres = pi.total    || (pi.unitPrice || 0) * qtyPres || 0;
+        const totNP   = ni?.total   || (ni?.unitPrice || 0) * qtyNP  || 0;
+
+        let estado;
+        if (!ni)                       estado = 'no_compro';    // en pres, no en NP
+        else if (qtyPres === qtyNP)    estado = 'igual';
+        else                           estado = 'cantidad_distinta';
+
+        rows.push({
+          sku:         pi.sku || ni?.sku || null,
+          description: pi.description,
+          // Presupuesto
+          qtyPres,
+          unitPricePres: pi.unitPrice || null,
+          totalPres:     totPres,
+          // Nota de Pedido
+          qtyNP:         ni ? qtyNP   : null,
+          unitPriceNP:   ni?.unitPrice || null,
+          totalNP:       ni ? totNP   : null,
+          // Diferencia
+          qtyDiff:       ni ? (qtyNP - qtyPres) : null,
+          totalDiff:     ni ? (totNP - totPres)  : null,
+          estado,
+        });
+      }
+
+      // Ítems que están en NP pero no en presupuesto → "agregado"
+      for (const ni of (np?.items || [])) {
+        if (npUsed.has(ni.id)) continue;
+        rows.push({
+          sku:           ni.sku || null,
+          description:   ni.description,
+          qtyPres:       null,
+          unitPricePres: null,
+          totalPres:     null,
+          qtyNP:         ni.quantity || 0,
+          unitPriceNP:   ni.unitPrice || null,
+          totalNP:       ni.total     || 0,
+          qtyDiff:       null,
+          totalDiff:     null,
+          estado:        'agregado',
+        });
+      }
+
+      // ── Totales resumen ─────────────────────────────────────────────────
+      const totalPres = rows.reduce((s, r) => s + (r.totalPres || 0), 0);
+      const totalNP   = rows.reduce((s, r) => s + (r.totalNP   || 0), 0);
+
+      return {
+        presupuesto: {
+          id:          pres.id,
+          code:        pres.code,
+          flexxusCode: pres.flexxusCode,
+          stage:       pres.stage,
+          createdAt:   pres.createdAt,
+          client:      pres.client,
+          seller:      pres.seller,
+        },
+        notaPedido: np ? {
+          id:          np.id,
+          code:        np.code,
+          flexxusCode: np.flexxusCode,
+          createdAt:   np.createdAt,
+          ocNumber:    np.rejectNotes?.startsWith('OC_CLIENTE:') ? np.rejectNotes.slice(11) : null,
+        } : null,
+        resumen: {
+          totalPres:    Math.round(totalPres * 100) / 100,
+          totalNP:      Math.round(totalNP   * 100) / 100,
+          diferencia:   Math.round((totalNP - totalPres) * 100) / 100,
+          conversion:   totalPres > 0 ? Math.round((totalNP / totalPres) * 100) : null,
+          itemsTotal:   rows.length,
+          itemsIguales:          rows.filter(r => r.estado === 'igual').length,
+          itemsCantDistinta:     rows.filter(r => r.estado === 'cantidad_distinta').length,
+          itemsNoCompro:         rows.filter(r => r.estado === 'no_compro').length,
+          itemsAgregado:         rows.filter(r => r.estado === 'agregado').length,
+        },
+        items: rows,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Comparativa error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

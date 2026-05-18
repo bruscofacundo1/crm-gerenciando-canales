@@ -159,9 +159,10 @@ function App() {
           {screen === 'my-orders'  && <MySalesView user={user} initialTab="orders" onOpen={openDetail}/>}
           {screen === 'ops'        && <LogisticsView onOpen={(c)=>openDetail(c,'order')}/>}
           {screen === 'clients'    && <Clients readonly={roleKey!=='admin'}/>}
-          {screen === 'articles'   && <Articles/>}
-          {screen === 'team'       && <Team/>}
-          {screen === 'config'     && <Config/>}
+          {screen === 'articles'    && <Articles/>}
+          {screen === 'comparativa' && <Comparativa/>}
+          {screen === 'team'        && <Team/>}
+          {screen === 'config'      && <Config/>}
         </main>
       </div>
     </div>
@@ -768,17 +769,19 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
     { id:'quotes',    label:'Cotizaciones',          icon:'clipboard-list', sub:'Fase 1' },
     { id:'orders',    label:'Órdenes de Compra',     icon:'package',        sub:'Fase 2' },
     { id:'clients',   label:'Clientes',              icon:'building-2' },
-    { id:'articles',  label:'Artículos',             icon:'box',        sub:'Catálogo' },
-    { id:'team',      label:'Equipo',                icon:'users' },
-    { id:'config',    label:'Configuración',         icon:'settings' },
+    { id:'articles',    label:'Artículos',             icon:'box',        sub:'Catálogo' },
+    { id:'comparativa', label:'Comparativa',           icon:'git-compare', sub:'Pres. vs NP' },
+    { id:'team',        label:'Equipo',                icon:'users' },
+    { id:'config',      label:'Configuración',         icon:'settings' },
   ];
   const navSeller = [
-    { id:'my-quotes', label:'Mis Cotizaciones',      icon:'clipboard-list' },
-    { id:'my-orders', label:'Mis Órdenes de Compra', icon:'package' },
-    { id:'quotes',    label:'Pipeline Cotizaciones', icon:'layout',     sub:'Kanban Fase 1' },
-    { id:'orders',    label:'Pipeline OCs',          icon:'columns',    sub:'Kanban Fase 2' },
-    { id:'clients',   label:'Clientes',              icon:'building-2', sub:'solo lectura' },
-    { id:'articles',  label:'Artículos',             icon:'box',        sub:'Catálogo' },
+    { id:'my-quotes',   label:'Mis Cotizaciones',      icon:'clipboard-list' },
+    { id:'my-orders',   label:'Mis Órdenes de Compra', icon:'package' },
+    { id:'quotes',      label:'Pipeline Cotizaciones', icon:'layout',     sub:'Kanban Fase 1' },
+    { id:'orders',      label:'Pipeline OCs',          icon:'columns',    sub:'Kanban Fase 2' },
+    { id:'clients',     label:'Clientes',              icon:'building-2', sub:'solo lectura' },
+    { id:'articles',    label:'Artículos',             icon:'box',        sub:'Catálogo' },
+    { id:'comparativa', label:'Comparativa',           icon:'git-compare', sub:'Pres. vs NP' },
   ];
   const navLog = [
     { id:'ops', label:'Operaciones', icon:'truck', sub:'Fase 2' },

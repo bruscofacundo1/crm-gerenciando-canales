@@ -2387,4 +2387,273 @@ function Articles() {
   );
 }
 
-Object.assign(window, { MySalesView, LogisticsView, Clients, Articles, Team, Config, PageHead });
+// ─── Comparativa: Presupuesto vs Nota de Pedido ──────────────────────────────
+function Comparativa() {
+  const [filters, setFilters]   = useState({ clientId: '', sellerId: '', quoteId: '', npCode: '', from: '', to: '' });
+  const [data, setData]         = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [users, setUsers]       = useState([]);
+  const [clients, setClients]   = useState([]);
+  const [expanded, setExpanded] = useState({}); // { [presId]: true }
+  const [searched, setSearched] = useState(false);
+
+  // Cargar vendedores y clientes para los filtros
+  React.useEffect(() => {
+    CrmApi.getUsers().then(setUsers).catch(() => {});
+    CrmApi.getClients().then(setClients).catch(() => {});
+  }, []);
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setSearched(true);
+    try {
+      const params = {};
+      if (filters.clientId) params.clientId = filters.clientId;
+      if (filters.sellerId) params.sellerId = filters.sellerId;
+      if (filters.quoteId)  params.quoteId  = filters.quoteId;
+      if (filters.npCode)   params.npCode   = filters.npCode;
+      if (filters.from)     params.from     = filters.from;
+      if (filters.to)       params.to       = filters.to;
+      const result = await CrmApi.getComparativa(params);
+      setData(result);
+      // Expandir el primero automáticamente si hay pocos resultados
+      if (result.length === 1) setExpanded({ [result[0].presupuesto.id]: true });
+    } catch (err) {
+      alert(err.message || 'Error al cargar comparativa');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleExpand = (id) =>
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const ESTADO_CONFIG = {
+    igual:            { label: 'Igual',            bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-500'  },
+    cantidad_distinta: { label: 'Cant. distinta',  bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-500'  },
+    no_compro:        { label: 'No compró',        bg: 'bg-red-50',    text: 'text-red-700',    dot: 'bg-red-500'    },
+    agregado:         { label: 'Agregado en NP',   bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500'   },
+  };
+
+  const fmtUSD = (v) => v == null ? '—' : `U$S ${Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtQty = (v) => v == null ? '—' : Number(v).toLocaleString('es-AR');
+
+  return (
+    <div className="p-6 space-y-6">
+      <PageHead title="Comparativa" subtitle="Presupuesto vs Nota de Pedido — diferencias por ítem" />
+
+      {/* ── Filtros ── */}
+      <div className="card p-4 space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div>
+            <label className="label-sm">Cliente</label>
+            <select className="input-sm w-full" value={filters.clientId}
+              onChange={e => setFilters(f => ({ ...f, clientId: e.target.value }))}>
+              <option value="">Todos</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label-sm">Vendedor</label>
+            <select className="input-sm w-full" value={filters.sellerId}
+              onChange={e => setFilters(f => ({ ...f, sellerId: e.target.value }))}>
+              <option value="">Todos</option>
+              {users.filter(u => ['VENDEDOR','ADMIN'].includes(u.role)).map(u =>
+                <option key={u.id} value={u.id}>{u.name}</option>
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="label-sm">Código presupuesto</label>
+            <input className="input-sm w-full" placeholder="ej: COT-2026-041"
+              value={filters.quoteId}
+              onChange={e => setFilters(f => ({ ...f, quoteId: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label-sm">Nº Nota de Pedido</label>
+            <input className="input-sm w-full" placeholder="ej: NP-20817"
+              value={filters.npCode}
+              onChange={e => setFilters(f => ({ ...f, npCode: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label-sm">Desde</label>
+            <input type="date" className="input-sm w-full" value={filters.from}
+              onChange={e => setFilters(f => ({ ...f, from: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label-sm">Hasta</label>
+            <input type="date" className="input-sm w-full" value={filters.to}
+              onChange={e => setFilters(f => ({ ...f, to: e.target.value }))} />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-primary text-sm px-4 py-1.5" onClick={handleSearch} disabled={loading}>
+            {loading ? 'Buscando...' : '🔍 Buscar'}
+          </button>
+          <button className="btn-ghost text-sm px-3 py-1.5" onClick={() => {
+            setFilters({ clientId: '', sellerId: '', quoteId: '', npCode: '', from: '', to: '' });
+            setData([]); setSearched(false);
+          }}>Limpiar</button>
+        </div>
+      </div>
+
+      {/* ── Resultados ── */}
+      {loading && (
+        <div className="text-center py-12 text-ink-400">Cargando comparativa...</div>
+      )}
+
+      {!loading && searched && data.length === 0 && (
+        <div className="card p-8 text-center text-ink-400">
+          No hay presupuestos con Nota de Pedido vinculada para los filtros seleccionados.
+        </div>
+      )}
+
+      {!loading && !searched && (
+        <div className="card p-8 text-center text-ink-400">
+          Aplicá filtros y presioná <strong>Buscar</strong> para ver la comparativa.
+        </div>
+      )}
+
+      {!loading && data.map(row => {
+        const { presupuesto: pres, notaPedido: np, resumen, items } = row;
+        const isOpen = !!expanded[pres.id];
+
+        return (
+          <div key={pres.id} className="card overflow-hidden">
+            {/* ── Header del par ── */}
+            <button
+              className="w-full text-left p-4 hover:bg-ink-50 transition-colors"
+              onClick={() => toggleExpand(pres.id)}>
+              <div className="flex items-start gap-4">
+                <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Presupuesto */}
+                  <div>
+                    <p className="text-xs text-ink-400 mb-0.5">Presupuesto</p>
+                    <p className="font-semibold text-sm">{pres.code}</p>
+                    {pres.flexxusCode && <p className="text-xs text-ink-400">{pres.flexxusCode}</p>}
+                  </div>
+                  {/* Nota de Pedido */}
+                  <div>
+                    <p className="text-xs text-ink-400 mb-0.5">Nota de Pedido</p>
+                    {np ? (
+                      <>
+                        <p className="font-semibold text-sm">{np.flexxusCode || np.code}</p>
+                        {np.ocNumber && <p className="text-xs text-ink-400">OC: {np.ocNumber}</p>}
+                      </>
+                    ) : <p className="text-sm text-ink-300">—</p>}
+                  </div>
+                  {/* Cliente / Vendedor */}
+                  <div>
+                    <p className="text-xs text-ink-400 mb-0.5">Cliente</p>
+                    <p className="text-sm font-medium">{pres.client?.name || '—'}</p>
+                    <p className="text-xs text-ink-400">{pres.seller?.name || '—'}</p>
+                  </div>
+                  {/* Resumen numérico */}
+                  <div className="text-right">
+                    <p className="text-xs text-ink-400 mb-1">Total pres. → NP</p>
+                    <p className="text-sm font-semibold">{fmtUSD(resumen.totalPres)}</p>
+                    <p className={`text-sm font-semibold ${resumen.totalNP >= resumen.totalPres ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtUSD(resumen.totalNP)}
+                    </p>
+                    {resumen.conversion != null &&
+                      <p className="text-xs text-ink-400">{resumen.conversion}% conversión</p>}
+                  </div>
+                </div>
+                {/* Badges de estado */}
+                <div className="flex flex-col gap-1 items-end shrink-0">
+                  {resumen.itemsIguales > 0 &&
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                      {resumen.itemsIguales} iguales
+                    </span>}
+                  {resumen.itemsCantDistinta > 0 &&
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                      {resumen.itemsCantDistinta} cant. distintas
+                    </span>}
+                  {resumen.itemsNoCompro > 0 &&
+                    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                      {resumen.itemsNoCompro} no compró
+                    </span>}
+                  {resumen.itemsAgregado > 0 &&
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                      {resumen.itemsAgregado} agregados
+                    </span>}
+                  <span className="text-ink-300 text-sm mt-1">{isOpen ? '▲' : '▼'}</span>
+                </div>
+              </div>
+            </button>
+
+            {/* ── Tabla de ítems (desplegable) ── */}
+            {isOpen && (
+              <div className="border-t border-ink-100 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-ink-50 text-ink-500 text-xs">
+                      <th className="px-3 py-2 text-left w-4"></th>
+                      <th className="px-3 py-2 text-left">Código</th>
+                      <th className="px-3 py-2 text-left">Descripción</th>
+                      <th className="px-3 py-2 text-right">Cant. Pres.</th>
+                      <th className="px-3 py-2 text-right">P.U. Pres.</th>
+                      <th className="px-3 py-2 text-right">Total Pres.</th>
+                      <th className="px-3 py-2 text-right">Cant. NP</th>
+                      <th className="px-3 py-2 text-right">P.U. NP</th>
+                      <th className="px-3 py-2 text-right">Total NP</th>
+                      <th className="px-3 py-2 text-right">Dif. $</th>
+                      <th className="px-3 py-2 text-center">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {items.map((it, idx) => {
+                      const cfg = ESTADO_CONFIG[it.estado] || ESTADO_CONFIG.igual;
+                      return (
+                        <tr key={idx} className={`${cfg.bg} hover:brightness-95 transition-all`}>
+                          <td className="px-3 py-2">
+                            <span className={`inline-block w-2 h-2 rounded-full ${cfg.dot}`}></span>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-ink-500">{it.sku || '—'}</td>
+                          <td className="px-3 py-2 max-w-xs truncate" title={it.description}>{it.description}</td>
+                          <td className="px-3 py-2 text-right">{fmtQty(it.qtyPres)}</td>
+                          <td className="px-3 py-2 text-right text-xs">{fmtUSD(it.unitPricePres)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{fmtUSD(it.totalPres)}</td>
+                          <td className={`px-3 py-2 text-right font-medium ${it.estado === 'cantidad_distinta' ? cfg.text : ''}`}>
+                            {fmtQty(it.qtyNP)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs">{fmtUSD(it.unitPriceNP)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{fmtUSD(it.totalNP)}</td>
+                          <td className={`px-3 py-2 text-right font-medium ${it.totalDiff == null ? '' : it.totalDiff < 0 ? 'text-red-600' : it.totalDiff > 0 ? 'text-green-600' : 'text-ink-400'}`}>
+                            {it.totalDiff == null ? '—' : (it.totalDiff > 0 ? '+' : '') + fmtUSD(it.totalDiff)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.text} bg-white bg-opacity-60`}>
+                              {cfg.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {/* Totales */}
+                  <tfoot>
+                    <tr className="bg-ink-100 font-semibold text-sm">
+                      <td colSpan="5" className="px-3 py-2 text-right text-ink-500">TOTAL</td>
+                      <td className="px-3 py-2 text-right">{fmtUSD(resumen.totalPres)}</td>
+                      <td colSpan="2" className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right">{fmtUSD(resumen.totalNP)}</td>
+                      <td className={`px-3 py-2 text-right ${resumen.diferencia < 0 ? 'text-red-600' : resumen.diferencia > 0 ? 'text-green-600' : ''}`}>
+                        {(resumen.diferencia > 0 ? '+' : '') + fmtUSD(resumen.diferencia)}
+                      </td>
+                      <td className="px-3 py-2 text-center text-ink-400">
+                        {resumen.conversion != null ? `${resumen.conversion}%` : '—'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+Object.assign(window, { MySalesView, LogisticsView, Clients, Articles, Team, Config, PageHead, Comparativa });

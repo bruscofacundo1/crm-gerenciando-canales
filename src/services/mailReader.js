@@ -420,23 +420,39 @@ async function processNotaPedido(parsed, mailData, att, imap) {
   // ── Buscar presupuesto de referencia ────────────────────────────────────
   let presupuesto = null;
 
-  // 1. Por NP del presupuesto extraído del COMENTARIO
+  // 1. Por NP del presupuesto extraído del COMENTARIO (ej: "PR-18009")
   if (npData.presupuestoNP) {
     presupuesto = await prisma.quote.findFirst({
       where: { flexxusCode: npData.presupuestoNP, mailType: 'PRESUPUESTO' },
     });
-    if (presupuesto) console.log(`   🔗 Presupuesto encontrado por NP: ${presupuesto.code}`);
+    if (presupuesto) console.log(`   🔗 Presupuesto encontrado por NP Flexxus: ${presupuesto.code} (${npData.presupuestoNP})`);
   }
 
-  // 2. Fallback: por CUIT del cliente + presupuesto abierto reciente
+  // 2. Fallback: por número raw (sin prefijo PR-) — por si el presupuesto quedó guardado distinto
+  if (!presupuesto && npData.presupuestoNP) {
+    const rawNum = npData.presupuestoNP.replace('PR-', '');
+    presupuesto = await prisma.quote.findFirst({
+      where: { flexxusCode: { contains: rawNum }, mailType: 'PRESUPUESTO' },
+    });
+    if (presupuesto) console.log(`   🔗 Presupuesto encontrado por NP raw: ${presupuesto.code}`);
+  }
+
+  // 3. Fallback: por CUIT del cliente + presupuesto aceptado reciente
   if (!presupuesto && npData.cuit) {
-    const client = await prisma.client.findFirst({ where: { cuit: { equals: npData.cuit, mode: 'insensitive' } } });
-    if (client) {
+    const clientByCuit = await prisma.client.findFirst({ where: { cuit: { equals: npData.cuit, mode: 'insensitive' } } });
+    if (clientByCuit) {
       const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 180);
       presupuesto = await prisma.quote.findFirst({
-        where: { clientId: client.id, mailType: 'PRESUPUESTO', createdAt: { gte: cutoff } },
+        where: { clientId: clientByCuit.id, mailType: 'PRESUPUESTO', stage: 'aceptada', createdAt: { gte: cutoff } },
         orderBy: { createdAt: 'desc' },
       });
+      if (!presupuesto) {
+        // Sin stage aceptada, cualquier presupuesto reciente
+        presupuesto = await prisma.quote.findFirst({
+          where: { clientId: clientByCuit.id, mailType: 'PRESUPUESTO', createdAt: { gte: cutoff } },
+          orderBy: { createdAt: 'desc' },
+        });
+      }
       if (presupuesto) console.log(`   🔗 Presupuesto por CUIT cliente: ${presupuesto.code}`);
     }
   }
@@ -446,12 +462,15 @@ async function processNotaPedido(parsed, mailData, att, imap) {
   if (presupuesto) {
     order = await prisma.order.findFirst({ where: { fromQuoteId: presupuesto.id } });
     if (order) {
-      // Actualizar Order con NP de la Nota de Pedido
+      // Actualizar Order con NP de la Nota de Pedido y Nº OC del cliente
       await prisma.order.update({
         where: { id: order.id },
-        data:  { flexxusCode: npData.npCode },
+        data:  {
+          flexxusCode:  npData.npCode,
+          ...(npData.ocNumber ? { clientOCCode: npData.ocNumber } : {}),
+        },
       });
-      console.log(`   🔗 Order ${order.code} actualizada con NP: ${npData.npCode}`);
+      console.log(`   🔗 Order ${order.code} actualizada — NP: ${npData.npCode}${npData.ocNumber ? ` | OC cliente: ${npData.ocNumber}` : ''}`);
     }
   }
 
@@ -478,7 +497,7 @@ async function processNotaPedido(parsed, mailData, att, imap) {
     data: {
       code,
       clientId:       client?.id || presupuesto?.clientId || null,
-      sellerId:       presupuesto?.sellerId || null,
+      sellerId:       presupuesto?.sellerId || client?.defaultSellerId || null,
       stage:          'oc',
       source:         'EMAIL',
       mailType:       'NOTA_PEDIDO',
@@ -1040,9 +1059,10 @@ async function processEmail(mailData, imap) {
     }
 
     // ── Clasificar tipo de mail ───────────────────────────────────────────
-    // Cualquier adjunto real no-Flexxus → OC. Sin adjuntos → SOLICITUD.
-    const hasOCAttachment = !flexxusData && realAttachments.length > 0;
-    const mailType = flexxusData ? 'PRESUPUESTO' : (hasOCAttachment ? 'OC' : 'SOLICITUD');
+    // Mail entrante con PDF Flexxus → PRESUPUESTO. Todo lo demás → SOLICITUD.
+    // (Los adjuntos del cliente —planos, listas de materiales, specs— se guardan igual)
+    // La OC no se recibe por mail; el vendedor la registra manualmente cambiando stage a "aceptada".
+    const mailType = flexxusData ? 'PRESUPUESTO' : 'SOLICITUD';
 
     console.log(`   📩 ${subject} | from: ${originalSender} | adjuntos reales: ${realAttachments.length} | tipo: ${mailType}`);
 
@@ -1135,7 +1155,7 @@ async function processEmail(mailData, imap) {
         code,
         clientId:  client?.id || null,
         sellerId:  sellerId,
-        stage:          mailType === 'PRESUPUESTO' ? 'enviado' : (mailType === 'OC' ? 'oc' : (client ? 'asignada' : 'recibida')),
+        stage:          mailType === 'PRESUPUESTO' ? 'enviado' : (client ? 'asignada' : 'recibida'),
         source:         'EMAIL',
         mailType,
         flexxusCode:    flexxusData?.npCode || null,
@@ -1202,55 +1222,6 @@ async function processEmail(mailData, imap) {
         }
       } catch (e) {
         console.error('   ❌ Error al auto-vincular:', e.message);
-      }
-    }
-
-    // ── Auto-vincular OC con PRESUPUESTO existente ───────────────────────
-    if (mailType === 'OC') {
-      try {
-        let presupuestoTarget = null;
-        const cutoffOC = new Date(); cutoffOC.setDate(cutoffOC.getDate() - 90);
-
-        // 1. Match por hilo
-        if (inReplyTo) {
-          presupuestoTarget = await prisma.quote.findFirst({
-            where: { emailMessageId: inReplyTo, mailType: 'PRESUPUESTO', linkedQuoteId: null },
-          });
-          if (presupuestoTarget) console.log(`   🔗 OC: match por hilo email → ${presupuestoTarget.code}`);
-        }
-
-        // 2. Fallback: mismo cliente, presupuesto abierto, últimos 90 días
-        if (!presupuestoTarget && client) {
-          const candidatas = await prisma.quote.findMany({
-            where: {
-              clientId:      client.id,
-              mailType:      'PRESUPUESTO',
-              linkedQuoteId: null,
-              stage:         { notIn: ['rechazada', 'aceptada'] },
-              createdAt:     { gte: cutoffOC },
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (candidatas.length === 1) {
-            presupuestoTarget = candidatas[0];
-            console.log(`   🔗 OC: match por cliente único → ${presupuestoTarget.code}`);
-          } else if (candidatas.length > 1) {
-            console.log(`   ⚠️  OC: ${candidatas.length} presupuestos abiertos del cliente — vínculo manual requerido`);
-          }
-        }
-
-        if (presupuestoTarget) {
-          const npCode = presupuestoTarget.flexxusCode || null;
-          await prisma.quote.update({
-            where: { id: quote.id },
-            data: { linkedQuoteId: presupuestoTarget.id, ...(npCode ? { flexxusCode: npCode } : {}) },
-          });
-          await prisma.quote.update({ where: { id: presupuestoTarget.id }, data: { linkedQuoteId: quote.id } });
-          console.log(`   🔗 OC ${quote.code} ↔ PRES ${presupuestoTarget.code}${npCode ? ` | NP: ${npCode}` : ''}`);
-          await copyPresupuestoItemsToOC(presupuestoTarget.id, quote.id);
-        }
-      } catch (e) {
-        console.error('   ❌ Error al auto-vincular OC:', e.message);
       }
     }
 
