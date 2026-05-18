@@ -1069,29 +1069,6 @@ function NotificationsPopover({ onClose }) {
   );
 }
 
-// ---------- Export Menu ----------
-function ExportMenu({ onClose }) {
-  const { pushToast } = useApp();
-  const items = [
-    ['file-text', 'Exportar Dashboard a PDF'],
-    ['sheet',     'Exportar cotizaciones a Excel'],
-    ['sheet',     'Exportar órdenes de compra a Excel'],
-  ];
-  const fire = (label) => { onClose(); pushToast('Exportación generada correctamente'); };
-  return (
-    <>
-      <div className="fixed inset-0 z-30" onClick={onClose}/>
-      <div className="absolute right-0 top-full mt-2 w-[260px] bg-white rounded-xl shadow-pop border border-line modal-enter z-40 overflow-hidden">
-        {items.map(([ic,l]) => (
-          <button key={l} onClick={()=>fire(l)}
-            className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-surface border-b border-line last:border-b-0 text-[13px]">
-            <Icon name={ic} size={14} className="text-ink-500"/>{l}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
 
 // ---------- More Filters Popover (Quotes) ----------
 function MoreFiltersPopover({ onClose, which='quote' }) {

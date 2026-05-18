@@ -896,35 +896,22 @@ function Topbar({ user, roleKey, setRoleKey }) {
     window.location.reload();
   };
 
-  const title = {
-    admin: 'Vista Administrador', seller: 'Vista Vendedor', logistics: 'Vista Logística'
-  }[roleKey];
   return (
     <header className="h-[62px] bg-white border-b border-line flex items-center gap-4 px-6 shrink-0 relative">
-      <div className="flex items-center gap-2 text-sm flex-1">
-        <Icon name="home" size={13} className="text-ink-400"/>
-        <span className="text-ink-500">MySelec CRM</span>
-        <Icon name="chevron-right" size={12} className="text-ink-300"/>
-        <span className="font-semibold text-ink-900">{title}</span>
+      <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
+        <Logo size={20}/>
+        <span className="text-ink-300">/</span>
+        <span className="font-semibold text-ink-900 truncate">
+          {user?.name?.split(' ')?.[0] || 'MySelec CRM'}
+        </span>
+        {loggedUser?.role && (
+          <span className="text-[11px] text-ink-400 font-medium hidden sm:inline">
+            · {{ADMIN:'Administrador', VENDEDOR:'Vendedor', LOGISTICA:'Logística'}[loggedUser.role] || ''}
+          </span>
+        )}
       </div>
 
-      {isAdmin && (
-        <div className="flex items-center gap-1.5 bg-surface rounded-lg p-1 border border-line">
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 px-2">Vista</span>
-          {[
-            {k:'admin',     l:'Admin'},
-            {k:'seller',    l:'Vendedor'},
-            {k:'logistics', l:'Logística'},
-          ].map(o => (
-            <button key={o.k} onClick={()=>setRoleKey(o.k)}
-              className={cx(
-                'text-xs font-medium px-2.5 py-1 rounded-md transition-colors',
-                roleKey === o.k ? 'bg-white text-navy-900 shadow-sm border border-line' : 'text-ink-500 hover:text-ink-900'
-              )}
-            >{o.l}</button>
-          ))}
-        </div>
-      )}
+      {/* El rol se asigna desde el JWT — no hay selector manual en producción */}
 
       <button onClick={()=>openModal('search')}
         className="relative hidden md:inline-flex items-center gap-2 px-3 h-9 rounded-lg bg-surface hover:bg-white hover:border-line border border-transparent text-ink-500 text-xs">
@@ -965,7 +952,6 @@ function Dashboard() {
   const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
           PieChart, Pie, Cell, AreaChart, Area } = window.Recharts;
   const { quotes, users, clients, activity, openModal } = useApp();
-  const [exportOpen, setExportOpen] = useState(false);
   const [kpisData, setKpisData] = useState(null);
   const [kpisLoading, setKpisLoading] = useState(true);
   const [chartSellers, setChartSellers] = useState(null);
@@ -1045,14 +1031,7 @@ function Dashboard() {
         subtitle="Vista general · Administrador"
         title={`${greeting}, ${firstName}.`}
         description={`Resumen comercial al ${new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })}.`}
-        actions={
-          <>
-            <div className="relative">
-              <button onClick={()=>setExportOpen(o=>!o)} className="btn-ghost"><Icon name="download" size={14}/>Exportar<Icon name="chevron-down" size={11}/></button>
-              {exportOpen && <ExportMenu onClose={()=>setExportOpen(false)}/>}
-            </div>
-          </>
-        }
+        actions={null}
       />
       <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
 

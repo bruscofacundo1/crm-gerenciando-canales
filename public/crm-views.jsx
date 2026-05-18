@@ -40,7 +40,6 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
         description={`Zona asignada: ${user.zone}. Tenés ${activas} cotizaciones activas y ${myOrders.length} órdenes en curso.`}
         actions={
           <>
-            <button className="btn-ghost"><Icon name="download" size={14}/>Exportar</button>
             <button className="btn-primary" onClick={() => openModal('newQuote')}><Icon name="plus" size={14}/>Nueva cotización</button>
           </>
         }
@@ -224,11 +223,7 @@ function LogisticsView({ onOpen }) {
         subtitle="Operaciones · Fase 2"
         title="Tablero de Logística"
         description="Seguimiento de órdenes de compra en curso. Actualizá el estado cuando confirmes facturación, despacho o entrega."
-        actions={
-          <>
-            <button className="btn-ghost"><Icon name="download" size={14}/>Exportar</button>
-          </>
-        }
+        actions={null}
       />
 
       <div className="p-6 space-y-5">
@@ -370,6 +365,20 @@ function Clients({ readonly=false }) {
 
   const cliQuotes = quotes.filter(q => q.client === cli?.code);
   const cliOrders = orders.filter(o => o.client === cli?.code);
+
+  // Combined history sorted newest-first
+  const cliHistory = [
+    ...cliQuotes.map(q => ({ ...q, _kind: 'quote', _date: q.ingreso })),
+    ...cliOrders.map(o => ({ ...o, _kind: 'order', _date: o.fecha })),
+  ].sort((a, b) => new Date(b._date) - new Date(a._date));
+
+  // Totals
+  const montoGanado = cliQuotes
+    .filter(q => q.stage === 'aceptada' && q.monto)
+    .reduce((s, q) => s + q.monto, 0);
+  const montoEnCurso = cliQuotes
+    .filter(q => !['aceptada','rechazada'].includes(q.stage) && q.monto)
+    .reduce((s, q) => s + q.monto, 0);
 
   return (
     <div>
@@ -524,62 +533,87 @@ function Clients({ readonly=false }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* KPIs */}
+          <div className="grid grid-cols-4 gap-3">
             {[
-              { k:'Cotizaciones (6m)', v:cliQuotes.length, sub:`${cliQuotes.filter(q=>q.stage==='aceptada').length} ganadas` },
-              { k:'OCs activas',       v:cliOrders.filter(o=>o.stage!=='entregada').length, sub:`${cliOrders.length} totales` },
-              { k:'OCs entregadas', v:cliOrders.filter(o=>o.stage==='entregada').length, sub:'historial completo' },
+              {
+                k: 'Cotizaciones',
+                v: cliQuotes.length,
+                sub: `${cliQuotes.filter(q=>q.stage==='aceptada').length} ganadas · ${cliQuotes.filter(q=>q.stage==='rechazada').length} rechazadas`,
+                tone: 'blue', icon: 'clipboard-list',
+              },
+              {
+                k: 'OCs activas',
+                v: cliOrders.filter(o=>o.stage!=='entregada').length,
+                sub: `${cliOrders.length} órdenes en total`,
+                tone: 'orange', icon: 'truck',
+              },
+              {
+                k: 'OCs entregadas',
+                v: cliOrders.filter(o=>o.stage==='entregada').length,
+                sub: 'historial completo',
+                tone: 'green', icon: 'check-circle',
+              },
+              {
+                k: 'Monto ganado',
+                v: fmtMoney(montoGanado),
+                sub: montoEnCurso > 0 ? `+ ${fmtMoney(montoEnCurso)} en curso` : 'en cotizaciones aceptadas',
+                tone: 'navy', icon: 'banknote',
+              },
             ].map((k,i)=>(
-              <div key={i} className="bg-white border border-line rounded-xl p-4">
-                <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.k}</div>
-                <div className="text-xl font-bold text-ink-900 mt-1">{k.v}</div>
-                <div className="text-[11px] text-ink-500 mt-0.5">{k.sub}</div>
+              <div key={i} className="bg-white border border-line rounded-xl p-4 flex items-start gap-3">
+                <div className={cx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
+                  k.tone==='blue'?'bg-brandSoft text-brand':
+                  k.tone==='green'?'bg-emerald-100 text-emerald-700':
+                  k.tone==='orange'?'bg-orange-100 text-orange-700':'bg-navy-900 text-white')}>
+                  <Icon name={k.icon} size={16}/>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{k.k}</div>
+                  <div className="text-xl font-bold text-ink-900 mt-1">{k.v}</div>
+                  <div className="text-[11px] text-ink-500 mt-0.5 leading-snug">{k.sub}</div>
+                </div>
               </div>
             ))}
           </div>
 
+          {/* Historial comercial — clickeable */}
           <div className="bg-white border border-line rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-line flex items-center justify-between">
               <div className="text-sm font-semibold">Historial comercial</div>
-              <div className="flex gap-1 text-[11px]">
-                <span className="text-ink-500">Mostrando cotizaciones y OCs recientes</span>
-              </div>
+              <span className="text-[11px] text-ink-400">{cliHistory.length} registros · más reciente primero</span>
             </div>
-            <table className="tbl w-full">
-              <thead><tr>
-                <th>Tipo</th><th>Código</th><th>Etapa</th><th>Vendedor</th><th>Fecha</th><th className="!text-right">Monto</th>
-              </tr></thead>
-              <tbody>
-                {cliQuotes.map(q => {
-                  const stg = STAGES_F1.find(s=>s.id===q.stage);
-                  const s = users.find(u=>u.id===q.seller);
-                  return (
-                    <tr key={q.code}>
-                      <td><Badge tone="slate">COT</Badge></td>
-                      <td className="mono">{q.code}</td>
-                      <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{q.stage}</span>}</td>
-                      <td>{s?.name?.split(' ')?.[0]||'—'}</td>
-                      <td className="mono text-[12px]">{fmtDate(q.ingreso)}</td>
-                      <td className="text-right mono">{fmtMoney(q.monto)}</td>
-                    </tr>
-                  );
-                })}
-                {cliOrders.map(o => {
-                  const stg = STAGES_F2.find(s=>s.id===o.stage);
-                  const s = users.find(u=>u.id===o.seller);
-                  return (
-                    <tr key={o.code}>
-                      <td><Badge tone="navy">OC</Badge></td>
-                      <td className="mono">{o.code}</td>
-                      <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{o.stage}</span>}</td>
-                      <td>{s?.name?.split(' ')?.[0]||'—'}</td>
-                      <td className="mono text-[12px]">{fmtDate(o.fecha)}</td>
-                      <td className="text-right mono">—</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {cliHistory.length === 0 ? (
+              <div className="py-10 text-center text-[13px] text-ink-400">Sin cotizaciones ni OCs para este cliente.</div>
+            ) : (
+              <table className="tbl w-full">
+                <thead><tr>
+                  <th>Tipo</th><th>Código</th><th>Etapa</th><th>Vendedor</th><th>Fecha</th><th className="!text-right">Monto</th>
+                </tr></thead>
+                <tbody>
+                  {cliHistory.map(row => {
+                    const isQ = row._kind === 'quote';
+                    const stg = isQ
+                      ? STAGES_F1.find(s=>s.id===row.stage)
+                      : STAGES_F2.find(s=>s.id===row.stage);
+                    const s = users.find(u=>u.id===row.seller);
+                    return (
+                      <tr key={row.code} className="cursor-pointer hover:bg-brandSoft/30"
+                        onClick={() => openModal(isQ ? 'quoteDetail' : 'orderDetail', { code: row.code })}>
+                        <td>
+                          <Badge tone={isQ ? 'slate' : 'navy'}>{isQ ? 'COT' : 'OC'}</Badge>
+                        </td>
+                        <td className="mono font-semibold text-[12px]">{row.code}</td>
+                        <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{row.stage}</span>}</td>
+                        <td className="text-[12px]">{s?.name?.split(' ')?.[0]||'—'}</td>
+                        <td className="mono text-[12px]">{row._date ? fmtDate(row._date) : '—'}</td>
+                        <td className="text-right mono text-[12px]">{isQ ? fmtMoney(row.monto) : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
           </>}
         </div>
