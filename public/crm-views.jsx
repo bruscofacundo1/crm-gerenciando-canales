@@ -323,6 +323,24 @@ function Clients({ readonly=false }) {
   const [filterProv, setFilterProv] = useState('');
   const [cliEmails, setCliEmails] = useState([]);
   const [emailsExpanded, setEmailsExpanded] = useState(false);
+  const [listWidth, setListWidth] = useState(320);
+  const [listCollapsed, setListCollapsed] = useState(false);
+
+  const startDrag = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = listWidth;
+    const onMove = (ev) => {
+      const delta = ev.clientX - startX;
+      setListWidth(Math.max(200, Math.min(560, startW + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 
   const filteredClients = clients.filter(c => {
     const q = search.toLowerCase();
@@ -389,36 +407,68 @@ function Clients({ readonly=false }) {
           </>
         }
       />
-      <div className="grid grid-cols-[340px_1fr] gap-0 h-[calc(100vh-136px)]">
-        {/* list */}
-        <div className="border-r border-line bg-white overflow-y-auto scroll-thin">
-          {filteredClients.map(c => {
-            const s = users.find(u=>u.id===c.seller);
-            const active = c.code === sel;
-            return (
-              <button key={c.code}
-                onClick={()=>setSel(c.code)}
-                className={cx('w-full text-left px-4 py-3 border-b border-line flex gap-3 items-start transition-colors',
-                  active ? 'bg-brandSoft/40' : 'hover:bg-surface')}>
-                <div className="w-10 h-10 rounded-lg bg-navy-900 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {c.name.slice(0,2)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-ink-900 truncate">{c.name}</div>
-                  <div className="text-[11px] text-ink-500 truncate">{c.city}, {c.prov}</div>
-                  <div className="text-[10.5px] text-ink-500 mt-1.5 flex items-center gap-1.5">
-                    <Avatar name={s?.name||'?'} size={14}/><span>{s?.name?.split(' ')?.[0]||'—'}</span>
-                    <span className="text-ink-300">·</span>
-                    <span className="mono">{c.code}</span>
+      <div className="flex h-[calc(100vh-136px)] overflow-hidden relative">
+        {/* list panel */}
+        <div
+          className="shrink-0 bg-white overflow-hidden"
+          style={{ width: listCollapsed ? 0 : listWidth, transition: 'width 0.18s ease', minWidth: 0 }}
+        >
+          <div className="h-full overflow-y-auto scroll-thin border-r border-line" style={{ width: listWidth, minWidth: 200 }}>
+            {filteredClients.map(c => {
+              const s = users.find(u=>u.id===c.seller);
+              const active = c.code === sel;
+              return (
+                <button key={c.code}
+                  onClick={()=>setSel(c.code)}
+                  className={cx('w-full text-left px-4 py-3 border-b border-line flex gap-3 items-start transition-colors',
+                    active ? 'bg-brandSoft/40' : 'hover:bg-surface')}>
+                  <div className="w-10 h-10 rounded-lg bg-navy-900 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    {c.name.slice(0,2)}
                   </div>
-                </div>
-              </button>
-            );
-          })}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-ink-900 truncate">{c.name}</div>
+                    <div className="text-[11px] text-ink-500 truncate">{c.city}, {c.prov}</div>
+                    <div className="text-[10.5px] text-ink-500 mt-1.5 flex items-center gap-1.5">
+                      <Avatar name={s?.name||'?'} size={14}/><span>{s?.name?.split(' ')?.[0]||'—'}</span>
+                      <span className="text-ink-300">·</span>
+                      <span className="mono">{c.code}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Resize + collapse handle */}
+        <div className="relative shrink-0 z-20" style={{ width: 0 }}>
+          {/* Drag strip — visible only when list is open */}
+          {!listCollapsed && (
+            <div
+              className="absolute inset-y-0 cursor-col-resize hover:bg-brand/10 active:bg-brand/20"
+              style={{ left: -3, width: 8 }}
+              onMouseDown={startDrag}
+            />
+          )}
+          {/* Collapse / expand button */}
+          <button
+            onClick={() => setListCollapsed(v => !v)}
+            title={listCollapsed ? 'Mostrar lista de clientes' : 'Ocultar lista de clientes'}
+            className="absolute top-1/2 -translate-y-1/2 bg-white border border-line hover:bg-brandSoft hover:border-brand/40 transition-colors flex items-center justify-center shadow-sm"
+            style={{
+              left: listCollapsed ? 4 : -10,
+              width: 18,
+              height: 44,
+              borderRadius: listCollapsed ? '0 6px 6px 0' : '6px',
+              transition: 'left 0.18s ease',
+            }}
+          >
+            <Icon name={listCollapsed ? 'chevron-right' : 'chevron-left'} size={11} className="text-ink-500"/>
+          </button>
         </div>
 
         {/* detail */}
-        <div className="overflow-y-auto scroll-thin p-6 space-y-5">
+        <div className="flex-1 min-w-0 overflow-y-auto scroll-thin p-6 space-y-5">
           {!cli ? (
             <div className="flex items-center justify-center h-64 text-ink-400 text-[13px]">Sin resultados para los filtros aplicados.</div>
           ) : <>

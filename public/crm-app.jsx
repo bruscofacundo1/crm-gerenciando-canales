@@ -51,7 +51,16 @@ function App() {
   const [screen, setScreen] = useState('dashboard');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileUser, setProfileUser] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    localStorage.getItem('crm_sidebar_collapsed') === 'true'
+  );
   const loggedUser = CrmAuth.getUser();
+
+  const toggleSidebar = () => setSidebarCollapsed(v => {
+    const next = !v;
+    localStorage.setItem('crm_sidebar_collapsed', String(next));
+    return next;
+  });
 
   // Initialize role and user ID from token on mount
   useEffect(() => {
@@ -92,7 +101,8 @@ function App() {
   return (
     <div className="min-h-screen flex bg-surface" data-screen-label={`${roleKey} · ${screen}`}>
       <Sidebar role={roleKey} screen={screen} setScreen={setScreen}
-        user={displayUser} onProfileOpen={() => setProfileOpen(true)}/>
+        user={displayUser} onProfileOpen={() => setProfileOpen(true)}
+        collapsed={sidebarCollapsed} onToggle={toggleSidebar}/>
       {profileOpen && (
         <ProfileModal
           user={displayUser}
@@ -718,7 +728,7 @@ function Login({ onLogin }) {
 }
 
 // ---------- Sidebar ----------
-function Sidebar({ role, screen, setScreen, user, onProfileOpen }) {
+function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onToggle }) {
   const navAdmin = [
     { id:'dashboard', label:'Dashboard',             icon:'layout-dashboard' },
     { id:'quotes',    label:'Cotizaciones',          icon:'clipboard-list', sub:'Fase 1' },
@@ -743,43 +753,77 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen }) {
   const roleLabel = { ADMIN:'Administrador', VENDEDOR:'Vendedor', LOGISTICA:'Logística' };
 
   return (
-    <aside className="w-[244px] shrink-0 bg-navy-900 text-white flex flex-col min-h-screen">
-      <div className="px-5 pt-5 pb-4 flex items-center justify-center border-b border-white/5">
-        <Logo size={56}/>
+    <aside
+      className="shrink-0 bg-navy-900 text-white flex flex-col min-h-screen overflow-hidden"
+      style={{ width: collapsed ? 60 : 244, transition: 'width 0.2s ease' }}
+    >
+      {/* Logo */}
+      <div className="flex items-center justify-center border-b border-white/5 pt-5 pb-4">
+        <Logo size={collapsed ? 28 : 56}/>
       </div>
 
-      <nav className="flex-1 py-4 px-3 space-y-0.5">
-        <div className="px-3 pb-1.5 text-[10px] uppercase tracking-wider text-white/35 font-semibold">
-          {role==='admin' ? 'Gestión' : role==='seller' ? 'Mi pipeline' : 'Operaciones'}
-        </div>
+      {/* Nav */}
+      <nav className="flex-1 py-4 space-y-0.5 overflow-hidden" style={{ padding: collapsed ? '16px 8px' : '16px 10px' }}>
+        {!collapsed && (
+          <div className="px-3 pb-1.5 text-[10px] uppercase tracking-wider text-white/35 font-semibold">
+            {role==='admin' ? 'Gestión' : role==='seller' ? 'Mi pipeline' : 'Operaciones'}
+          </div>
+        )}
         {nav.map(n => (
           <button key={n.id} onClick={()=>setScreen(n.id)}
+            title={collapsed ? n.label : undefined}
             className={cx(
-              'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] text-left transition-colors',
+              'w-full flex items-center rounded-lg py-2.5 text-[13.5px] transition-colors',
+              collapsed ? 'justify-center px-0' : 'gap-3 px-3 text-left',
               screen === n.id
                 ? 'bg-brand text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]'
                 : 'text-white/75 hover:bg-white/5 hover:text-white'
             )}
           >
             <Icon name={n.icon} size={17}/>
-            <span className="flex-1 leading-tight">
-              {n.label}
-              {n.sub && <span className="block text-[10px] uppercase tracking-wider opacity-60 font-medium">{n.sub}</span>}
-            </span>
+            {!collapsed && (
+              <span className="flex-1 leading-tight whitespace-nowrap overflow-hidden">
+                {n.label}
+                {n.sub && <span className="block text-[10px] uppercase tracking-wider opacity-60 font-medium">{n.sub}</span>}
+              </span>
+            )}
           </button>
         ))}
       </nav>
 
-      {/* Perfil al pie del sidebar */}
-      <div className="px-3 pb-3 border-t border-white/5 pt-3">
+      {/* Footer */}
+      <div className="border-t border-white/5" style={{ padding: collapsed ? '12px 8px' : '12px 10px' }}>
+        {/* Toggle button */}
+        <button
+          onClick={onToggle}
+          title={collapsed ? 'Expandir panel' : 'Colapsar panel'}
+          className={cx(
+            'w-full flex items-center rounded-lg py-2 mb-2 hover:bg-white/8 transition-colors text-white/40 hover:text-white/70',
+            collapsed ? 'justify-center' : 'gap-2 px-3'
+          )}
+        >
+          <Icon name={collapsed ? 'panel-left-open' : 'panel-left-close'} size={15}/>
+          {!collapsed && <span className="text-[11.5px] whitespace-nowrap overflow-hidden">Ocultar panel</span>}
+        </button>
+
+        {/* Perfil */}
         <button onClick={onProfileOpen}
-          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-white/8 transition-colors text-left group">
+          title={collapsed ? (user?.name || '') : undefined}
+          className={cx(
+            'w-full flex items-center rounded-xl py-2.5 hover:bg-white/8 transition-colors group',
+            collapsed ? 'justify-center px-0' : 'gap-3 px-3 text-left'
+          )}
+        >
           <Avatar name={user?.name} size={34} src={user?.avatar}/>
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold text-white truncate">{user?.name || '—'}</div>
-            <div className="text-[11px] text-white/45">{roleLabel[user?.role] || '—'}</div>
-          </div>
-          <Icon name="settings" size={14} className="text-white/30 group-hover:text-white/60 shrink-0"/>
+          {!collapsed && (
+            <>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="text-[13px] font-semibold text-white truncate">{user?.name || '—'}</div>
+                <div className="text-[11px] text-white/45">{roleLabel[user?.role] || '—'}</div>
+              </div>
+              <Icon name="settings" size={14} className="text-white/30 group-hover:text-white/60 shrink-0"/>
+            </>
+          )}
         </button>
       </div>
     </aside>
