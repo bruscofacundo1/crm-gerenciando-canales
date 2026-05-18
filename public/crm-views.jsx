@@ -321,6 +321,8 @@ function Clients({ readonly=false }) {
   const [filterSeller, setFilterSeller] = useState('');
   const [filterZone, setFilterZone] = useState('');
   const [filterProv, setFilterProv] = useState('');
+  const [cliEmails, setCliEmails] = useState([]);
+  const [emailsExpanded, setEmailsExpanded] = useState(false);
 
   const filteredClients = clients.filter(c => {
     const q = search.toLowerCase();
@@ -328,16 +330,25 @@ function Clients({ readonly=false }) {
       c.name?.toLowerCase().includes(q) ||
       c.cuit?.includes(q) ||
       c.email?.toLowerCase().includes(q) ||
-      c.city?.toLowerCase().includes(q);
+      c.city?.toLowerCase().includes(q) ||
+      c.code?.toLowerCase().includes(q);
     const matchSeller = !filterSeller || c.seller === filterSeller;
     const matchZone = !filterZone || c.zone === filterZone;
-    const matchProv = !filterProv || c.prov === filterProv;
+    const matchProv = !filterProv || (c.prov || '').trim().toLowerCase() === filterProv.trim().toLowerCase();
     return matchSearch && matchSeller && matchZone && matchProv;
   });
   const hasFilters = !!(search || filterSeller || filterZone || filterProv);
   const activeSel = sel || filteredClients[0]?.code || '';
   const cli = clients.find(c => c.code === activeSel);
   const seller = users.find(u => u.id === cli?.seller);
+
+  // Fetch multi-emails when selected client changes
+  useEffect(() => {
+    if (!cli?.id) { setCliEmails([]); setEmailsExpanded(false); return; }
+    setCliEmails([]);
+    setEmailsExpanded(false);
+    CrmApi.getClientEmails(cli.id).then(setCliEmails).catch(() => setCliEmails([]));
+  }, [cli?.id]);
 
   const cliQuotes = quotes.filter(q => q.client === cli?.code);
   const cliOrders = orders.filter(o => o.client === cli?.code);
@@ -435,7 +446,27 @@ function Clients({ readonly=false }) {
             <Field label="Vendedor asignado">
               <div className="flex items-center gap-2"><Avatar name={seller?.name||'?'} size={20}/>{seller?.name||'—'}</div>
             </Field>
-            <Field label="Email" value={cli.email}/>
+            <Field label="Email">
+              {cliEmails.length > 0 ? (
+                <div>
+                  {(emailsExpanded ? cliEmails : cliEmails.slice(0,1)).map(e => (
+                    <div key={e.id} className="flex items-center gap-1.5 min-w-0">
+                      {e.isPrimary && <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0" title="Principal"/>}
+                      <a href={`mailto:${e.email}`} className="text-brand hover:underline text-[13px] truncate block" title={e.email}>{e.email}</a>
+                    </div>
+                  ))}
+                  {cliEmails.length > 1 && (
+                    <button onClick={() => setEmailsExpanded(v => !v)}
+                      className="text-[11px] text-brand hover:underline mt-1 flex items-center gap-1">
+                      <Icon name={emailsExpanded ? 'chevron-up' : 'chevron-down'} size={11}/>
+                      {emailsExpanded ? 'Ver menos' : `+${cliEmails.length - 1} email${cliEmails.length - 1 > 1 ? 's' : ''} más`}
+                    </button>
+                  )}
+                </div>
+              ) : cli.email ? (
+                <a href={`mailto:${cli.email}`} className="text-brand hover:underline text-[13px] truncate block" title={cli.email}>{cli.email}</a>
+              ) : '—'}
+            </Field>
             <Field label="Teléfono" mono value={cli.phone}/>
             <Field label="Dirección" value={cli.address}/>
             <Field label="Estado">
