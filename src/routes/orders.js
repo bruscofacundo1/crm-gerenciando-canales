@@ -136,6 +136,84 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/orders/:id/detail — full detail with notes, attachments, activities
+router.get('/:id/detail', authMiddleware, async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: {
+        client: true,
+        seller: { select: { id: true, name: true, email: true } },
+        fromQuote: { select: { id: true, code: true } },
+        notes: {
+          include: { user: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+        attachments: { orderBy: { createdAt: 'desc' } },
+        activities: {
+          include: { user: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!order) return res.status(404).json({ error: 'OC no encontrada' });
+    res.json(order);
+  } catch (err) {
+    console.error('Error en order detail:', err);
+    res.status(500).json({ error: 'Error' });
+  }
+});
+
+// POST /api/orders/:id/notes — add a note to an order
+router.post('/:id/notes', authMiddleware, async (req, res) => {
+  try {
+    const note = await prisma.note.create({
+      data: {
+        text: req.body.text,
+        userId: req.user.id,
+        orderId: req.params.id,
+      },
+      include: { user: { select: { name: true } } },
+    });
+
+    const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (order) {
+      await prisma.activity.create({
+        data: {
+          action: 'NOTE_ADDED',
+          detail: `Agregó nota en ${order.code}`,
+          userId: req.user.id,
+          orderId: req.params.id,
+        },
+      });
+    }
+
+    res.status(201).json(note);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al agregar nota' });
+  }
+});
+
+// PATCH /api/orders/:id — update order fields (carrier, tracking, etc.)
+router.patch('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { carrier, trackingNumber, flexxusCode, clientOCCode, estimatedDate, invoiceIssued, waybillReceived } = req.body;
+    const data = {};
+    if (carrier          !== undefined) data.carrier          = carrier || null;
+    if (trackingNumber   !== undefined) data.trackingNumber   = trackingNumber || null;
+    if (flexxusCode      !== undefined) data.flexxusCode      = flexxusCode || null;
+    if (clientOCCode     !== undefined) data.clientOCCode     = clientOCCode || null;
+    if (estimatedDate    !== undefined) data.estimatedDate    = estimatedDate ? new Date(estimatedDate) : null;
+    if (invoiceIssued    !== undefined) data.invoiceIssued    = invoiceIssued;
+    if (waybillReceived  !== undefined) data.waybillReceived  = waybillReceived;
+
+    const updated = await prisma.order.update({ where: { id: req.params.id }, data });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al actualizar OC' });
+  }
+});
+
 // PATCH /api/orders/:id/stage — maneja tanto Order como Quote(mailType=OC)
 router.patch('/:id/stage', authMiddleware, async (req, res) => {
   try {

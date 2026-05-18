@@ -128,6 +128,23 @@ const CrmApi = {
   changeOrderStage: (id, stage) => apiFetch(`/orders/${id}/stage`, {
     method: 'PATCH', body: JSON.stringify({ stage })
   }),
+  getOrderDetail: (id) => apiFetch(`/orders/${id}/detail`),
+  addOrderNote: (id, text) => apiFetch(`/orders/${id}/notes`, {
+    method: 'POST', body: JSON.stringify({ text })
+  }),
+  updateOrder: (id, data) => apiFetch(`/orders/${id}`, {
+    method: 'PATCH', body: JSON.stringify(data)
+  }),
+  uploadOrderAttachments: (orderId, files) => {
+    const token = CrmAuth.getToken();
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    return fetch(`${API_BASE}/orders/${orderId}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    }).then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(new Error(b.error || `Error ${r.status}`))));
+  },
 
   // Clients
   getClients: () => apiFetch('/clients'),
