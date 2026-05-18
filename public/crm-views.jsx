@@ -1386,7 +1386,6 @@ function Config() {
 
       <TabBar active={tab} onChange={setTab} tabs={[
         { id:'stages',    label:'Etapas' },
-        { id:'flexxus',   label:'Integración Flexxus' },
         { id:'mails',     label:'Cuentas de mail' },
         { id:'notifs',    label:'Notificaciones' },
         { id:'roles',     label:'Roles y permisos' },
@@ -1396,50 +1395,6 @@ function Config() {
         <div className="p-6 grid grid-cols-2 gap-5">
           <StageList stages={f1} phase="COTIZACION"   title="Fase 1 · Cotizaciones"/>
           <StageList stages={f2} phase="ORDEN_COMPRA" title="Fase 2 · Órdenes de Compra"/>
-        </div>
-      )}
-
-      {tab==='flexxus' && (
-        <div className="p-6 grid grid-cols-3 gap-5">
-          <div className="col-span-2 bg-white border border-line rounded-xl p-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Icon name="plug" size={18}/></div>
-              <div>
-                <div className="text-sm font-semibold">Flexxus ERP</div>
-                <div className="text-[12px] text-ink-500">Conectado · último sync hace 4 minutos</div>
-              </div>
-              <div className="flex-1"/>
-              <Badge tone="green" dot>Activa</Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <Field label="Endpoint" mono value="api.flexxus.com.ar/v2"/>
-              <Field label="Base de datos" value="MYSELEC_PROD"/>
-              <Field label="Usuario técnico" value="crm.integration"/>
-              <Field label="Frecuencia de sync" value="5 minutos"/>
-            </div>
-            <div className="mt-4 pt-4 border-t border-line text-[12px] space-y-2">
-              <div className="flex justify-between"><span className="text-ink-500">Notas de Pedido sincronizadas hoy</span><span className="mono font-semibold">34</span></div>
-              <div className="flex justify-between"><span className="text-ink-500">Errores en últimas 24h</span><span className="mono">0</span></div>
-              <div className="flex justify-between"><span className="text-ink-500">Próximo sync</span><span className="mono">14:28</span></div>
-            </div>
-          </div>
-          <div className="bg-white border border-line rounded-xl p-5">
-            <div className="text-sm font-semibold mb-2">Mapeo de campos</div>
-            <ul className="text-[12.5px] space-y-2">
-              {[
-                ['CRM.Cliente.CUIT', 'Flexxus.Cliente.CUIT'],
-                ['CRM.Cotizacion.Total', 'Flexxus.NP.ImporteTotal'],
-                ['CRM.OC.NP', 'Flexxus.NP.Numero'],
-                ['CRM.Estado.Facturada', 'Flexxus.NP.Facturada=S'],
-              ].map(([a,b])=>(
-                <li key={a} className="flex items-center justify-between gap-2">
-                  <span className="mono text-[11px] text-ink-700">{a}</span>
-                  <Icon name="arrow-right" size={12} className="text-ink-400"/>
-                  <span className="mono text-[11px] text-ink-700 flex-1 text-right">{b}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       )}
 
