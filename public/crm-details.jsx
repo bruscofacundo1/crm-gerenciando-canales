@@ -1609,11 +1609,12 @@ function OrderDetail({ code, onClose, canReassign }) {
                     </tbody>
                     <tfoot>
                       <tr className="bg-ink-100 font-semibold text-sm border-t border-ink-200">
-                        <td colSpan="4" className="px-3 py-2 text-right text-ink-500">TOTAL NP</td>
+                        <td colSpan="3" className="px-3 py-2"></td>
+                        <td className="px-3 py-2 text-right text-ink-500 text-xs">TOTAL PRES.</td>
                         <td className="px-3 py-2 text-right font-mono">
                           {presItems.filter(i=>i.accepted!==false).reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
                         </td>
-                        <td colSpan="2" className="px-3 py-2"></td>
+                        <td colSpan="2" className="px-3 py-2 text-right text-ink-500 text-xs">TOTAL NP</td>
                         <td className="px-3 py-2 text-right font-mono text-indigo-700">
                           {(notaPedido.amount || (notaPedido.items||[]).reduce((s,i)=>s+(i.total||0),0)).toLocaleString('es-AR',{minimumFractionDigits:2})}
                         </td>
