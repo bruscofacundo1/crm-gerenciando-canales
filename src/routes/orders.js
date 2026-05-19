@@ -136,7 +136,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/orders/:id/detail — full detail with notes, attachments, activities
+// GET /api/orders/:id/detail — full detail with notes, attachments, activities, NP
 router.get('/:id/detail', authMiddleware, async (req, res) => {
   try {
     const order = await prisma.order.findUnique({
@@ -144,7 +144,12 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
       include: {
         client: true,
         seller: { select: { id: true, name: true, email: true } },
-        fromQuote: { select: { id: true, code: true } },
+        fromQuote: {
+          select: {
+            id: true, code: true, flexxusCode: true, amount: true,
+            items: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
         notes: {
           include: { user: { select: { name: true } } },
           orderBy: { createdAt: 'asc' },
@@ -157,7 +162,18 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
       },
     });
     if (!order) return res.status(404).json({ error: 'OC no encontrada' });
-    res.json(order);
+
+    // Buscar Nota de Pedido vinculada al presupuesto origen
+    let notaPedido = null;
+    if (order.fromQuoteId) {
+      notaPedido = await prisma.quote.findFirst({
+        where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: order.fromQuoteId },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    res.json({ ...order, notaPedido });
   } catch (err) {
     console.error('Error en order detail:', err);
     res.status(500).json({ error: 'Error' });

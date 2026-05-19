@@ -457,20 +457,63 @@ async function processNotaPedido(parsed, mailData, att, imap) {
     }
   }
 
-  // ── Buscar Order vinculada al presupuesto ────────────────────────────────
+  // ── Buscar o crear Order vinculada al presupuesto ────────────────────────
   let order = null;
   if (presupuesto) {
     order = await prisma.order.findFirst({ where: { fromQuoteId: presupuesto.id } });
+
     if (order) {
-      // Actualizar Order con NP de la Nota de Pedido y Nº OC del cliente
+      // Actualizar Order existente: NP, OC cliente y mover a stage "np_enviada"
       await prisma.order.update({
         where: { id: order.id },
         data:  {
           flexxusCode:  npData.npCode,
+          stage:        'np_enviada',
           ...(npData.ocNumber ? { clientOCCode: npData.ocNumber } : {}),
         },
       });
-      console.log(`   🔗 Order ${order.code} actualizada — NP: ${npData.npCode}${npData.ocNumber ? ` | OC cliente: ${npData.ocNumber}` : ''}`);
+      await prisma.activity.create({
+        data: {
+          action:  'STAGE_CHANGE',
+          detail:  `NP ${npData.npCode} capturada — OC movida a NP Enviada${npData.ocNumber ? ` | OC cliente: ${npData.ocNumber}` : ''}`,
+          orderId: order.id,
+        },
+      });
+      console.log(`   🔗 Order ${order.code} → NP Enviada | NP: ${npData.npCode}${npData.ocNumber ? ` | OC: ${npData.ocNumber}` : ''}`);
+    } else {
+      // No existe Order → crearla automáticamente desde el presupuesto
+      const ocCode = await (async () => {
+        const all  = await prisma.order.findMany({ select: { code: true } });
+        const nums = all.map(r => parseInt(r.code.split('-')[2]) || 0).filter(n => !isNaN(n));
+        const max  = nums.length > 0 ? Math.max(...nums) : 0;
+        const yr   = new Date().getFullYear();
+        return `OC-${yr}-${String(max + 1).padStart(3, '0')}`;
+      })();
+
+      const clientId = presupuesto.clientId || client?.id || null;
+      if (clientId) {
+        order = await prisma.order.create({
+          data: {
+            code:         ocCode,
+            clientId,
+            sellerId:     presupuesto.sellerId || client?.defaultSellerId || null,
+            fromQuoteId:  presupuesto.id,
+            stage:        'np_enviada',
+            flexxusCode:  npData.npCode,
+            ...(npData.ocNumber ? { clientOCCode: npData.ocNumber } : {}),
+          },
+        });
+        await prisma.activity.create({
+          data: {
+            action:  'CREATED',
+            detail:  `OC ${ocCode} creada automáticamente desde NP ${npData.npCode}`,
+            orderId: order.id,
+          },
+        });
+        console.log(`   ✅ Order ${ocCode} creada automáticamente → NP Enviada`);
+      } else {
+        console.log(`   ⚠️  Sin clientId — no se pudo crear Order automáticamente`);
+      }
     }
   }
 
