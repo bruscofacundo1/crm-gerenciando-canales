@@ -131,6 +131,75 @@ function ArticleSearchInput({ value, onChange, onSelect, placeholder = 'SKU', au
   );
 }
 
+// ── Badge de catálogo — verifica SKU y permite agregar/quitar del catálogo ──
+function CatalogBadge({ sku, description }) {
+  const { pushToast } = useApp();
+  const [status, setStatus]       = useState('loading'); // 'loading' | 'found' | 'missing'
+  const [showModal, setShowModal] = useState(false);
+  const [meta, setMeta]           = useState({ categories: [], types: [], classes: [] });
+
+  useEffect(() => {
+    if (!sku) { setStatus('none'); return; }
+    CrmApi.getArticleByCode(sku)
+      .then(() => setStatus('found'))
+      .catch(() => setStatus('missing'));
+  }, [sku]);
+
+  const handleAdd = () => {
+    CrmApi.getArticleMeta().then(setMeta).catch(() => {});
+    setShowModal(true);
+  };
+
+  const handleSaved = (saved) => {
+    setShowModal(false);
+    setStatus('found');
+    pushToast(`${saved.code} agregado al catálogo`, 'ok');
+  };
+
+  const handleRemove = async () => {
+    if (!window.confirm(`¿Quitar ${sku} del catálogo?\n\nNo afecta los ítems de esta cotización.`)) return;
+    try {
+      await CrmApi.deleteArticle(sku);
+      setStatus('missing');
+      pushToast(`${sku} eliminado del catálogo`, 'ok');
+    } catch (err) {
+      pushToast(err.message || 'Error', 'bad');
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <span>{sku || '—'}</span>
+      {sku && status === 'found' && (
+        <>
+          <span title="En catálogo" className="text-green-500 text-[10px]">✓</span>
+          <button onClick={handleRemove}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] text-red-400 hover:text-red-600 ml-0.5">
+            ×cat
+          </button>
+        </>
+      )}
+      {sku && status === 'missing' && (
+        <>
+          <span title="No en catálogo" className="text-amber-400 text-[10px]">?</span>
+          <button onClick={handleAdd}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] text-brand font-semibold hover:text-brand-dark ml-0.5">
+            +cat
+          </button>
+        </>
+      )}
+      {showModal && (
+        <ArticleFormModal
+          article={{ code: sku, description: description || '' }}
+          meta={meta}
+          onClose={() => setShowModal(false)}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Tab Ítems completo (PRESUPUESTO: vista, OC: checklist editable) ──────
 function OCItemsTab({ q, detailItems, setDetailItems }) {
   const { pushToast } = useApp();
@@ -144,19 +213,7 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
   const [addingNew, setAddingNew] = useState(false);
   const [newItem, setNewItem] = useState({ sku: '', description: '', quantity: 1, unitPrice: '' });
 
-  // Verificación de SKUs contra el catálogo de artículos
-  const [verifiedCodes, setVerifiedCodes] = useState({}); // { [sku]: true|false }
-  useEffect(() => {
-    const skus = [...new Set(detailItems.map(i => i.sku).filter(Boolean))];
-    if (!skus.length) return;
-    Promise.all(skus.map(sku =>
-      CrmApi.getArticleByCode(sku)
-        .then(() => [sku, true])
-        .catch(() => [sku, false])
-    )).then(results => {
-      setVerifiedCodes(Object.fromEntries(results));
-    });
-  }, [detailItems.length]);
+  // (La verificación de catálogo se maneja individualmente en cada <CatalogBadge/>)
 
   const toggleChecked = async (it) => {
     const newVal = !it.checked;
@@ -305,11 +362,7 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
                   </td>
                 )}
                 <td className={cx('mono text-[12px]', unchecked && 'line-through')}>
-                  <div className="flex items-center gap-1">
-                    <span>{it.sku || '—'}</span>
-                    {it.sku && verifiedCodes[it.sku] === true  && <span title="Artículo en catálogo" className="text-green-500 text-[10px]">✓</span>}
-                    {it.sku && verifiedCodes[it.sku] === false && <span title="No encontrado en catálogo" className="text-amber-400 text-[10px]">?</span>}
-                  </div>
+                  <CatalogBadge sku={it.sku} description={it.description}/>
                 </td>
                 <td className={cx(unchecked && 'line-through')}>
                   {ncItem && <span className="text-[10px] font-bold text-red-500 mr-1.5 bg-red-50 border border-red-200 px-1 rounded">NC</span>}
@@ -390,6 +443,7 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
           </tr>
         </tfoot>
       </table>
+
     </div>
   );
 }
@@ -981,8 +1035,10 @@ function QuoteDetail({ code, onClose, canReassign }) {
                   </tr></thead>
                   <tbody>
                     {detailItems.filter(i => i.accepted).map((it, idx) => (
-                      <tr key={it.id || idx} className="border-t border-line">
-                        <td className="py-2 mono text-ink-700">{it.sku || '—'}</td>
+                      <tr key={it.id || idx} className="border-t border-line group">
+                        <td className="py-2 mono text-ink-700">
+                          <CatalogBadge sku={it.sku} description={it.description}/>
+                        </td>
                         <td className="py-2">{it.description}</td>
                         <td className="py-2 mono text-right">{it.quantity}</td>
                         <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
