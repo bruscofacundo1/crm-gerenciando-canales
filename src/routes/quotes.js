@@ -10,10 +10,15 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 async function nextCode(model, prefix) {
-  const all = await model.findMany({ select: { code: true } });
-  const nums = all.map(r => parseInt(r.code.split('-')[2]) || 0).filter(n => !isNaN(n));
-  const max = nums.length > 0 ? Math.max(...nums) : 0;
-  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
+  // findFirst + desc es O(log n) en lugar de cargar toda la tabla.
+  // El constraint @unique en 'code' atrapa colisiones; el caller puede relanzar P2002.
+  const last = await model.findFirst({
+    where:   { code: { startsWith: prefix } },
+    orderBy: { code: 'desc' },
+    select:  { code: true },
+  });
+  const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
+  return `${prefix}-${String(num + 1).padStart(3, '0')}`;
 }
 
 // GET /api/quotes - All quotes (admin sees all, seller sees own)
@@ -27,6 +32,10 @@ router.get('/', authMiddleware, async (req, res) => {
         { sellerId: req.user.id },
         { sellerId: null, stage: 'recibida' },
       ];
+    }
+    // Filtro de fecha (opcional — carga inicial usa últimos 12 meses)
+    if (req.query.since) {
+      where.createdAt = { gte: new Date(req.query.since) };
     }
 
     const quotes = await prisma.quote.findMany({

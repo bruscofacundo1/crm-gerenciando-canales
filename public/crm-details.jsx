@@ -503,6 +503,17 @@ function QuoteDetail({ code, onClose, canReassign }) {
     }
   };
 
+  const handleDeleteAttachment = async (id) => {
+    if (!window.confirm('¿Eliminar este adjunto? Esta acción no se puede deshacer.')) return;
+    try {
+      await CrmApi.deleteAttachment(id);
+      setDetailAttachments(prev => prev.filter(a => a.id !== id));
+      pushToast('Adjunto eliminado');
+    } catch (err) {
+      pushToast(err.message || 'Error al eliminar adjunto', 'bad');
+    }
+  };
+
   const handleAssignClient = async () => {
     if (!assignClientId) return;
     setAssignSaving(true);
@@ -1194,6 +1205,12 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       title="Descargar">
                       <Icon name="download" size={14}/>
                     </a>
+                    <button
+                      onClick={() => handleDeleteAttachment(a.id)}
+                      className="w-8 h-8 rounded-lg hover:bg-red-50 text-ink-400 hover:text-red-500 flex items-center justify-center"
+                      title="Eliminar adjunto">
+                      <Icon name="trash-2" size={13}/>
+                    </button>
                   </div>
                 </div>
               );
@@ -1433,6 +1450,17 @@ function OrderDetail({ code, onClose, canReassign }) {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (id) => {
+    if (!window.confirm('¿Eliminar este adjunto? Esta acción no se puede deshacer.')) return;
+    try {
+      await CrmApi.deleteAttachment(id);
+      setAtts(prev => prev.filter(a => a.id !== id));
+      pushToast('Adjunto eliminado');
+    } catch (err) {
+      pushToast(err.message || 'Error al eliminar adjunto', 'bad');
     }
   };
 
@@ -1860,6 +1888,12 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <a href={fileUrl} download={a.filename} className="btn-ghost text-xs py-1 px-2">
                         <Icon name="download" size={12}/>Descargar
                       </a>
+                      <button
+                        onClick={() => handleDeleteAttachment(a.id)}
+                        className="w-7 h-7 rounded-lg hover:bg-red-50 text-ink-400 hover:text-red-500 flex items-center justify-center"
+                        title="Eliminar adjunto">
+                        <Icon name="trash-2" size={13}/>
+                      </button>
                     </div>
                   </div>
                 );

@@ -84,6 +84,20 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
   }
 });
 
+// DELETE /api/attachments/:id — eliminar adjunto (DB + disco)
+app.delete('/api/attachments/:id', authMiddleware, async (req, res) => {
+  try {
+    const att = await prisma.attachment.findUnique({ where: { id: req.params.id } });
+    if (!att) return res.status(404).json({ error: 'Adjunto no encontrado' });
+    await prisma.attachment.delete({ where: { id: req.params.id } });
+    // Borrar del disco (sin error si ya no existe)
+    try { require('fs').unlinkSync(att.path); } catch (_) {}
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar adjunto' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -133,10 +133,13 @@ async function copyPresupuestoItemsToOC(presupuestoId, ocId) {
 }
 
 async function nextCode(model, prefix) {
-  const all = await model.findMany({ select: { code: true } });
-  const nums = all.map(r => parseInt(r.code.split('-')[2]) || 0).filter(n => !isNaN(n));
-  const max = nums.length > 0 ? Math.max(...nums) : 0;
-  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
+  const last = await model.findFirst({
+    where:   { code: { startsWith: prefix } },
+    orderBy: { code: 'desc' },
+    select:  { code: true },
+  });
+  const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
+  return `${prefix}-${String(num + 1).padStart(3, '0')}`;
 }
 
 /**

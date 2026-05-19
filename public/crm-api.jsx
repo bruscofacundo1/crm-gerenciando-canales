@@ -91,7 +91,7 @@ const CrmApi = {
   },
 
   // Quotes
-  getQuotes: () => apiFetch('/quotes'),
+  getQuotes: (p) => apiFetch(`/quotes${toQS(p)}`),
   createQuote: (data) => apiFetch('/quotes', { method: 'POST', body: JSON.stringify(data) }),
   changeQuoteStage: (id, stage, extra = {}) => apiFetch(`/quotes/${id}/stage`, {
     method: 'PATCH', body: JSON.stringify({ stage, ...extra })
@@ -123,7 +123,7 @@ const CrmApi = {
   }),
 
   // Orders
-  getOrders: () => apiFetch('/orders'),
+  getOrders: (p) => apiFetch(`/orders${toQS(p)}`),
   createOrder: (data) => apiFetch('/orders', { method: 'POST', body: JSON.stringify(data) }),
   changeOrderStage: (id, stage) => apiFetch(`/orders/${id}/stage`, {
     method: 'PATCH', body: JSON.stringify({ stage })
@@ -211,6 +211,9 @@ const CrmApi = {
     method: 'POST', body: JSON.stringify({ token, deleteCodes }),
   }),
 
+  // Attachments
+  deleteAttachment: (id) => apiFetch(`/attachments/${id}`, { method: 'DELETE' }),
+
   // Upload attachments
   uploadAttachments: (quoteId, files) => {
     const token = CrmAuth.getToken();
@@ -227,9 +230,11 @@ const CrmApi = {
 // ─── Load all data from API (replaces hardcoded data) ───
 async function loadAllData() {
   try {
+    // Cargar últimos 12 meses — reduce payload en DBs grandes
+    const since = new Date(Date.now() - 365 * 86400 * 1000).toISOString().split('T')[0];
     const [quotes, orders, clients, users, stages, activity] = await Promise.all([
-      CrmApi.getQuotes(),
-      CrmApi.getOrders(),
+      CrmApi.getQuotes({ since }),
+      CrmApi.getOrders({ since }),
       CrmApi.getClients(),
       CrmApi.getUsers(),
       CrmApi.getStages(),

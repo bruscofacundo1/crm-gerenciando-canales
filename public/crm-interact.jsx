@@ -27,8 +27,25 @@ function AppProvider({ children }) {
   const [comments, setComments] = useS(() => ({...COMMENTS}));
   const [notifications, setNotifications] = useS([]);
 
+  const NOTIF_STORAGE_KEY = 'crm_notif_read_ids';
+  const getReadIds = () => {
+    try { return new Set(JSON.parse(localStorage.getItem(NOTIF_STORAGE_KEY) || '[]')); }
+    catch { return new Set(); }
+  };
+  const saveReadId = (id) => {
+    const ids = getReadIds(); ids.add(id);
+    // Guardar solo los últimos 500 para no inflar localStorage
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify([...ids].slice(-500)));
+  };
+  const saveAllReadIds = (ids) => {
+    const existing = getReadIds();
+    ids.forEach(id => existing.add(id));
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify([...existing].slice(-500)));
+  };
+
   useEff(() => {
-    CrmApi.getActivity(30).then(activities => {
+    CrmApi.getActivity(50).then(activities => {
+      const readIds = getReadIds();
       const notifs = activities.map(a => {
         let kind = 'info';
         if (a.action === 'STAGE_CHANGE') {
@@ -47,7 +64,8 @@ function AppProvider({ children }) {
           : a.orderCode
             ? { kind: 'order', code: a.orderCode }
             : null;
-        return { id: a.id, kind, text: a.detail, at: a.createdAt, read: false, ref, userName: a.userName };
+        // Marcar como leída si el ID ya estaba en localStorage
+        return { id: a.id, kind, text: a.detail, at: a.createdAt, read: readIds.has(a.id), ref, userName: a.userName };
       });
       setNotifications(notifs);
     }).catch(() => setNotifications([]));
@@ -202,9 +220,13 @@ function AppProvider({ children }) {
 
   const markNotificationRead = useCallback((id) => {
     setNotifications(ns => ns.map(n => n.id === id ? { ...n, read:true } : n));
+    saveReadId(id);
   }, []);
   const markAllNotificationsRead = useCallback(() => {
-    setNotifications(ns => ns.map(n => ({ ...n, read:true })));
+    setNotifications(ns => {
+      saveAllReadIds(ns.map(n => n.id));
+      return ns.map(n => ({ ...n, read:true }));
+    });
   }, []);
 
   // ---- Modals stack ----

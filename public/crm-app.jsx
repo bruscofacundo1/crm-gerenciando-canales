@@ -867,11 +867,85 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
   );
 }
 
+// ---------- SyncResultModal ----------
+function SyncResultModal({ result, onClose }) {
+  const typeLabel = { PRESUPUESTO:'Presupuesto', SOLICITUD:'Solicitud', NOTA_PEDIDO:'Nota de Pedido', OC:'OC Email' };
+  const typeColor = { PRESUPUESTO:'bg-blue-100 text-blue-700', SOLICITUD:'bg-sky-100 text-sky-700', NOTA_PEDIDO:'bg-indigo-100 text-indigo-700', OC:'bg-amber-100 text-amber-700' };
+  const mails = result.mails || [];
+  const errors = result.errors || [];
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}/>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div className="bg-white rounded-2xl shadow-pop w-full max-w-md pointer-events-auto" onClick={e=>e.stopPropagation()}>
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-line flex items-center gap-3">
+            <div className={cx('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', result.synced > 0 ? 'bg-emerald-100' : 'bg-ink-100')}>
+              <Icon name={result.synced > 0 ? 'mail-check' : 'mail'} size={18} className={result.synced > 0 ? 'text-emerald-600' : 'text-ink-400'}/>
+            </div>
+            <div>
+              <div className="font-semibold text-ink-900 text-sm">Sincronización completada</div>
+              <div className="text-[12px] text-ink-500">
+                {result.synced > 0 ? `${result.synced} mail${result.synced > 1 ? 's' : ''} procesado${result.synced > 1 ? 's' : ''}` : 'No hay mails nuevos'}
+              </div>
+            </div>
+            <button onClick={onClose} className="ml-auto w-8 h-8 rounded-lg hover:bg-surface flex items-center justify-center text-ink-400">
+              <Icon name="x" size={15}/>
+            </button>
+          </div>
+          {/* Mail list */}
+          {mails.length > 0 && (
+            <div className="max-h-72 overflow-y-auto scroll-thin divide-y divide-line">
+              {mails.map((m, i) => (
+                <div key={i} className="px-5 py-3 flex items-start gap-3">
+                  <span className={cx('chip shrink-0 mt-0.5', typeColor[m.mailType] || 'bg-ink-100 text-ink-600')}>
+                    {typeLabel[m.mailType] || m.mailType}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-medium text-ink-900 truncate">{m.clientName || m.subject || '(sin asunto)'}</div>
+                    <div className="text-[11px] text-ink-400 mt-0.5 flex gap-2 flex-wrap">
+                      {m.flexxusCode && <span className="mono">{m.flexxusCode}</span>}
+                      {m.sellerName  && <span>· {m.sellerName}</span>}
+                      {m.itemCount > 0 && <span>· {m.itemCount} ítem{m.itemCount > 1 ? 's' : ''}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {mails.length === 0 && (
+            <div className="px-6 py-8 text-center text-[13px] text-ink-400">
+              Todos los mensajes ya estaban procesados.
+            </div>
+          )}
+          {/* Errors */}
+          {errors.length > 0 && (
+            <div className="px-5 py-3 bg-red-50 border-t border-red-100">
+              <div className="text-[11px] font-semibold text-red-600 mb-1">⚠ {errors.length} error{errors.length > 1 ? 'es' : ''}</div>
+              {errors.slice(0,3).map((e,i) => <div key={i} className="text-[11px] text-red-500 truncate">{e}</div>)}
+            </div>
+          )}
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-line flex justify-end gap-2">
+            {result.synced > 0 && (
+              <button className="btn-ghost text-sm" onClick={() => window.location.reload()}>
+                <Icon name="refresh-cw" size={13}/>Recargar
+              </button>
+            )}
+            <button className="btn-primary text-sm" onClick={onClose}>Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ---------- Topbar ----------
 function Topbar({ user, roleKey, setRoleKey }) {
   const { notifications, openModal, pushToast } = useApp();
   const [notifOpen, setNotifOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // muestra el modal de resultado
   const loggedUser = CrmAuth.getUser();
   const isAdmin = loggedUser?.role === 'ADMIN';
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -880,12 +954,7 @@ function Topbar({ user, roleKey, setRoleKey }) {
     setSyncing(true);
     try {
       const result = await CrmApi.syncMail();
-      if (result.synced > 0) {
-        pushToast(`${result.synced} cotización(es) ingresada(s) desde mail`, 'ok');
-        setTimeout(() => window.location.reload(), 1500);
-      } else {
-        pushToast('No hay mails nuevos', 'info');
-      }
+      setSyncResult(result); // abre el modal con el detalle
     } catch (err) {
       pushToast('Error al sincronizar: ' + err.message, 'bad');
     } finally {
@@ -946,6 +1015,9 @@ function Topbar({ user, roleKey, setRoleKey }) {
         className="w-9 h-9 rounded-lg hover:bg-surface flex items-center justify-center text-ink-400 hover:text-bad border border-transparent hover:border-line transition-colors">
         <Icon name="log-out" size={15}/>
       </button>
+
+      {/* Modal resultado de sincronización */}
+      {syncResult && <SyncResultModal result={syncResult} onClose={() => setSyncResult(null)}/>}
     </header>
   );
 }
