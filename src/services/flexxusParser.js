@@ -51,12 +51,29 @@ function parseItems(lines) {
     // "NO COTIZA" → accepted=false (ítem sin precio)
     const isNC = rawDesc.toUpperCase().startsWith('NO COTIZA');
 
-    // Intentar separar descripción del código:
-    // El código suele aparecer al final de rawDesc, en mayúsculas/alfanum sin espacios largos.
-    // Simplificación: usamos rawDesc completo como descripción para la demo.
+    // Extraer SKU (\d{6}-\d{3}) y descripción limpia de rawDesc.
+    // rawDesc = "{descripcion}{sku6-3}{cant}" — todo concatenado sin separadores.
+    // Ej: "ETA 0063 - TERMINAL TERMOC. 1KV 3X185/95 A 3X300/1893710-000200"
+    const skuMatches = [...rawDesc.matchAll(/(\d{6}-\d{3})/g)];
+    const skuMatch   = skuMatches[0] || null;
+    let sku       = null;
+    let cleanDesc = rawDesc;
+    let qty       = extractQty(rawDesc, total, unitPrice);
+    if (skuMatch) {
+      sku       = skuMatch[1];
+      cleanDesc = rawDesc
+        .slice(0, skuMatch.index)
+        .replace(/^\d+\s*/, '')   // quitar número de ítem del principio (ej: "1 ")
+        .trim();
+      const afterSku = rawDesc.slice(skuMatch.index + skuMatch[1].length);
+      const qtyM = afterSku.match(/^[\s]*(\d+)/);
+      if (qtyM) qty = parseInt(qtyM[1], 10);
+    }
+
     items.push({
-      description: rawDesc,
-      quantity:    extractQty(rawDesc, total, unitPrice),
+      sku,
+      description: cleanDesc,
+      quantity:    qty,
       unit:        null,
       unitPrice:   isNC ? null : unitPrice,
       total:       isNC ? null : total,
@@ -281,15 +298,18 @@ function parseNotaPedidoItems(lines) {
     if (matchDesc) {
       description = matchDesc.trim();
       const afterDesc = beforePrices.slice(matchDesc.length);
-      // afterDesc = "{SKU}{qty}{remitida}", ej: "893710-0002000"
-      const skuM = afterDesc.match(/^(\d{5,7}-\d{3})/);
+      // afterDesc = "{sort_0-2?}{SKU_6}-{3}{qty}{remitida}"
+      // Ej: "1893710-0002000" → sort=1, SKU=893710-000, qty=200, rem=0
+      // Lazy 0-2 dígitos de prefijo para saltear el número de ítem
+      const skuM = afterDesc.match(/^\d{0,2}?(\d{6}-\d{3})/);
       if (skuM) sku = skuM[1].toUpperCase();
     } else {
-      // Fallback: buscar patrón SKU al final del blob (antes de las cantidades)
-      const skuM = beforePrices.match(/(\d{5,7}-\d{3})\d*$/);
-      if (skuM) {
-        sku = skuM[1].toUpperCase();
-        description = beforePrices.slice(0, skuM.index).trim() || beforePrices;
+      // Fallback: última ocurrencia de \d{6}-\d{3} en beforePrices
+      const allSkuM = [...beforePrices.matchAll(/(\d{6}-\d{3})/g)];
+      const lastSkuM = allSkuM[allSkuM.length - 1];
+      if (lastSkuM) {
+        sku = lastSkuM[1].toUpperCase();
+        description = beforePrices.slice(0, lastSkuM.index).trim() || beforePrices;
       }
     }
 
