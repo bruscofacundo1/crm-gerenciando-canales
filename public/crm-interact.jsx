@@ -1213,6 +1213,15 @@ function MoreFiltersPopover({ onClose, which='quote' }) {
 }
 
 // ---------- Filter helpers ----------
+function periodStartDate(period) {
+  const now = new Date();
+  if (period === '7d')      { const d = new Date(now); d.setDate(d.getDate() - 7);  return d; }
+  if (period === '30d')     { const d = new Date(now); d.setDate(d.getDate() - 30); return d; }
+  if (period === 'month')   { return new Date(now.getFullYear(), now.getMonth(), 1); }
+  if (period === 'quarter') { return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1); }
+  return null; // 'all'
+}
+
 function countActiveFilters(f) {
   let n = 0;
   if (f.seller) n++;
@@ -1228,12 +1237,15 @@ function countActiveFilters(f) {
 }
 
 function applyQuoteFilters(list, filters, clientsArr) {
+  const periodStart = filters.period ? periodStartDate(filters.period) : null;
   return list.filter(q => {
     if (filters.seller && q.seller !== filters.seller) return false;
+    if (periodStart && new Date(q.ingreso) < periodStart) return false;
     const cli = clientsArr.find(c => c.code === q.client);
     if (filters.client) {
       const needle = filters.client.toLowerCase();
-      if (!cli || !cli.name.toLowerCase().includes(needle)) return false;
+      const name = cli?.name || q.clientName || q.emailSubject || '';
+      if (!name.toLowerCase().includes(needle)) return false;
     }
     if (filters.zone && cli?.zone !== filters.zone) return false;
     if (filters.activity && cli?.activity !== filters.activity) return false;
@@ -1243,12 +1255,15 @@ function applyQuoteFilters(list, filters, clientsArr) {
   });
 }
 function applyOrderFilters(list, filters, clientsArr) {
+  const periodStart = filters.period ? periodStartDate(filters.period) : null;
   return list.filter(o => {
     if (filters.seller && o.seller !== filters.seller) return false;
+    if (periodStart && new Date(o.fecha) < periodStart) return false;
     const cli = clientsArr.find(c => c.code === o.client);
     if (filters.client) {
       const needle = filters.client.toLowerCase();
-      if (!cli || !cli.name.toLowerCase().includes(needle)) return false;
+      const name = cli?.name || o.clientName || '';
+      if (!name.toLowerCase().includes(needle)) return false;
     }
     if (filters.delivery && o.entrega !== filters.delivery) return false;
     if (filters.transport && !(o.transp||'').toLowerCase().includes(filters.transport.toLowerCase())) return false;

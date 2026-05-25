@@ -314,9 +314,9 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
     const { stage } = req.body;
     if (!stage) return res.status(400).json({ error: 'stage es requerido' });
 
-    // Verificar si es un Quote-OC de email
+    // Verificar si es un Quote-OC/NP de email (puede ser mailType OC o NOTA_PEDIDO)
     const emailOC = await prisma.quote.findFirst({
-      where: { id: req.params.id, mailType: 'OC' },
+      where: { id: req.params.id, mailType: { in: ['OC', 'NOTA_PEDIDO'] } },
     });
     if (emailOC) {
       await prisma.quote.update({ where: { id: req.params.id }, data: { stage } });

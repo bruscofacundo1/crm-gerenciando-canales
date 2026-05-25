@@ -27,18 +27,27 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     // Excluir OC y NOTA_PEDIDO — esas van en el board de Fase 2 (órdenes)
     // Nota: mailType null (manuales) debe incluirse — OR para manejar nulls en PG
-    const where = {
+    const mailTypeFilter = {
       OR: [
         { mailType: null },
         { mailType: { notIn: ['OC', 'NOTA_PEDIDO'] } },
       ],
     };
+    const where = { ...mailTypeFilter };
     if (req.user.role === 'VENDEDOR') {
       // Vendedor ve: sus propias quotes + las sin asignar (recibida, sin seller)
-      where.OR = [
-        { sellerId: req.user.id },
-        { sellerId: null, stage: 'recibida' },
+      // AND: el filtro de mailType se mantiene combinado con el de seller/stage
+      where.AND = [
+        mailTypeFilter,
+        {
+          OR: [
+            { sellerId: req.user.id },
+            { sellerId: null, stage: 'recibida' },
+          ],
+        },
       ];
+      // Limpiar la condición OR del nivel superior para evitar duplicación
+      delete where.OR;
     }
     // Filtro de fecha (opcional — carga inicial usa últimos 12 meses)
     if (req.query.since) {
@@ -112,7 +121,7 @@ router.post('/', authMiddleware, async (req, res) => {
         amount: amount ? parseFloat(amount) : null,
         source: source || 'MANUAL',
         mailType: 'PRESUPUESTO',
-        stage: 'enviado',
+        stage: sellerId ? 'asignada' : 'recibida',
         deadline: deadline ? new Date(deadline) : null,
       },
       include: {
@@ -460,7 +469,7 @@ router.patch('/:id/client', authMiddleware, async (req, res) => {
       // Solo avanzar a 'asignada' si la quote está en etapa inicial (nueva/sin asignar).
       // Si ya pasó por etapas posteriores, no la retrocedemos.
       const current = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { stage: true } });
-      if (current?.stage === 'nueva') updateData.stage = 'asignada';
+      if (current?.stage === 'recibida') updateData.stage = 'asignada';
     }
 
     const updated = await prisma.quote.update({
@@ -681,13 +690,43 @@ router.put('/email-templates', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/quotes/:id/send-email — enviar presupuesto por email
+// POST /api/quotes/:id/send-email — enviar presupuesto por email (o registrar envío por Gmail)
 router.post('/:id/send-email', authMiddleware, async (req, res) => {
   try {
-    const { to, cc, subject, body, attachmentId } = req.body;
+    const { to, cc, subject, body, attachmentId, _gmailOnly } = req.body;
     if (!to)      return res.status(400).json({ error: '"to" es requerido' });
     if (!subject) return res.status(400).json({ error: '"subject" es requerido' });
     if (!body)    return res.status(400).json({ error: '"body" es requerido' });
+
+    // Modo Gmail: solo logear actividad y avanzar etapa, sin envío SMTP
+    if (_gmailOnly) {
+      await prisma.activity.create({
+        data: {
+          action:  'EMAIL_SENT',
+          detail:  `Presupuesto abierto en Gmail para ${to}${cc ? ` (CC: ${cc})` : ''} · Asunto: "${subject}"`,
+          userId:  req.user.id,
+          quoteId: req.params.id,
+        },
+      });
+      const STAGES_TO_ADVANCE = ['asignada', 'armado', 'revision', 'presupuestado', 'recibida', 'oferta', 'proveedor'];
+      const quote = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { stage: true } });
+      let stageAdvanced = false;
+      if (quote && STAGES_TO_ADVANCE.includes(quote.stage)) {
+        const followUpDate = new Date();
+        followUpDate.setDate(followUpDate.getDate() + 4);
+        await prisma.quote.update({ where: { id: req.params.id }, data: { stage: 'enviado', followUpDate } });
+        await prisma.activity.create({
+          data: {
+            action: 'STAGE_CHANGE',
+            detail: `Etapa cambiada de "${quote.stage}" a "enviado" (Gmail)`,
+            userId: req.user.id,
+            quoteId: req.params.id,
+          },
+        });
+        stageAdvanced = true;
+      }
+      return res.json({ messageId: null, stageAdvanced, gmailOnly: true });
+    }
 
     // Buscar adjunto si se especificó
     let attachmentPath = null;

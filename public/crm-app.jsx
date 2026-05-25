@@ -170,7 +170,7 @@ function App() {
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
           {screen === 'dashboard'  && <Dashboard/>}
           {screen === 'quotes'     && <KanbanQuotes onOpen={(c)=>openDetail(c,'quote')}/>}
-          {screen === 'orders'     && <KanbanOrders onOpen={(c)=>openDetail(c,'order')}/>}
+          {screen === 'orders'     && <KanbanOrders onOpen={(c,k)=>openDetail(c,k||'order')}/>}
           {screen === 'my-quotes'  && <MySalesView user={user} initialTab="quotes" onOpen={openDetail}/>}
           {screen === 'my-orders'  && <MySalesView user={user} initialTab="orders" onOpen={openDetail}/>}
           {screen === 'ops'        && <LogisticsView onOpen={(c)=>openDetail(c,'order')}/>}
