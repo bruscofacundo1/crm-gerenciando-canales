@@ -567,10 +567,30 @@ function Login({ onLogin }) {
   const [info,       setInfo]       = useState('');
   const [loading,    setLoading]    = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [allowedDomains, setAllowedDomains] = useState(['myselec.com', 'myselec.com.ar', 'gmail.com']);
 
   // Registro
   const [reg, setReg] = useState({ name:'', lastName:'', email:'', phone:'', dni:'', cuit:'', pass:'', pass2:'' });
   const setRegF = (k, v) => setReg(r => ({ ...r, [k]: v }));
+
+  // Cargar dominios permitidos al montar
+  React.useEffect(() => {
+    fetch('/api/auth/config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.allowedDomains?.length) setAllowedDomains(d.allowedDomains); })
+      .catch(() => {});
+  }, []);
+
+  const isDomainAllowed = (emailVal) => {
+    const domain = (emailVal || '').split('@')[1]?.toLowerCase();
+    return domain && allowedDomains.includes(domain);
+  };
+
+  const domainHint = () => {
+    const corp = allowedDomains.filter(d => d !== 'gmail.com');
+    const parts = corp.length ? corp.map(d => `@${d}`).join(', ') + ' o Gmail' : 'Gmail';
+    return `Solo se aceptan emails corporativos (${parts}).`;
+  };
 
   const bgStyle = {
     background: '#0F1B2D',
@@ -597,10 +617,15 @@ function Login({ onLogin }) {
 
   const handleForgot = async (e) => {
     e.preventDefault();
-    setError(''); setLoading(true);
+    setError('');
+    if (!isDomainAllowed(email)) {
+      setError(domainHint());
+      return;
+    }
+    setLoading(true);
     try {
       await CrmApi.forgotPassword(email);
-      setInfo('Si el email existe, recibirás un link para restablecer tu contraseña.');
+      setInfo('¡Link enviado! Revisá tu casilla de correo.');
     } catch (err) {
       setError(err.message || 'Error al enviar mail');
     } finally {
@@ -632,6 +657,9 @@ function Login({ onLogin }) {
     setError('');
     if (!reg.name.trim() || !reg.lastName.trim() || !reg.email.trim() || !reg.phone.trim() || !reg.dni.trim()) {
       setError('Completá todos los campos obligatorios'); return;
+    }
+    if (!isDomainAllowed(reg.email)) {
+      setError(domainHint()); return;
     }
     const pwErr = validatePassword(reg.pass);
     if (pwErr) { setError(pwErr); return; }

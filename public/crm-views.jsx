@@ -1615,6 +1615,8 @@ function Config() {
     default_stage_nota_pedido: 'np_enviada',
   });
   const [followUpDays, setFollowUpDays] = useState('4');
+  const [allowedEmailDomains, setAllowedEmailDomains] = useState('myselec.com,myselec.com.ar,gmail.com');
+  const [savingDomains, setSavingDomains] = useState(false);
   const [showVars, setShowVars] = useState(false);
 
   // Email templates state
@@ -1651,6 +1653,7 @@ function Config() {
       .then(s => {
         setIncomingStages(prev => ({ ...prev, ...s }));
         if (s.follow_up_days) setFollowUpDays(s.follow_up_days);
+        if (s.allowed_email_domains) setAllowedEmailDomains(s.allowed_email_domains);
       })
       .catch(() => {});
   }, []);
@@ -2072,6 +2075,7 @@ function Config() {
         { id:'mail',     label:'Mail' },
         { id:'notifs',   label:'Notificaciones' },
         { id:'articles', label:'Artículos' },
+        { id:'access',   label:'Acceso' },
       ]}/>
 
       {tab==='stages' && (
@@ -2518,6 +2522,55 @@ function Config() {
       )}
 
       {tab==='articles' && <Articles/>}
+
+      {tab==='access' && (
+        <div className="p-6 max-w-2xl space-y-5">
+          <div className="bg-white border border-line rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="shield" size={15} className="text-brand"/>
+              <span className="text-sm font-semibold">Dominios de email permitidos</span>
+            </div>
+            <p className="text-[12px] text-ink-500 mb-4">
+              Solo se puede registrar o recuperar contraseña con emails de estos dominios.
+              Separalos por coma, sin espacios. Ejemplo: <code className="bg-surface px-1 rounded">myselec.com,myselec.com.ar,gmail.com</code>
+            </p>
+            <label className="block text-[12px] font-medium text-ink-700 mb-1.5">Dominios permitidos</label>
+            <input
+              className="inp w-full font-mono text-[13px] mb-4"
+              value={allowedEmailDomains}
+              onChange={e => setAllowedEmailDomains(e.target.value)}
+              placeholder="myselec.com,myselec.com.ar,gmail.com"
+            />
+            {/* Preview de los dominios parseados */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {allowedEmailDomains.split(',').map(d => d.trim()).filter(Boolean).map(d => (
+                <span key={d} className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[12px] text-blue-700 font-medium">@{d}</span>
+              ))}
+            </div>
+            <button
+              className="btn-primary"
+              disabled={savingDomains}
+              onClick={async () => {
+                setSavingDomains(true);
+                try {
+                  await fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+                    body: JSON.stringify({ allowed_email_domains: allowedEmailDomains }),
+                  });
+                  pushToast('Dominios guardados', 'success');
+                } catch {
+                  pushToast('Error al guardar', 'error');
+                } finally {
+                  setSavingDomains(false);
+                }
+              }}
+            >
+              {savingDomains ? 'Guardando...' : 'Guardar dominios'}
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );
