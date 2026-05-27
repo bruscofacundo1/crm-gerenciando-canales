@@ -51,7 +51,7 @@ function StagePipeline({ stages, currentId }) {
 function Field({ label, value, mono=false, children }) {
   return (
     <div>
-      <div className="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500">{label}</div>
+      <div className="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 flex items-center gap-0.5">{label}</div>
       <div className={cx('text-[13px] text-ink-900 mt-1', mono && 'mono')}>{children || value || '—'}</div>
     </div>
   );
@@ -645,6 +645,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [assignSaving, setAssignSaving] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [clientDropOpen, setClientDropOpen] = useState(false);
+  const [assigningSeller, setAssigningSeller] = useState(false);
+  const [assignSellerIdQuick, setAssignSellerIdQuick] = useState('');
+  const [assignSellerSaving, setAssignSellerSaving] = useState(false);
   const [detailItems, setDetailItems] = useState([]);
   const [detailAttachments, setDetailAttachments] = useState([]);
   const [detailEmailBody, setDetailEmailBody] = useState('');
@@ -706,13 +709,31 @@ function QuoteDetail({ code, onClose, canReassign }) {
       });
       const freshQuotes = await CrmApi.getQuotes();
       setQuotes(freshQuotes);
-      pushToast('Cliente asignado correctamente');
+      pushToast('Cliente actualizado correctamente');
       setAssigningClient(false);
-      closeModal();
+      setAssignClientId('');
+      setAssignSellerId('');
     } catch (err) {
       pushToast(err.message || 'Error al asignar cliente', 'bad');
     } finally {
       setAssignSaving(false);
+    }
+  };
+
+  const handleAssignSellerQuick = async () => {
+    if (!assignSellerIdQuick) return;
+    setAssignSellerSaving(true);
+    try {
+      await CrmApi.assignQuote(q.id, assignSellerIdQuick);
+      const freshQuotes = await CrmApi.getQuotes();
+      setQuotes(freshQuotes);
+      pushToast('Vendedor actualizado correctamente');
+      setAssigningSeller(false);
+      setAssignSellerIdQuick('');
+    } catch (err) {
+      pushToast(err.message || 'Error al actualizar vendedor', 'bad');
+    } finally {
+      setAssignSellerSaving(false);
     }
   };
 
@@ -984,7 +1005,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
         </div>
       )}
 
-      {!cli && assigningClient && (() => {
+      {assigningClient && (() => {
         const selectedClientObj = clients.find(c => c.id === assignClientId);
         const filteredClients = clients.filter(c =>
           !clientSearch ||
@@ -1081,13 +1102,55 @@ function QuoteDetail({ code, onClose, canReassign }) {
         );
       })()}
 
+      {/* Panel cambio rápido de vendedor */}
+      {assigningSeller && (
+        <div className="mx-6 mt-3 px-4 py-3 bg-surface border border-line rounded-xl flex items-center gap-3">
+          <Icon name="user" size={14} className="text-ink-400 shrink-0"/>
+          <select className="inp text-xs flex-1" value={assignSellerIdQuick}
+            onChange={e => setAssignSellerIdQuick(e.target.value)}
+            autoFocus>
+            <option value="">Seleccionar vendedor…</option>
+            {users.filter(u => u.role === 'Vendedor' || u.role === 'Administrador')
+              .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <button className="btn-primary text-[11px] py-1 px-2.5 shrink-0"
+            disabled={!assignSellerIdQuick || assignSellerSaving}
+            style={!assignSellerIdQuick || assignSellerSaving ? {opacity:.45} : {}}
+            onClick={handleAssignSellerQuick}>
+            {assignSellerSaving ? <Icon name="loader" size={12} className="animate-spin"/> : 'Guardar'}
+          </button>
+          <button className="text-ink-400 hover:text-ink-700 shrink-0"
+            onClick={() => { setAssigningSeller(false); setAssignSellerIdQuick(''); }}>
+            <Icon name="x" size={14}/>
+          </button>
+        </div>
+      )}
+
       {/* Pipeline strip */}
       <div className="px-6 pt-5 pb-4 bg-gradient-to-b from-surface to-white">
         <StagePipeline stages={STAGES_F1} currentId={q.stage}/>
         <div className="mt-4 grid grid-cols-4 gap-4">
-          <Field label="Cliente" value={cli?.name || '—'}/>
+          <Field label={
+            <span className="flex items-center gap-1">
+              Cliente
+              <button title="Cambiar cliente"
+                onClick={() => { setAssigningClient(true); setAssignClientId(cli?.id || ''); setAssignSellerId(''); setClientSearch(''); setClientDropOpen(false); }}
+                className="text-ink-300 hover:text-brand transition-colors ml-0.5">
+                <Icon name="pencil" size={10}/>
+              </button>
+            </span>
+          } value={cli?.name || '—'}/>
           <Field label="CUIT" mono value={cli?.cuit || '—'}/>
-          <Field label="Vendedor">
+          <Field label={
+            <span className="flex items-center gap-1">
+              Vendedor
+              <button title="Cambiar vendedor"
+                onClick={() => { setAssigningSeller(true); setAssignSellerIdQuick(q.seller || ''); }}
+                className="text-ink-300 hover:text-brand transition-colors ml-0.5">
+                <Icon name="pencil" size={10}/>
+              </button>
+            </span>
+          }>
             {sel
               ? <div className="flex items-center gap-2"><Avatar name={sel.name} size={20}/>{sel.name}</div>
               : <span className="text-ink-400">Sin asignar</span>}
