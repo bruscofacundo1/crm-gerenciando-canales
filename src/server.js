@@ -41,11 +41,13 @@ app.use(helmet({
         'https://unpkg.com',
         'https://cdn.tailwindcss.com',
         'https://fonts.googleapis.com',
-        "'unsafe-eval'",   // necesario para Babel Standalone en browser
+        "'unsafe-eval'",    // necesario para Babel Standalone (eval de JSX compilado)
+        "'unsafe-inline'",  // necesario para Babel Standalone (inyección de scripts compilados)
       ],
-      'style-src':  ["'self'", 'https://fonts.googleapis.com', "'unsafe-inline'"],
+      'style-src':  ["'self'", 'https://fonts.googleapis.com', 'https://cdn.tailwindcss.com', "'unsafe-inline'"],
       'font-src':   ["'self'", 'https://fonts.gstatic.com'],
       'img-src':    ["'self'", 'data:', 'blob:'],
+      'connect-src': ["'self'", 'https://unpkg.com'],  // source maps de unpkg
     },
   },
 }));
