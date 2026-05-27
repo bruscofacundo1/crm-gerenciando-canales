@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+// ── Railway: auto-completar APP_URL desde RAILWAY_PUBLIC_DOMAIN ──────────────
+if (!process.env.APP_URL && process.env.RAILWAY_PUBLIC_DOMAIN) {
+  process.env.APP_URL = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+}
+
 // ── Validación de variables de entorno críticas ───────────────────────────────
 const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL'];
 for (const key of REQUIRED_ENV) {

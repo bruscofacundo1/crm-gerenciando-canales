@@ -654,6 +654,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [priceBreakdown, setPriceBreakdown] = useState(null); // { subtotalNeto, ivaAmount, totalPercepciones, total }
   const [emailBodyOpen, setEmailBodyOpen] = useState(false);
   const [linkedQuotes, setLinkedQuotes] = useState({ linkedQuote: null, linkedBy: [] });
+  const [linkedOrder, setLinkedOrder] = useState(null); // OC vinculada a este presupuesto
   const [linkSearch, setLinkSearch] = useState('');
   const [linkDropOpen, setLinkDropOpen] = useState(false);
   const [linkSaving, setLinkSaving] = useState(false);
@@ -771,6 +772,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
         setDetailAttachments(detail.attachments || []);
         setDetailEmailBody(detail.emailBody || '');
         setLinkedQuotes({ linkedQuote: detail.linkedQuote || null, linkedBy: detail.linkedBy || [] });
+        setLinkedOrder(detail.linkedOrder || null);
         // Breakdown de precios (solo presupuestos Flexxus con datos parseados)
         if (detail.subtotalNeto != null || detail.ivaAmount != null) {
           setPriceBreakdown({
@@ -1176,6 +1178,31 @@ function QuoteDetail({ code, onClose, canReassign }) {
             <span className="font-semibold">Seguimiento pendiente</span>
             {' · Alerta desde '}{fmtDate(q.followUpDate)}
           </span>
+        </div>
+      )}
+
+      {/* ── OC vinculada — visible cuando el presupuesto fue aceptado ── */}
+      {linkedOrder && (
+        <div className="mx-6 mb-3 px-4 py-3 bg-white border border-line rounded-xl flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+            <Icon name="package" size={15} className="text-purple-600"/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-0.5">Orden de Compra generada</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="mono text-[13px] font-semibold text-ink-900">{linkedOrder.code}</span>
+              {(() => {
+                const ocStg = STAGES_F2.find(s => s.id === linkedOrder.stage);
+                return ocStg
+                  ? <Badge tone={ocStg.tone} dot>{ocStg.label}</Badge>
+                  : <Badge tone="gray" dot>{linkedOrder.stage}</Badge>;
+              })()}
+            </div>
+          </div>
+          <button className="btn-ghost text-[12px] py-1 px-2.5 shrink-0"
+            onClick={() => openModal('orderDetail', { code: linkedOrder.code })}>
+            Ver OC <Icon name="arrow-right" size={11}/>
+          </button>
         </div>
       )}
 
