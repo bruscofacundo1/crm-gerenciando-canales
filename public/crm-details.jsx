@@ -1098,7 +1098,11 @@ function QuoteDetail({ code, onClose, canReassign }) {
           <Field label="Total con IVA" mono value={q.monto != null ? fmtMoney(q.monto) : '—'}/>
           <Field label="Cod. Flexxus NP" mono value={q.flexxus || '—'}/>
           <Field label="Zona de entrega" value={cli?.zone || '—'}/>
-          <Field label="Contacto"><div className="text-[12.5px]">{cli?.email || '—'}</div></Field>
+          <Field label="Contacto">
+            {(cli?.email || q.emailFrom)
+              ? <a href={`mailto:${cli?.email || q.emailFrom}`} className="text-brand hover:underline text-[12.5px] truncate block">{cli?.email || q.emailFrom}</a>
+              : <span className="text-[12.5px]">—</span>}
+          </Field>
         </div>
       </div>
 
