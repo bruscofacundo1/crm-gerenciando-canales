@@ -7,18 +7,9 @@ const { authMiddleware } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
 const prisma = require('../db');
 
-// Multer para avatares
-const AVATARS_DIR = path.join(__dirname, '..', '..', 'uploads', 'avatars');
-if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, AVATARS_DIR),
-  filename:    (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    cb(null, `avatar-${req.params.id}-${Date.now()}${ext}`);
-  },
-});
+// Multer para avatares — memoria (base64 → DB, sin depender del disco de Railway)
 const uploadAvatar = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
@@ -325,17 +316,11 @@ router.post('/:id/avatar', authMiddleware, uploadAvatar.single('avatar'), async 
     }
     if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
 
-    // Borrar avatar anterior si existe
-    const existing = await prisma.user.findUnique({ where: { id: req.params.id }, select: { avatar: true } });
-    if (existing?.avatar) {
-      const oldPath = path.join(__dirname, '..', '..', existing.avatar.replace(/^\//, ''));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    // Guardar como data URL base64 en la DB (sin disco — compatible con Railway)
+    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { avatar: avatarUrl },
+      data: { avatar: dataUrl },
       select: { id: true, name: true, email: true, role: true, zone: true, avatar: true },
     });
     res.json(user);
@@ -349,11 +334,6 @@ router.delete('/:id/avatar', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'ADMIN' && req.user.id !== req.params.id) {
       return res.status(403).json({ error: 'Sin permiso' });
-    }
-    const existing = await prisma.user.findUnique({ where: { id: req.params.id }, select: { avatar: true } });
-    if (existing?.avatar) {
-      const oldPath = path.join(__dirname, '..', '..', existing.avatar.replace(/^\//, ''));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
     const user = await prisma.user.update({
       where: { id: req.params.id },
