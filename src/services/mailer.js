@@ -1,33 +1,20 @@
-const nodemailer = require('nodemailer');
-const dns        = require('dns');
+const { Resend } = require('resend');
 
-// Deriva host SMTP del host IMAP (imap.X → smtp.X, mail.X → mail.X)
-function smtpHost() {
-  const h = process.env.MAIL_HOST || 'smtp.gmail.com';
-  return h.replace(/^imap\./, 'smtp.');
+// Dirección remitente: configurá MAIL_FROM en Railway para usar tu propio dominio.
+// Sin dominio verificado en Resend, solo podés enviar a tu propia cuenta de Resend.
+// Ejemplo: MAIL_FROM=MySelec CRM <noreply@myselec.com>
+const FROM_ADDRESS = process.env.MAIL_FROM || 'MySelec CRM <onboarding@resend.dev>';
+
+let _resend = null;
+function getResend() {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
 }
 
-let _transporter = null;
-function getTransporter() {
-  if (_transporter) return _transporter;
-  // Puerto 465 (SSL) en lugar de 587 (STARTTLS) — Railway bloquea el 587 saliente.
-  // Gmail soporta ambos; con 465 + secure:true no se hace upgrade TLS, la conexión
-  // es cifrada desde el inicio y más compatible con firewalls de cloud providers.
-  _transporter = nodemailer.createTransport({
-    host: smtpHost(),
-    port: 465,
-    secure: true,             // SSL desde el inicio (puerto 465)
-    // Railway no tiene salida IPv6 — forzar resolución DNS a IPv4
-    dnsLookup: (hostname, options, cb) => dns.lookup(hostname, { family: 4 }, cb),
-    connectionTimeout: 15000, // 15s
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASSWORD,
-    },
-  });
-  return _transporter;
+// Convierte "a@x.com, b@x.com" o un array en array limpio
+function toArray(to) {
+  if (Array.isArray(to)) return to.map(s => s.trim()).filter(Boolean);
+  return String(to).split(',').map(s => s.trim()).filter(Boolean);
 }
 
 // Reemplaza {{key}} en template con valores del objeto ctx
@@ -41,18 +28,23 @@ function renderTemplate(text, ctx) {
 }
 
 async function sendMail({ to, subject, html, text }) {
-  if (!process.env.MAIL_USER || !process.env.MAIL_PASSWORD) {
-    console.warn('⚠️  Mailer: MAIL_USER/MAIL_PASSWORD no configurados, mail omitido.');
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️  Mailer: RESEND_API_KEY no configurado, mail omitido.');
     return;
   }
-  const t = getTransporter();
-  await t.sendMail({
-    from: `"MySelec CRM" <${process.env.MAIL_USER}>`,
-    to,
+  const resend = getResend();
+  const { error } = await resend.emails.send({
+    from: FROM_ADDRESS,
+    to: toArray(to),
     subject,
-    html: html || `<pre>${text}</pre>`,
-    text,
+    html: html || `<pre>${text || ''}</pre>`,
+    text: text || '',
   });
+  if (error) {
+    const err = new Error(error.message || 'Resend error');
+    err.code = error.name;
+    throw err;
+  }
 }
 
 async function sendPasswordReset(toEmail, resetUrl) {
@@ -79,23 +71,28 @@ async function sendNotification({ toEmails, subject, body, ctx }) {
   const renderedSubject = renderTemplate(subject, ctx);
   const renderedBody    = renderTemplate(body,    ctx);
   await sendMail({
-    to: toEmails.join(', '),
+    to: toEmails,
     subject: renderedSubject,
     html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;white-space:pre-wrap">${renderedBody}</div>`,
     text: renderedBody,
   });
 }
 
-// Verifica la conexión SMTP — útil para diagnóstico desde el admin panel
+// Verifica la configuración de Resend — útil para diagnóstico desde el admin panel
 async function verifySmtp() {
-  if (!process.env.MAIL_USER || !process.env.MAIL_PASSWORD) {
-    throw new Error('MAIL_USER/MAIL_PASSWORD no configurados');
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY no configurado');
   }
-  // Forzar un nuevo transporter para el test (resetea cache)
-  _transporter = null;
-  const t = getTransporter();
-  await t.verify();
-  return { host: smtpHost(), port: 465, user: process.env.MAIL_USER };
+  const resend = getResend();
+  // Llama a la API de Resend para verificar que la API key sea válida
+  const { data, error } = await resend.domains.list();
+  if (error) {
+    const err = new Error(error.message || 'Resend API error');
+    err.code = error.name;
+    throw err;
+  }
+  const domains = (data?.data || []).map(d => d.name);
+  return { provider: 'resend', from: FROM_ADDRESS, domains };
 }
 
 module.exports = { sendMail, sendPasswordReset, sendNotification, renderTemplate, verifySmtp };
