@@ -1335,9 +1335,15 @@ function Team() {
                       method: 'PATCH',
                       headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
                     });
-                    if (res.ok) { reload(); pushToast(u.notifyUnassigned !== false ? 'Alertas desactivadas' : 'Alertas activadas', 'ok'); }
-                    else { const d = await res.json().catch(()=>({})); pushToast(d.error || 'Error al actualizar', 'bad'); }
-                  } catch { pushToast('Error al actualizar', 'bad'); }
+                    if (res.ok) {
+                      const d = await res.json();
+                      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, notifyUnassigned: d.notifyUnassigned } : x));
+                      pushToast(d.notifyUnassigned ? 'Activadas alertas sin cliente' : 'Desactivadas alertas sin cliente', 'ok');
+                    } else {
+                      const d = await res.json().catch(() => ({}));
+                      pushToast(d.error || 'Error al actualizar', 'bad');
+                    }
+                  } catch (e) { pushToast(e.message || 'Error al actualizar', 'bad'); }
                 }}
                 title={u.notifyUnassigned !== false ? 'Desactivar alertas de mails sin cliente' : 'Activar alertas de mails sin cliente'}
                 className="btn-ghost p-1.5 relative group"
