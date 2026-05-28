@@ -50,10 +50,12 @@ function AppRoot() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-navy-950">
-      <div className="text-center">
-        <Logo size={72} />
-        <div className="text-white/60 mt-4 text-sm">Cargando sistema…</div>
-        <div className="text-white/30 mt-1 text-xs">Conectando con la base de datos</div>
+      <div className="flex flex-col items-center gap-6">
+        <img src="/Logo.png" alt="MySelec" style={{ width: 'auto', height: 90, objectFit: 'contain' }}/>
+        <div className="flex flex-col items-center gap-1">
+          <div className="text-white/60 text-sm">Cargando sistema…</div>
+          <div className="text-white/30 text-xs">Conectando con la base de datos</div>
+        </div>
       </div>
     </div>
   );
