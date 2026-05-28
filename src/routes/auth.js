@@ -229,7 +229,6 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // GET /api/auth/smtp-test — diagnóstico de conexión SMTP (admin only)
-const { authMiddleware } = require('../middleware/auth');
 router.get('/smtp-test', authMiddleware, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Solo administradores' });
   try {
