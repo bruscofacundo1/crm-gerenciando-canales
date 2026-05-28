@@ -160,7 +160,7 @@ router.post('/test/:email', authMiddleware, requireRole('ADMIN'), async (req, re
         host:        process.env.MAIL_HOST || 'imap.gmail.com',
         port:        parseInt(process.env.MAIL_PORT || '993'),
         tls:         true,
-        tlsOptions:  { rejectUnauthorized: true },
+        tlsOptions:  { rejectUnauthorized: false },
         authTimeout: 12000,
         connTimeout: 20000,
       });
