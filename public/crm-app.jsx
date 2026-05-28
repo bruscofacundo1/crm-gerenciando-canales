@@ -869,7 +869,7 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
           <img
             src="/Logo.png"
             alt="MySelec"
-            style={{ maxWidth: 160, maxHeight: 48, width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
+            style={{ maxWidth: 130, maxHeight: 36, width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
           />
         </div>
       )}
