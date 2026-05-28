@@ -2,7 +2,7 @@ const express  = require('express');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const crypto   = require('crypto');
-const { sendPasswordReset, sendMail } = require('../services/mailer');
+const { sendPasswordReset, sendMail, verifySmtp } = require('../services/mailer');
 const prisma = require('../db');
 
 const router = express.Router();
@@ -225,6 +225,18 @@ router.post('/reset-password', async (req, res) => {
   } catch (err) {
     console.error('reset-password error:', err);
     res.status(500).json({ error: 'Error al restablecer la contraseña' });
+  }
+});
+
+// GET /api/auth/smtp-test — diagnóstico de conexión SMTP (admin only)
+const { authMiddleware } = require('../middleware/auth');
+router.get('/smtp-test', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Solo administradores' });
+  try {
+    const info = await verifySmtp();
+    res.json({ ok: true, ...info });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message, code: err.code || null });
   }
 });
 

@@ -83,4 +83,16 @@ async function sendNotification({ toEmails, subject, body, ctx }) {
   });
 }
 
-module.exports = { sendMail, sendPasswordReset, sendNotification, renderTemplate };
+// Verifica la conexión SMTP — útil para diagnóstico desde el admin panel
+async function verifySmtp() {
+  if (!process.env.MAIL_USER || !process.env.MAIL_PASSWORD) {
+    throw new Error('MAIL_USER/MAIL_PASSWORD no configurados');
+  }
+  // Forzar un nuevo transporter para el test (resetea cache)
+  _transporter = null;
+  const t = getTransporter();
+  await t.verify();
+  return { host: smtpHost(), port: 465, user: process.env.MAIL_USER };
+}
+
+module.exports = { sendMail, sendPasswordReset, sendNotification, renderTemplate, verifySmtp };
