@@ -23,6 +23,7 @@ model User {
   active             Boolean  @default(true)
   pendingApproval    Boolean  @default(false)
   notifyUnassigned   Boolean  @default(true)   // Recibe mail cuando llega cotización sin cliente asignado
+  notificationPrefs  Json?                     // Preferencias personales { email:{...}, inapp:{...} }
   createdAt          DateTime @default(now())
 
   quotesAssigned    Quote[]              @relation("QuoteSeller")

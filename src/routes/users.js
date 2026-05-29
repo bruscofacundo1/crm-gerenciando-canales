@@ -111,7 +111,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const users = await prisma.user.findMany({
       where: { pendingApproval: false },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
-      select: { id: true, name: true, email: true, role: true, zone: true, active: true, avatar: true, phone: true, passwordChangedAt: true, notifyUnassigned: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, zone: true, active: true, avatar: true, phone: true, passwordChangedAt: true, notifyUnassigned: true, notificationPrefs: true, createdAt: true },
     });
 
     // Enriquecer con stats solo para admin
@@ -227,6 +227,35 @@ router.patch('/:id/toggle', authMiddleware, adminOnly, async (req, res) => {
       where: { id: req.params.id },
       data: { active: !user.active },
       select: { id: true, name: true, active: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/users/:id/notification-prefs — guardar preferencias personales de notificación
+router.patch('/:id/notification-prefs', authMiddleware, async (req, res) => {
+  try {
+    const isSelf  = req.user.id === req.params.id;
+    const isAdmin = req.user.role === 'ADMIN';
+    if (!isAdmin && !isSelf) return res.status(403).json({ error: 'Sin permiso' });
+
+    const { prefs } = req.body; // { email: {...}, inapp: {...} }
+    if (!prefs || typeof prefs !== 'object') return res.status(400).json({ error: 'prefs requerido' });
+
+    // Merge con las prefs existentes
+    const existing = await prisma.user.findUnique({ where: { id: req.params.id }, select: { notificationPrefs: true } });
+    const current  = (existing?.notificationPrefs && typeof existing.notificationPrefs === 'object') ? existing.notificationPrefs : {};
+    const merged   = {
+      email: { ...(current.email || {}), ...(prefs.email || {}) },
+      inapp: { ...(current.inapp  || {}), ...(prefs.inapp  || {}) },
+    };
+
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data:  { notificationPrefs: merged },
+      select: { id: true, notificationPrefs: true },
     });
     res.json(updated);
   } catch (err) {

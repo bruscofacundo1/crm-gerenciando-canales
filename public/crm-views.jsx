@@ -1671,6 +1671,22 @@ function Config() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifModal, setNotifModal] = useState(null); // null | 'new' | rule-object
 
+  // System notification toggles (mail)
+  const [sysNotifMail, setSysNotifMail] = useState({
+    notify_new_register:    'true',
+    notify_stage_alert:     'true',
+    notify_unassigned_mail: 'true',
+  });
+  // System notification toggles (in-app)
+  const [sysNotifInapp, setSysNotifInapp] = useState({
+    inapp_unassigned_quotes:     'true',
+    inapp_unlinked_presupuestos: 'true',
+    inapp_pending_users:         'true',
+    inapp_overdue_stages:        'true',
+    inapp_idle_quotes:           'true',
+    inapp_follow_up:             'true',
+  });
+
   // Mail state
   const [mailAccounts,  setMailAccounts]  = useState([]);
   const [mailSettings,  setMailSettings]  = useState({ mail_sync_interval_hours: '2', mail_lookback_days: '2', mail_sync_enabled: 'true' });
@@ -1702,6 +1718,22 @@ function Config() {
         if (s.weekly_report_enabled !== undefined) setWeeklyReportEnabled(s.weekly_report_enabled);
         if (s.weekly_report_day     !== undefined) setWeeklyReportDay(s.weekly_report_day);
         if (s.weekly_report_hour    !== undefined) setWeeklyReportHour(s.weekly_report_hour);
+        // System notification toggles
+        setSysNotifMail(prev => ({
+          ...prev,
+          notify_new_register:    s.notify_new_register    ?? 'true',
+          notify_stage_alert:     s.notify_stage_alert     ?? 'true',
+          notify_unassigned_mail: s.notify_unassigned_mail ?? 'true',
+        }));
+        setSysNotifInapp(prev => ({
+          ...prev,
+          inapp_unassigned_quotes:     s.inapp_unassigned_quotes     ?? 'true',
+          inapp_unlinked_presupuestos: s.inapp_unlinked_presupuestos ?? 'true',
+          inapp_pending_users:         s.inapp_pending_users         ?? 'true',
+          inapp_overdue_stages:        s.inapp_overdue_stages        ?? 'true',
+          inapp_idle_quotes:           s.inapp_idle_quotes           ?? 'true',
+          inapp_follow_up:             s.inapp_follow_up             ?? 'true',
+        }));
       })
       .catch(() => {});
   }, []);
@@ -2557,12 +2589,111 @@ function Config() {
 
       {tab==='notifs' && (
         <div className="p-6 space-y-5">
-          {/* ── Alertas automáticas ─────────────────────────────────────────────── */}
+
+          {/* ── Notificaciones del sistema ──────────────────────────────────────── */}
+          {(() => {
+            const toggleSys = async (key, current, setter) => {
+              const next = current === 'true' ? 'false' : 'true';
+              setter(prev => ({ ...prev, [key]: next }));
+              try {
+                await fetch('/api/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+                  body: JSON.stringify({ [key]: next }),
+                });
+                pushToast(next === 'true' ? 'Notificación activada' : 'Notificación desactivada', next === 'true' ? 'ok' : 'warn');
+              } catch { setter(prev => ({ ...prev, [key]: current })); pushToast('Error al guardar', 'bad'); }
+            };
+            const Toggle = ({ value, onClick }) => (
+              <button onClick={onClick}
+                className={cx('w-10 h-5 rounded-full relative transition-colors shrink-0', value === 'true' ? 'bg-brand' : 'bg-ink-300')}>
+                <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', value === 'true' ? 'left-[22px]' : 'left-0.5')}/>
+              </button>
+            );
+            const mailRows = [
+              { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',             desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
+              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado',            desc: 'Mail cuando llega un email que no matchea ningún cliente registrado. Se combina con la campana 🔔 individual por usuario.', role: 'Configurable' },
+              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',             desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
+            ];
+            const inappRows = [
+              { key: 'inapp_unassigned_quotes',     icon: 'user-x',      color: 'red',    label: 'Solicitudes sin asignar',        desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
+              { key: 'inapp_unlinked_presupuestos', icon: 'link-2-off',  color: 'orange', label: 'Presupuestos sin vincular',      desc: 'Presupuestos de mail que no están vinculados a una solicitud.', role: 'Admin' },
+              { key: 'inapp_pending_users',         icon: 'user-check',  color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
+              { key: 'inapp_overdue_stages',        icon: 'clock-alert', color: 'red',    label: 'Tiempo de etapa excedido',       desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
+              { key: 'inapp_idle_quotes',           icon: 'clock',       color: 'gray',   label: 'Cotizaciones sin actividad',     desc: 'Cotizaciones sin movimiento en más de X días (configurable abajo).', role: 'Todos' },
+              { key: 'inapp_follow_up',             icon: 'calendar-clock', color: 'blue', label: 'Seguimientos vencidos',         desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
+            ];
+            const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
+            const RoleBadge = ({ r }) => {
+              const c = r === 'Admin' ? 'bg-purple-50 text-purple-700' : r === 'Vendedor' ? 'bg-blue-50 text-blue-700' : r === 'Todos' ? 'bg-green-50 text-green-700' : 'bg-surface text-ink-500';
+              return <span className={cx('px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0', c)}>{r}</span>;
+            };
+            return (
+              <div className="bg-white border border-line rounded-xl overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-line">
+                  <div className="font-semibold text-[13px]">Notificaciones del sistema</div>
+                  <div className="text-[11.5px] text-ink-400 mt-0.5">
+                    Activá o desactivá cada tipo de notificación a nivel global. Cada usuario puede además personalizar las suyas desde su perfil.
+                  </div>
+                </div>
+                {/* Por mail */}
+                <div className="px-5 pt-4 pb-1">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Icon name="mail" size={13} className="text-ink-400"/>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-400">Por mail</span>
+                  </div>
+                  <div className="divide-y divide-line border border-line rounded-lg overflow-hidden">
+                    {mailRows.map(row => (
+                      <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                        <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', iconColor[row.color] || iconColor.gray)}>
+                          <Icon name={row.icon} size={14}/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-ink-800">{row.label}</span>
+                            <RoleBadge r={row.role}/>
+                          </div>
+                          <div className="text-[11.5px] text-ink-400 mt-0.5 leading-relaxed">{row.desc}</div>
+                        </div>
+                        <Toggle value={sysNotifMail[row.key]} onClick={() => toggleSys(row.key, sysNotifMail[row.key], setSysNotifMail)}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* In-app */}
+                <div className="px-5 pt-4 pb-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Icon name="bell" size={13} className="text-ink-400"/>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-400">In-app (campanita)</span>
+                  </div>
+                  <div className="divide-y divide-line border border-line rounded-lg overflow-hidden">
+                    {inappRows.map(row => (
+                      <div key={row.key} className="flex items-center gap-3 px-4 py-3">
+                        <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', iconColor[row.color] || iconColor.gray)}>
+                          <Icon name={row.icon} size={14}/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-ink-800">{row.label}</span>
+                            <RoleBadge r={row.role}/>
+                          </div>
+                          <div className="text-[11.5px] text-ink-400 mt-0.5">{row.desc}</div>
+                        </div>
+                        <Toggle value={sysNotifInapp[row.key]} onClick={() => toggleSys(row.key, sysNotifInapp[row.key], setSysNotifInapp)}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Alertas automáticas (umbrales de tiempo) ────────────────────────── */}
           <div className="bg-white border border-line rounded-xl overflow-hidden">
             <div className="px-5 py-3.5 border-b border-line">
-              <div className="font-semibold text-[13px]">Alertas automáticas</div>
+              <div className="font-semibold text-[13px]">Umbrales de tiempo</div>
               <div className="text-[11.5px] text-ink-400 mt-0.5">
-                Configurá cuándo el CRM genera alertas en el panel y envía recordatorios por mail.
+                Configurá cuántos días sin actividad disparan alertas en el panel o recordatorios por mail.
                 Los tiempos de etapa se configuran en la pestaña <strong>Etapas</strong>.
               </div>
             </div>

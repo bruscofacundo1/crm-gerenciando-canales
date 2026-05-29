@@ -125,6 +125,10 @@ async function runIdleCheck() {
 // Solo envía si la etapa tiene emailAlert=true y aún no se envió alerta hoy.
 async function runStageAlerts() {
   try {
+    // Respetar toggle global del sistema
+    const flagRow = await prisma.appSetting.findUnique({ where: { key: 'notify_stage_alert' } });
+    if (flagRow && flagRow.value === 'false') return;
+
     const alertStages = await prisma.stageDefinition.findMany({
       where: { emailAlert: true, maxHours: { not: null }, active: true },
     });

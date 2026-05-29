@@ -1396,15 +1396,25 @@ async function processEmail(mailData, imap) {
       },
     });
 
-    // ── FL4: notificar admins cuando no se pudo asignar cliente ─────────────
+    // ── FL4: notificar usuarios cuando no se pudo asignar cliente ─────────────
     if (!client) {
       try {
+        // Respetar toggle global del sistema
+        const globalFlag = await prisma.appSetting.findUnique({ where: { key: 'notify_unassigned_mail' } });
+        if (globalFlag && globalFlag.value === 'false') return;
+
         const admins = await prisma.user.findMany({
           where: { active: true, notifyUnassigned: true },
-          select: { email: true, name: true },
+          select: { email: true, name: true, notificationPrefs: true },
+        });
+        // Filtrar usuarios que no desactivaron esta notif en sus prefs personales
+        const toNotify = admins.filter(a => {
+          const prefs = a.notificationPrefs;
+          if (!prefs || typeof prefs !== 'object') return true;
+          return prefs.email?.unassigned_mail !== false;
         });
         const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
-        for (const admin of admins) {
+        for (const admin of toNotify) {
           await sendMail({
             to: admin.email,
             subject: `[CRM] Nueva ${mailType === 'PRESUPUESTO' ? 'presupuesto' : 'solicitud'} sin cliente · ${code}`,

@@ -10,6 +10,22 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
+// Helper: leer un AppSetting booleano con default true
+async function getFlag(key) {
+  try {
+    const row = await prisma.appSetting.findUnique({ where: { key } });
+    return row ? row.value !== 'false' : true;
+  } catch { return true; }
+}
+
+// Helper: preferencias in-app del usuario ({ inapp: { key: bool } })
+function userInappPref(prefs, key) {
+  if (!prefs || typeof prefs !== 'object') return true;
+  const inapp = prefs.inapp;
+  if (!inapp || typeof inapp !== 'object') return true;
+  return inapp[key] !== false; // default true si no está definido
+}
+
 // GET /api/notifications/inbox — alertas accionables según el rol del usuario
 router.get('/inbox', authMiddleware, async (req, res) => {
   try {
@@ -17,22 +33,32 @@ router.get('/inbox', authMiddleware, async (req, res) => {
     const now = new Date();
     const alerts = [];
 
-    // Leer umbral de inactividad configurable
-    const idleInboxSetting = await prisma.appSetting.findUnique({ where: { key: 'idle_inbox_days' } });
-    const idleInboxDays    = parseInt(idleInboxSetting?.value ?? '5', 10);
-    const idleCutoff       = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
+    // Leer usuario completo para prefs personales + settings del sistema
+    const [userFull, idleInboxSetting, sysFlags] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } }),
+      prisma.appSetting.findUnique({ where: { key: 'idle_inbox_days' } }),
+      Promise.all([
+        getFlag('inapp_unassigned_quotes'),
+        getFlag('inapp_unlinked_presupuestos'),
+        getFlag('inapp_pending_users'),
+        getFlag('inapp_overdue_stages'),
+        getFlag('inapp_idle_quotes'),
+        getFlag('inapp_follow_up'),
+      ]),
+    ]);
+    const [sysUnassigned, sysUnlinked, sysPending, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
+    const prefs = userFull?.notificationPrefs || {};
+    const idleInboxDays = parseInt(idleInboxSetting?.value ?? '5', 10);
+    const idleCutoff    = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
 
     if (role === 'ADMIN') {
       // 1. Solicitudes sin vendedor asignado
-      const unassigned = await prisma.quote.count({
-        where: { stage: 'recibida', sellerId: null, isDraft: false },
-      });
-      if (unassigned > 0) {
-        alerts.push({
-          id: 'unassigned-quotes',
-          type: 'UNASSIGNED_QUOTES',
-          severity: 'high',
-          icon: 'user-x',
+      if (sysUnassigned && userInappPref(prefs, 'unassigned_quotes')) {
+        const unassigned = await prisma.quote.count({
+          where: { stage: 'recibida', sellerId: null, isDraft: false },
+        });
+        if (unassigned > 0) alerts.push({
+          id: 'unassigned-quotes', type: 'UNASSIGNED_QUOTES', severity: 'high', icon: 'user-x',
           title: `${unassigned} solicitud${unassigned > 1 ? 'es' : ''} sin asignar`,
           description: 'Cotizaciones en "Solicitud Recibida" sin vendedor asignado.',
           action: { label: 'Ver solicitudes', view: 'quotes', filter: { stage: 'recibida' } },
@@ -41,15 +67,12 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       }
 
       // 2. Presupuestos de mail sin vincular a solicitud
-      const unlinkedPres = await prisma.quote.count({
-        where: { mailType: 'PRESUPUESTO', linkedQuoteId: null, stage: { notIn: ['rechazada'] } },
-      });
-      if (unlinkedPres > 0) {
-        alerts.push({
-          id: 'unlinked-presupuestos',
-          type: 'UNLINKED_PRESUPUESTOS',
-          severity: 'medium',
-          icon: 'link-2-off',
+      if (sysUnlinked && userInappPref(prefs, 'unlinked_presupuestos')) {
+        const unlinkedPres = await prisma.quote.count({
+          where: { mailType: 'PRESUPUESTO', linkedQuoteId: null, stage: { notIn: ['rechazada'] } },
+        });
+        if (unlinkedPres > 0) alerts.push({
+          id: 'unlinked-presupuestos', type: 'UNLINKED_PRESUPUESTOS', severity: 'medium', icon: 'link-2-off',
           title: `${unlinkedPres} presupuesto${unlinkedPres > 1 ? 's' : ''} sin vincular`,
           description: 'Presupuestos recibidos por mail que aún no están vinculados a una solicitud.',
           action: { label: 'Ver presupuestos', view: 'quotes', filter: { mailType: 'PRESUPUESTO' } },
@@ -58,15 +81,10 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       }
 
       // 3. Usuarios pendientes de aprobación
-      const pendingUsers = await prisma.user.count({
-        where: { pendingApproval: true },
-      });
-      if (pendingUsers > 0) {
-        alerts.push({
-          id: 'pending-users',
-          type: 'PENDING_USERS',
-          severity: 'high',
-          icon: 'user-check',
+      if (sysPending && userInappPref(prefs, 'pending_users')) {
+        const pendingUsers = await prisma.user.count({ where: { pendingApproval: true } });
+        if (pendingUsers > 0) alerts.push({
+          id: 'pending-users', type: 'PENDING_USERS', severity: 'high', icon: 'user-check',
           title: `${pendingUsers} usuario${pendingUsers > 1 ? 's' : ''} esperando aprobación`,
           description: 'Usuarios registrados que necesitan aprobación de admin.',
           action: { label: 'Ver equipo', view: 'team' },
@@ -75,35 +93,24 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       }
 
       // 4. Cotizaciones con tiempo de etapa excedido (todas)
-      const overdueQuotes = await _getOverdueItems(prisma, now, null);
-      if (overdueQuotes.total > 0) {
-        alerts.push({
-          id: 'overdue-stages',
-          type: 'OVERDUE_STAGES',
-          severity: 'medium',
-          icon: 'clock-alert',
+      if (sysOverdue && userInappPref(prefs, 'overdue_stages')) {
+        const overdueQuotes = await _getOverdueItems(prisma, now, null);
+        if (overdueQuotes.total > 0) alerts.push({
+          id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
           title: `${overdueQuotes.total} ítem${overdueQuotes.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
           description: overdueQuotes.detail,
           action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: overdueQuotes.total,
-          items: overdueQuotes.items,
+          count: overdueQuotes.total, items: overdueQuotes.items,
         });
       }
 
-      // 5. Cotizaciones activas sin actividad en X días (configurable)
-      const idleQuotesAdmin = await prisma.quote.count({
-        where: {
-          isDraft: false,
-          stage: { notIn: ['aceptada', 'rechazada'] },
-          updatedAt: { lte: idleCutoff },
-        },
-      });
-      if (idleQuotesAdmin > 0) {
-        alerts.push({
-          id: 'idle-quotes',
-          type: 'IDLE_QUOTES',
-          severity: 'low',
-          icon: 'clock',
+      // 5. Cotizaciones activas sin actividad en X días
+      if (sysIdle && userInappPref(prefs, 'idle_quotes')) {
+        const idleQuotesAdmin = await prisma.quote.count({
+          where: { isDraft: false, stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff } },
+        });
+        if (idleQuotesAdmin > 0) alerts.push({
+          id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
           title: `${idleQuotesAdmin} cotización${idleQuotesAdmin > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
           description: `Cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
           action: { label: 'Ver cotizaciones', view: 'quotes' },
@@ -113,19 +120,12 @@ router.get('/inbox', authMiddleware, async (req, res) => {
 
     } else if (role === 'VENDEDOR') {
       // 1. Cotizaciones del vendedor con followUpDate vencido
-      const followUps = await prisma.quote.count({
-        where: {
-          sellerId: userId,
-          followUpDate: { lte: now },
-          stage: { notIn: ['aceptada', 'rechazada'] },
-        },
-      });
-      if (followUps > 0) {
-        alerts.push({
-          id: 'follow-up-due',
-          type: 'FOLLOW_UP_DUE',
-          severity: 'high',
-          icon: 'calendar-clock',
+      if (sysFollowUp && userInappPref(prefs, 'follow_up')) {
+        const followUps = await prisma.quote.count({
+          where: { sellerId: userId, followUpDate: { lte: now }, stage: { notIn: ['aceptada', 'rechazada'] } },
+        });
+        if (followUps > 0) alerts.push({
+          id: 'follow-up-due', type: 'FOLLOW_UP_DUE', severity: 'high', icon: 'calendar-clock',
           title: `${followUps} cotización${followUps > 1 ? 'es' : ''} con seguimiento vencido`,
           description: 'Clientes que deberían haber respondido el presupuesto.',
           action: { label: 'Ver mis cotizaciones', view: 'quotes' },
@@ -134,36 +134,24 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       }
 
       // 2. Cotizaciones del vendedor con tiempo de etapa excedido
-      const overdueQuotes = await _getOverdueItems(prisma, now, userId);
-      if (overdueQuotes.total > 0) {
-        alerts.push({
-          id: 'overdue-stages',
-          type: 'OVERDUE_STAGES',
-          severity: 'medium',
-          icon: 'clock-alert',
+      if (sysOverdue && userInappPref(prefs, 'overdue_stages')) {
+        const overdueQuotes = await _getOverdueItems(prisma, now, userId);
+        if (overdueQuotes.total > 0) alerts.push({
+          id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
           title: `${overdueQuotes.total} ítem${overdueQuotes.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
           description: overdueQuotes.detail,
           action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: overdueQuotes.total,
-          items: overdueQuotes.items,
+          count: overdueQuotes.total, items: overdueQuotes.items,
         });
       }
 
-      // 3. Cotizaciones del vendedor sin actividad en X días (configurable)
-      const idleQuotesVend = await prisma.quote.count({
-        where: {
-          sellerId: userId,
-          isDraft: false,
-          stage: { notIn: ['aceptada', 'rechazada'] },
-          updatedAt: { lte: idleCutoff },
-        },
-      });
-      if (idleQuotesVend > 0) {
-        alerts.push({
-          id: 'idle-quotes',
-          type: 'IDLE_QUOTES',
-          severity: 'low',
-          icon: 'clock',
+      // 3. Cotizaciones del vendedor sin actividad en X días
+      if (sysIdle && userInappPref(prefs, 'idle_quotes')) {
+        const idleQuotesVend = await prisma.quote.count({
+          where: { sellerId: userId, isDraft: false, stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff } },
+        });
+        if (idleQuotesVend > 0) alerts.push({
+          id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
           title: `${idleQuotesVend} cotización${idleQuotesVend > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
           description: `Tus cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
           action: { label: 'Ver mis cotizaciones', view: 'quotes' },

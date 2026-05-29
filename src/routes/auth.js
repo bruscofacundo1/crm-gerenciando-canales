@@ -148,14 +148,22 @@ router.post('/register', async (req, res) => {
       },
     });
 
-    // Notificar a todos los admins activos
-    const admins = await prisma.user.findMany({
+    // Notificar a todos los admins activos (si el toggle de sistema está activado)
+    const notifyRegSetting = await prisma.appSetting.findUnique({ where: { key: 'notify_new_register' } });
+    const shouldNotify = !notifyRegSetting || notifyRegSetting.value !== 'false';
+    const admins = shouldNotify ? await prisma.user.findMany({
       where: { role: 'ADMIN', active: true },
-      select: { email: true },
+      select: { email: true, notificationPrefs: true },
+    }) : [];
+    // Filtrar admins que no desactivaron esta notificación en sus prefs personales
+    const adminsToNotify = admins.filter(a => {
+      const prefs = a.notificationPrefs;
+      if (!prefs || typeof prefs !== 'object') return true;
+      return (prefs.email?.new_register) !== false;
     });
-    if (admins.length > 0) {
+    if (adminsToNotify.length > 0) {
       await sendMail({
-        to: admins.map(a => a.email).join(', '),
+        to: adminsToNotify.map(a => a.email).join(', '),
         subject: 'Nuevo registro pendiente · MySelec CRM',
         html: `
           <div style="font-family:sans-serif;max-width:500px;margin:0 auto">

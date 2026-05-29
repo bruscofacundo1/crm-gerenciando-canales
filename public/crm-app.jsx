@@ -284,6 +284,12 @@ function ProfileModal({ user, onClose, onUpdated }) {
   const [logoutAll,   setLogoutAll]   = useState(false);
   const [preview,     setPreview]     = useState(user?.avatar || CrmAuth.getUser()?.avatar || null);
   const [avatarFile,  setAvatarFile]  = useState(null);
+  // Preferencias de notificación personales
+  const [notifPrefs,  setNotifPrefs]  = useState(() => {
+    const p = user?.notificationPrefs;
+    return (p && typeof p === 'object') ? p : { email: {}, inapp: {} };
+  });
+  const [notifSaving, setNotifSaving] = useState(false);
   const [removeAvatar,setRemoveAvatar]= useState(false);
   const [cropSrc,     setCropSrc]     = useState(null);
   const [loading,     setLoading]     = useState(false);
@@ -379,11 +385,11 @@ function ProfileModal({ user, onClose, onUpdated }) {
 
           {/* Tabs */}
           <div className="flex border-b border-line shrink-0">
-            {[{k:'datos',label:'Datos',icon:'user'},{k:'seguridad',label:'Seguridad',icon:'shield'}].map(t => (
+            {[{k:'datos',label:'Datos',icon:'user'},{k:'seguridad',label:'Seguridad',icon:'shield'},{k:'notifs',label:'Notificaciones',icon:'bell'}].map(t => (
               <button key={t.k} onClick={() => { setTab(t.k); clearMessages(); }}
-                className={cx('flex-1 flex items-center justify-center gap-2 py-3 text-[13px] font-medium transition-colors border-b-2',
+                className={cx('flex-1 flex items-center justify-center gap-1.5 py-3 text-[12px] font-medium transition-colors border-b-2',
                   tab === t.k ? 'border-brand text-brand' : 'border-transparent text-ink-500 hover:text-ink-800')}>
-                <Icon name={t.icon} size={14}/>{t.label}
+                <Icon name={t.icon} size={13}/>{t.label}
               </button>
             ))}
           </div>
@@ -447,6 +453,86 @@ function ProfileModal({ user, onClose, onUpdated }) {
             )}
 
             {/* ── TAB SEGURIDAD ── */}
+            {/* ── TAB NOTIFICACIONES ── */}
+            {tab === 'notifs' && (() => {
+              const role = user?.role || CrmAuth.getUser()?.role;
+              const isAdmin = role === 'ADMIN';
+              const isSeller = role === 'VENDEDOR';
+
+              const togglePref = async (section, key) => {
+                const current = (notifPrefs[section]?.[key]) !== false;
+                const next = !current;
+                const updated = { ...notifPrefs, [section]: { ...notifPrefs[section], [key]: next } };
+                setNotifPrefs(updated);
+                setNotifSaving(true);
+                try {
+                  await fetch(`/api/users/${user.id}/notification-prefs`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+                    body: JSON.stringify({ prefs: updated }),
+                  });
+                } catch {
+                  setNotifPrefs(prev => ({ ...prev, [section]: { ...prev[section], [key]: current } }));
+                } finally { setNotifSaving(false); }
+              };
+
+              const getPref = (section, key) => (notifPrefs[section]?.[key]) !== false;
+
+              const Toggle = ({ on, onClick }) => (
+                <button type="button" onClick={onClick} disabled={notifSaving}
+                  className={cx('w-9 h-5 rounded-full relative transition-colors shrink-0', on ? 'bg-brand' : 'bg-ink-300', notifSaving && 'opacity-50')}>
+                  <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', on ? 'left-[18px]' : 'left-0.5')}/>
+                </button>
+              );
+
+              const PrefRow = ({ section, key: k, label, desc }) => (
+                <div className="flex items-start gap-3 py-3 border-b border-line last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium text-ink-800">{label}</div>
+                    {desc && <div className="text-[11.5px] text-ink-400 mt-0.5">{desc}</div>}
+                  </div>
+                  <Toggle on={getPref(section, k)} onClick={() => togglePref(section, k)}/>
+                </div>
+              );
+
+              return (
+                <div className="p-6 space-y-5">
+                  <p className="text-[12px] text-ink-400">Elegí qué notificaciones querés recibir. Los administradores pueden activar o desactivar tipos globalmente desde Configuración.</p>
+
+                  {/* Por mail */}
+                  <div className="bg-white border border-line rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-line flex items-center gap-2">
+                      <Icon name="mail" size={13} className="text-ink-400"/>
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-ink-500">Por mail</span>
+                    </div>
+                    <div className="px-4">
+                      {isAdmin && <PrefRow section="email" k="new_register" label="Nuevo registro pendiente" desc="Cuando alguien solicita acceso al CRM."/>}
+                      {isAdmin && <PrefRow section="email" k="weekly_report" label="Resumen semanal" desc="Estadísticas semanales del pipeline."/>}
+                      <PrefRow section="email" k="unassigned_mail" label="Mail sin cliente asignado" desc="Cuando llega un email que no matchea ningún cliente."/>
+                      {isSeller && <PrefRow section="email" k="stage_alert" label="Tiempo de etapa excedido" desc="Recordatorio cuando tu cotización supera el plazo de una etapa."/>}
+                      {isSeller && <PrefRow section="email" k="idle_reminder" label="Recordatorio de inactividad" desc="Aviso cuando tus cotizaciones llevan varios días sin movimiento."/>}
+                    </div>
+                  </div>
+
+                  {/* In-app */}
+                  <div className="bg-white border border-line rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-line flex items-center gap-2">
+                      <Icon name="bell" size={13} className="text-ink-400"/>
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-ink-500">En el panel (campanita)</span>
+                    </div>
+                    <div className="px-4">
+                      {isAdmin && <PrefRow section="inapp" k="unassigned_quotes" label="Solicitudes sin asignar" desc="Cotizaciones sin vendedor."/>}
+                      {isAdmin && <PrefRow section="inapp" k="unlinked_presupuestos" label="Presupuestos sin vincular" desc="Presupuestos de mail sin solicitud asociada."/>}
+                      {isAdmin && <PrefRow section="inapp" k="pending_users" label="Usuarios pendientes" desc="Solicitudes de acceso esperando aprobación."/>}
+                      <PrefRow section="inapp" k="overdue_stages" label="Tiempo de etapa excedido" desc="Ítems que superaron el plazo en su etapa actual."/>
+                      <PrefRow section="inapp" k="idle_quotes" label="Cotizaciones sin actividad" desc="Sin movimiento en más de X días."/>
+                      {isSeller && <PrefRow section="inapp" k="follow_up" label="Seguimientos vencidos" desc="Cotizaciones con fecha de seguimiento vencida."/>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {tab === 'seguridad' && (
               <form onSubmit={handleSaveSeguridad}>
                 <div className="p-6 space-y-4">

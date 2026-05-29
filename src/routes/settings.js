@@ -36,12 +36,25 @@ const DEFAULTS = {
   idle_email_days:             '7',
 
   // ── Resumen semanal ───────────────────────────────────────────────────────
-  // Activa el envío automático del resumen semanal por mail a los administradores.
   weekly_report_enabled:       'true',
-  // Día de la semana en que se envía (0=Domingo … 6=Sábado). Default 1=Lunes.
   weekly_report_day:           '1',
-  // Hora del día (0-23) en horario de Argentina (UTC-3) en que se envía. Default 9=09:00.
   weekly_report_hour:          '9',
+
+  // ── Notificaciones por mail (sistema) ────────────────────────────────────
+  // Mail a admins cuando alguien se registra (solicitud de acceso)
+  notify_new_register:         'true',
+  // Mail al vendedor cuando su cotización supera el tiempo de etapa configurado
+  notify_stage_alert:          'true',
+  // Mail global cuando llega un email sin cliente asignado (complementa campana por usuario)
+  notify_unassigned_mail:      'true',
+
+  // ── Alertas in-app (campanita) ───────────────────────────────────────────
+  inapp_unassigned_quotes:     'true',   // Solicitudes sin vendedor asignado
+  inapp_unlinked_presupuestos: 'true',   // Presupuestos sin vincular a solicitud
+  inapp_pending_users:         'true',   // Usuarios esperando aprobación
+  inapp_overdue_stages:        'true',   // Ítems con tiempo de etapa excedido
+  inapp_idle_quotes:           'true',   // Cotizaciones sin actividad
+  inapp_follow_up:             'true',   // Seguimientos vencidos (vendedor)
 };
 
 // GET /api/settings — devuelve todos los settings con defaults
