@@ -1676,16 +1676,15 @@ function Config() {
     notify_new_register:    'true',
     notify_stage_alert:     'true',
     notify_unassigned_mail: 'true',
-    notify_idle_email:      'true',
   });
   // System notification toggles (in-app)
   const [sysNotifInapp, setSysNotifInapp] = useState({
-    inapp_unassigned_quotes:     'true',
-    inapp_unlinked_presupuestos: 'true',
-    inapp_pending_users:         'true',
-    inapp_overdue_stages:        'true',
-    inapp_idle_quotes:           'true',
-    inapp_follow_up:             'true',
+    inapp_unassigned_quotes: 'true',
+    inapp_pending_users:     'true',
+    inapp_overdue_stages:    'true',
+    inapp_idle_quotes:       'true',
+    inapp_follow_up:         'true',
+    inapp_quote_closed:      'true',
   });
 
   // Mail state
@@ -1725,16 +1724,15 @@ function Config() {
           notify_new_register:    s.notify_new_register    ?? 'true',
           notify_stage_alert:     s.notify_stage_alert     ?? 'true',
           notify_unassigned_mail: s.notify_unassigned_mail ?? 'true',
-          notify_idle_email:      s.notify_idle_email      ?? 'true',
         }));
         setSysNotifInapp(prev => ({
           ...prev,
-          inapp_unassigned_quotes:     s.inapp_unassigned_quotes     ?? 'true',
-          inapp_unlinked_presupuestos: s.inapp_unlinked_presupuestos ?? 'true',
-          inapp_pending_users:         s.inapp_pending_users         ?? 'true',
-          inapp_overdue_stages:        s.inapp_overdue_stages        ?? 'true',
-          inapp_idle_quotes:           s.inapp_idle_quotes           ?? 'true',
-          inapp_follow_up:             s.inapp_follow_up             ?? 'true',
+          inapp_unassigned_quotes: s.inapp_unassigned_quotes ?? 'true',
+          inapp_pending_users:     s.inapp_pending_users     ?? 'true',
+          inapp_overdue_stages:    s.inapp_overdue_stages    ?? 'true',
+          inapp_idle_quotes:       s.inapp_idle_quotes       ?? 'true',
+          inapp_follow_up:         s.inapp_follow_up         ?? 'true',
+          inapp_quote_closed:      s.inapp_quote_closed      ?? 'true',
         }));
       })
       .catch(() => {});
@@ -2613,19 +2611,18 @@ function Config() {
               </button>
             );
             const mailRows = [
-              { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',    desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
-              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado',  desc: 'Mail cuando llega un email que no matchea ningún cliente registrado. Se combina con la campana 🔔 individual por usuario.', role: 'Configurable' },
-              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',   desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
-              { key: 'notify_idle_email',      icon: 'clock',        color: 'orange', label: 'Recordatorio de inactividad', desc: 'Mail al vendedor cuando su cotización lleva días sin actividad. Se envía como máximo una vez por día.', role: 'Vendedor', extra: 'idleEmail' },
-              { key: 'weekly_report_enabled',  icon: 'bar-chart-2',  color: 'purple', label: 'Resumen semanal por mail',   desc: 'Resumen con KPIs y ranking de vendedores. Se envía todos los lunes a las 9:00 hs a los administradores.', role: 'Admin', isWeekly: true },
+              { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',  desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
+              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado', desc: 'Resumen diario de mails que llegaron sin matchear ningún cliente. Se agrupa en un único mail por día para no generar ruido.', role: 'Configurable' },
+              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',  desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
+              { key: 'weekly_report_enabled',  icon: 'bar-chart-2',  color: 'purple', label: 'Resumen semanal por mail',  desc: 'Resumen con KPIs y ranking de vendedores. Se envía todos los lunes a las 9:00 hs a los administradores.', role: 'Admin', isWeekly: true },
             ];
             const inappRows = [
-              { key: 'inapp_unassigned_quotes',     icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
-              { key: 'inapp_unlinked_presupuestos', icon: 'link-2-off',     color: 'orange', label: 'Presupuestos sin vincular',        desc: 'Presupuestos de mail que no están vinculados a una solicitud.', role: 'Admin' },
-              { key: 'inapp_pending_users',         icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
-              { key: 'inapp_overdue_stages',        icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
-              { key: 'inapp_idle_quotes',           icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días.', role: 'Todos', extra: 'idleInbox' },
-              { key: 'inapp_follow_up',             icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
+              { key: 'inapp_unassigned_quotes', icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
+              { key: 'inapp_pending_users',     icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
+              { key: 'inapp_quote_closed',      icon: 'check-circle',   color: 'green',  label: 'Cotizaciones cerradas',            desc: 'Cotizaciones ganadas o perdidas en los últimos 7 días. Útil para seguimiento del pipeline sin abrir el kanban.', role: 'Admin' },
+              { key: 'inapp_overdue_stages',    icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
+              { key: 'inapp_idle_quotes',       icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días.', role: 'Todos', extra: 'idleInbox' },
+              { key: 'inapp_follow_up',         icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
             ];
             const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
             const RoleBadge = ({ r }) => {
@@ -2658,18 +2655,6 @@ function Config() {
                             <RoleBadge r={row.role}/>
                           </div>
                           <div className="text-[11.5px] text-ink-400 mt-0.5 leading-relaxed">{row.desc}</div>
-                          {row.extra === 'idleEmail' && (
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <span className="text-[11.5px] text-ink-400">Días sin actividad:</span>
-                              <select
-                                className="inp text-[12px] py-0.5 w-24"
-                                value={idleEmailDays}
-                                onChange={e => saveAutoAlertSetting('idle_email_days', e.target.value, setIdleEmailDays)}
-                              >
-                                {[3,4,5,7,10,14,21,30].map(d => <option key={d} value={String(d)}>{d} días</option>)}
-                              </select>
-                            </div>
-                          )}
                         </div>
                         {row.isWeekly
                           ? <Toggle value={weeklyReportEnabled} onClick={() => {

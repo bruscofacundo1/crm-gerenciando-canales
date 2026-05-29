@@ -127,6 +127,21 @@ function App() {
     if (roleKey === 'logistics') setScreen('ops');
   }, [roleKey]);
 
+  // Badge: presupuestos sin vincular (solo admin)
+  const [adminBadges, setAdminBadges] = useState({});
+  useEffect(() => {
+    if (roleKey !== 'admin') return;
+    const fetchBadges = () => {
+      fetch('/api/notifications/counts', { headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` } })
+        .then(r => r.ok ? r.json() : {})
+        .then(d => setAdminBadges({ quotes: d.unlinkedPresupuestos > 0 ? d.unlinkedPresupuestos : 0 }))
+        .catch(() => {});
+    };
+    fetchBadges();
+    const iv = setInterval(fetchBadges, 5 * 60 * 1000); // cada 5 min
+    return () => clearInterval(iv);
+  }, [roleKey]);
+
   // Cmd/Ctrl+K opens search
   useEffect(() => {
     const onKey = (e) => {
@@ -154,7 +169,7 @@ function App() {
     <div className="h-screen flex overflow-hidden bg-surface" data-screen-label={`${roleKey} · ${screen}`}>
       <Sidebar role={roleKey} screen={screen} setScreen={setScreen}
         user={displayUser} onProfileOpen={() => setProfileOpen(true)}
-        collapsed={sidebarCollapsed} onToggle={toggleSidebar}/>
+        collapsed={sidebarCollapsed} onToggle={toggleSidebar} badges={adminBadges}/>
       {profileOpen && (
         <ProfileModal
           user={displayUser}
@@ -923,7 +938,7 @@ function decodeJwtPayload(token) {
 }
 
 // ---------- Sidebar ----------
-function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onToggle }) {
+function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onToggle, badges = {} }) {
   // Mismo patrón que Topbar: JWT como fallback confiable
   const _authUser = CrmAuth.getUser();
   const _jwt = decodeJwtPayload(CrmAuth.getToken());
@@ -982,26 +997,41 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
             {role==='admin' ? 'Gestión' : role==='seller' ? 'Mi pipeline' : 'Operaciones'}
           </div>
         )}
-        {nav.map(n => (
-          <button key={n.id} onClick={()=>setScreen(n.id)}
-            title={collapsed ? n.label : undefined}
-            className={cx(
-              'w-full flex items-center rounded-lg py-2.5 text-[13.5px] transition-colors',
-              collapsed ? 'justify-center px-0' : 'gap-3 px-3 text-left',
-              screen === n.id
-                ? 'bg-brand text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]'
-                : 'text-white/75 hover:bg-white/5 hover:text-white'
-            )}
-          >
-            <Icon name={n.icon} size={17}/>
-            {!collapsed && (
-              <span className="flex-1 leading-tight whitespace-nowrap overflow-hidden">
-                {n.label}
-                {n.sub && <span className="block text-[10px] uppercase tracking-wider opacity-60 font-medium">{n.sub}</span>}
-              </span>
-            )}
-          </button>
-        ))}
+        {nav.map(n => {
+          const badge = badges[n.id] || 0;
+          return (
+            <button key={n.id} onClick={()=>setScreen(n.id)}
+              title={collapsed ? n.label : undefined}
+              className={cx(
+                'w-full flex items-center rounded-lg py-2.5 text-[13.5px] transition-colors',
+                collapsed ? 'justify-center px-0' : 'gap-3 px-3 text-left',
+                screen === n.id
+                  ? 'bg-brand text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]'
+                  : 'text-white/75 hover:bg-white/5 hover:text-white'
+              )}
+            >
+              <div className="relative shrink-0">
+                <Icon name={n.icon} size={17}/>
+                {badge > 0 && collapsed && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-400 text-[8px] font-bold text-white flex items-center justify-center leading-none">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </div>
+              {!collapsed && (
+                <span className="flex-1 leading-tight whitespace-nowrap overflow-hidden">
+                  {n.label}
+                  {n.sub && <span className="block text-[10px] uppercase tracking-wider opacity-60 font-medium">{n.sub}</span>}
+                </span>
+              )}
+              {!collapsed && badge > 0 && (
+                <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-400 text-[10px] font-bold text-white flex items-center justify-center">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Footer */}

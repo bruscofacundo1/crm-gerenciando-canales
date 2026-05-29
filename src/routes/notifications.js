@@ -39,14 +39,14 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       prisma.appSetting.findUnique({ where: { key: 'idle_inbox_days' } }),
       Promise.all([
         getFlag('inapp_unassigned_quotes'),
-        getFlag('inapp_unlinked_presupuestos'),
         getFlag('inapp_pending_users'),
+        getFlag('inapp_quote_closed'),
         getFlag('inapp_overdue_stages'),
         getFlag('inapp_idle_quotes'),
         getFlag('inapp_follow_up'),
       ]),
     ]);
-    const [sysUnassigned, sysUnlinked, sysPending, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
+    const [sysUnassigned, sysPending, sysQuoteClosed, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
     const prefs = userFull?.notificationPrefs || {};
     const idleInboxDays = parseInt(idleInboxSetting?.value ?? '5', 10);
     const idleCutoff    = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
@@ -66,21 +66,7 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         });
       }
 
-      // 2. Presupuestos de mail sin vincular a solicitud
-      if (sysUnlinked && userInappPref(prefs, 'unlinked_presupuestos')) {
-        const unlinkedPres = await prisma.quote.count({
-          where: { mailType: 'PRESUPUESTO', linkedQuoteId: null, stage: { notIn: ['rechazada'] } },
-        });
-        if (unlinkedPres > 0) alerts.push({
-          id: 'unlinked-presupuestos', type: 'UNLINKED_PRESUPUESTOS', severity: 'medium', icon: 'link-2-off',
-          title: `${unlinkedPres} presupuesto${unlinkedPres > 1 ? 's' : ''} sin vincular`,
-          description: 'Presupuestos recibidos por mail que aún no están vinculados a una solicitud.',
-          action: { label: 'Ver presupuestos', view: 'quotes', filter: { mailType: 'PRESUPUESTO' } },
-          count: unlinkedPres,
-        });
-      }
-
-      // 3. Usuarios pendientes de aprobación
+      // 2. Usuarios pendientes de aprobación
       if (sysPending && userInappPref(prefs, 'pending_users')) {
         const pendingUsers = await prisma.user.count({ where: { pendingApproval: true } });
         if (pendingUsers > 0) alerts.push({
@@ -89,6 +75,23 @@ router.get('/inbox', authMiddleware, async (req, res) => {
           description: 'Usuarios registrados que necesitan aprobación de admin.',
           action: { label: 'Ver equipo', view: 'team' },
           count: pendingUsers,
+        });
+      }
+
+      // 3b. Cotizaciones cerradas esta semana (ganadas + perdidas)
+      if (sysQuoteClosed && userInappPref(prefs, 'quote_closed')) {
+        const weekCutoff = new Date(now.getTime() - 7 * 86400 * 1000);
+        const [won, lost] = await Promise.all([
+          prisma.quote.count({ where: { stage: 'aceptada', stageChangedAt: { gte: weekCutoff, not: null } } }),
+          prisma.quote.count({ where: { stage: 'rechazada', stageChangedAt: { gte: weekCutoff, not: null } } }),
+        ]);
+        const total = won + lost;
+        if (total > 0) alerts.push({
+          id: 'quote-closed', type: 'QUOTE_CLOSED', severity: 'low', icon: 'check-circle',
+          title: `${total} cotización${total > 1 ? 'es' : ''} cerrada${total > 1 ? 's' : ''} esta semana`,
+          description: `${won} ganada${won !== 1 ? 's' : ''}, ${lost} perdida${lost !== 1 ? 's' : ''} en los últimos 7 días.`,
+          action: { label: 'Ver cotizaciones', view: 'quotes' },
+          count: total,
         });
       }
 
@@ -201,6 +204,20 @@ async function _getOverdueItems(prisma, now, sellerId) {
   const detail = `${example.code}${items.length > 1 ? ` y ${items.length - 1} más` : ''} superaron el tiempo en su etapa.`;
   return { total: items.length, detail, items };
 }
+
+// GET /api/notifications/counts — conteos ligeros para badges del sidebar (solo admin)
+router.get('/counts', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') return res.json({ unlinkedPresupuestos: 0 });
+    const unlinkedPresupuestos = await prisma.quote.count({
+      where: { mailType: 'PRESUPUESTO', linkedQuoteId: null, stage: { notIn: ['rechazada'] } },
+    });
+    res.json({ unlinkedPresupuestos });
+  } catch (err) {
+    console.error('GET /notifications/counts error:', err);
+    res.json({ unlinkedPresupuestos: 0 }); // fallar silencioso para no romper sidebar
+  }
+});
 
 // POST /api/notifications/cron/weekly-report — fuerza el envío del resumen semanal
 // Solo admin autenticado puede dispararlo manualmente; ignora restricción de día/hora.

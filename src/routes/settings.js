@@ -47,16 +47,13 @@ const DEFAULTS = {
   notify_stage_alert:          'true',
   // Mail global cuando llega un email sin cliente asignado (complementa campana por usuario)
   notify_unassigned_mail:      'true',
-  // Mail al vendedor cuando su cotización lleva X días sin actividad
-  notify_idle_email:           'true',
-
   // ── Alertas in-app (campanita) ───────────────────────────────────────────
-  inapp_unassigned_quotes:     'true',   // Solicitudes sin vendedor asignado
-  inapp_unlinked_presupuestos: 'true',   // Presupuestos sin vincular a solicitud
-  inapp_pending_users:         'true',   // Usuarios esperando aprobación
-  inapp_overdue_stages:        'true',   // Ítems con tiempo de etapa excedido
-  inapp_idle_quotes:           'true',   // Cotizaciones sin actividad
-  inapp_follow_up:             'true',   // Seguimientos vencidos (vendedor)
+  inapp_unassigned_quotes: 'true',   // Solicitudes sin vendedor asignado
+  inapp_pending_users:     'true',   // Usuarios esperando aprobación
+  inapp_quote_closed:      'true',   // Cotizaciones cerradas esta semana (admin)
+  inapp_overdue_stages:    'true',   // Ítems con tiempo de etapa excedido
+  inapp_idle_quotes:       'true',   // Cotizaciones sin actividad
+  inapp_follow_up:         'true',   // Seguimientos vencidos (vendedor)
 };
 
 // GET /api/settings — devuelve todos los settings con defaults

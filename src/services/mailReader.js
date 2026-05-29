@@ -251,6 +251,7 @@ async function syncAccount(account) {
 
         // Procesar secuencialmente para evitar race condition en nextCode()
         const successfulMails = []; // mejora 6: mails que crearon quote → para etiquetar
+        const unassignedItems = []; // acumula mails sin cliente para digest diario
         for (const m of allMails) {
           try {
             const result = await processEmail(m, imap);
@@ -258,9 +259,78 @@ async function syncAccount(account) {
               results.synced++;
               results.mails.push(result);
               successfulMails.push(m);
+              if (result.unassigned) unassignedItems.push(result);
             }
           } catch (err) {
             results.errors.push(err.message || 'Unknown error');
+          }
+        }
+
+        // ── Digest diario: mails sin cliente ─────────────────────────────────
+        if (unassignedItems.length > 0) {
+          try {
+            const globalFlag = await prisma.appSetting.findUnique({ where: { key: 'notify_unassigned_mail' } });
+            if (!globalFlag || globalFlag.value !== 'false') {
+              // Verificar si ya se envió el digest hoy
+              const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+              const lastSent = await prisma.appSetting.findUnique({ where: { key: 'last_unassigned_digest_sent' } });
+              if (lastSent?.value !== todayStr) {
+                // Obtener destinatarios
+                const toNotifyAll = await prisma.user.findMany({
+                  where: { active: true, notifyUnassigned: true },
+                  select: { email: true, name: true, notificationPrefs: true },
+                });
+                const toNotify = toNotifyAll.filter(a => {
+                  const p = a.notificationPrefs;
+                  return (!p || typeof p !== 'object') ? true : p.email?.unassigned_mail !== false;
+                });
+                if (toNotify.length > 0) {
+                  const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+                  const rows = unassignedItems.map(r =>
+                    `<tr>
+                      <td style="padding:5px 8px;font-family:monospace;font-size:12px">${r.unassignedCode}</td>
+                      <td style="padding:5px 8px;font-size:12px">${r.unassignedMailType}</td>
+                      <td style="padding:5px 8px;font-size:12px">${r.unassignedFrom}</td>
+                      <td style="padding:5px 8px;font-size:12px">${r.unassignedSubject}</td>
+                    </tr>`
+                  ).join('');
+                  const html = `
+                    <div style="font-family:sans-serif;max-width:620px;margin:0 auto">
+                      <h2 style="color:#1B2A4A">Mails sin cliente — resumen del día</h2>
+                      <p>${unassignedItems.length} mail${unassignedItems.length > 1 ? 's' : ''} llegaron hoy al CRM sin poder asignarse a un cliente registrado.</p>
+                      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid #e2e8f0">
+                        <thead>
+                          <tr style="background:#F8FAFC">
+                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Código</th>
+                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Tipo</th>
+                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">De</th>
+                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Asunto</th>
+                          </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                      </table>
+                      <p style="color:#64748B;font-size:13px">Ingresá al CRM para asignarlos manualmente.</p>
+                      <a href="${baseUrl}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">Ir al CRM</a>
+                    </div>`;
+                  await sendMail({
+                    to: toNotify.map(a => a.email).join(', '),
+                    subject: `[CRM] ${unassignedItems.length} mail${unassignedItems.length > 1 ? 's' : ''} sin cliente asignado`,
+                    html,
+                  });
+                  // Marcar digest como enviado hoy
+                  await prisma.appSetting.upsert({
+                    where: { key: 'last_unassigned_digest_sent' },
+                    update: { value: todayStr },
+                    create: { key: 'last_unassigned_digest_sent', value: todayStr },
+                  });
+                  console.log(`   📧 Digest unassigned enviado (${unassignedItems.length} items) → ${toNotify.length} usuario(s)`);
+                }
+              } else {
+                console.log(`   ℹ️  Digest unassigned ya enviado hoy (${todayStr}), skip`);
+              }
+            }
+          } catch (e) {
+            console.error('   ❌ Error enviando digest unassigned:', e.message);
           }
         }
 
@@ -1396,53 +1466,8 @@ async function processEmail(mailData, imap) {
       },
     });
 
-    // ── FL4: notificar usuarios cuando no se pudo asignar cliente ─────────────
-    if (!client) {
-      try {
-        // Respetar toggle global del sistema
-        const globalFlag = await prisma.appSetting.findUnique({ where: { key: 'notify_unassigned_mail' } });
-        if (globalFlag && globalFlag.value === 'false') return;
-
-        const admins = await prisma.user.findMany({
-          where: { active: true, notifyUnassigned: true },
-          select: { email: true, name: true, notificationPrefs: true },
-        });
-        // Filtrar usuarios que no desactivaron esta notif en sus prefs personales
-        const toNotify = admins.filter(a => {
-          const prefs = a.notificationPrefs;
-          if (!prefs || typeof prefs !== 'object') return true;
-          return prefs.email?.unassigned_mail !== false;
-        });
-        const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
-        for (const admin of toNotify) {
-          await sendMail({
-            to: admin.email,
-            subject: `[CRM] Nueva ${mailType === 'PRESUPUESTO' ? 'presupuesto' : 'solicitud'} sin cliente · ${code}`,
-            html: `
-              <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
-                <h2 style="color:#1B2A4A">Mail recibido sin cliente asignado</h2>
-                <p>Hola ${admin.name}, llegó un nuevo mail al CRM que no pudo ser asignado a ningún cliente registrado.</p>
-                <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0">
-                  <tr><td style="padding:5px 0;color:#64748B;width:120px">Código</td><td style="font-weight:600;font-family:monospace">${code}</td></tr>
-                  <tr><td style="padding:5px 0;color:#64748B">Tipo</td><td>${mailType}</td></tr>
-                  <tr><td style="padding:5px 0;color:#64748B">De</td><td style="font-family:monospace">${originalSender}</td></tr>
-                  <tr><td style="padding:5px 0;color:#64748B">Asunto</td><td>${subject}</td></tr>
-                </table>
-                <p style="color:#64748B;font-size:13px">Ingresá al CRM para asignar el cliente manualmente.</p>
-                <p>
-                  <a href="${baseUrl}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">
-                    Ir al CRM
-                  </a>
-                </p>
-              </div>
-            `,
-          });
-        }
-        if (admins.length > 0) console.log(`   📧 Admins notificados (${admins.length}) — sin cliente para ${code}`);
-      } catch (e) {
-        console.error('   ❌ Error notificando admins (sin cliente):', e.message);
-      }
-    }
+    // ── FL4: registrar para digest diario cuando no se pudo asignar cliente ──
+    // (El envío del mail se hace en syncAccount al final del run, agrupado)
 
     // ── Marcar como leído en IMAP ─────────────────────────────────────────
     if (mailData.uid) {
@@ -1454,15 +1479,21 @@ async function processEmail(mailData, imap) {
     console.log(`   ✅ Creada ${code} ← ${originalSender} → ${client?.name || 'sin cliente'}`);
 
     return {
-      code:        quote.code,
-      from:        originalSender,
+      code:              quote.code,
+      from:              originalSender,
       subject,
       mailType,
-      flexxusCode: flexxusData?.npCode || null,
-      clientName:  client?.name || null,
-      sellerName:  client?.defaultSeller?.name || null,
-      itemCount:   flexxusData?.items?.length || 0,
-      date:        date.toISOString(),
+      flexxusCode:       flexxusData?.npCode || null,
+      clientName:        client?.name || null,
+      sellerName:        client?.defaultSeller?.name || null,
+      itemCount:         flexxusData?.items?.length || 0,
+      date:              date.toISOString(),
+      // Digest de mails sin cliente: el sync los agrupa y envía uno por día
+      unassigned:        !client,
+      unassignedCode:    !client ? quote.code : undefined,
+      unassignedFrom:    !client ? originalSender : undefined,
+      unassignedSubject: !client ? subject : undefined,
+      unassignedMailType:!client ? mailType : undefined,
     };
 
   } catch (err) {
