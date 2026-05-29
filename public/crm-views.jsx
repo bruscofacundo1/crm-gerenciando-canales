@@ -2732,7 +2732,6 @@ function Config() {
                   <div className="text-[11.5px] text-ink-400 mt-0.5">
                     Días sin actividad para enviar un mail recordatorio al vendedor. Se envía como máximo una vez por día.
                     Recomendamos un valor mayor al del panel para no generar ruido innecesario.
-                    Se usa además de las reglas de notificación personalizadas de abajo.
                   </div>
                 </div>
                 <select
@@ -2791,113 +2790,6 @@ function Config() {
             </div>
           </div>
 
-          {/* ── Reglas de notificación ──────────────────────────────────────────── */}
-          <div>
-          {notifModal !== null && (
-            <NotifModal
-              rule={notifModal === 'new' ? null : notifModal}
-              stages={stagesData || []}
-              onClose={() => setNotifModal(null)}
-              onSave={async (form) => {
-                try {
-                  if (form.id) {
-                    const updated = await CrmApi.updateNotificationRule(form.id, form);
-                    setNotifRules(r => r.map(x => x.id === form.id ? updated : x));
-                    pushToast('Regla actualizada');
-                  } else {
-                    const created = await CrmApi.createNotificationRule(form);
-                    setNotifRules(r => [...r, created]);
-                    pushToast('Regla creada');
-                  }
-                  setNotifModal(null);
-                } catch (err) {
-                  pushToast(err.message || 'Error al guardar', 'bad');
-                }
-              }}
-            />
-          )}
-          <div className="bg-white border border-line rounded-xl overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-line flex items-center justify-between">
-              <div className="font-semibold text-[13px]">Reglas de notificación</div>
-              <button onClick={() => setNotifModal('new')} className="btn-primary text-[12px] flex items-center gap-1.5">
-                <Icon name="plus" size={13}/> Nueva regla
-              </button>
-            </div>
-            {notifLoading ? (
-              <div className="py-12 text-center text-ink-400 text-[13px]">Cargando reglas…</div>
-            ) : notifRules.length === 0 ? (
-              <div className="py-12 text-center text-ink-400 text-[13px]">
-                No hay reglas configuradas. Crea la primera para empezar a recibir notificaciones.
-              </div>
-            ) : (
-              <table className="tbl w-full">
-                <thead><tr>
-                  <th>Nombre</th>
-                  <th>Disparador</th>
-                  <th>Enviar a</th>
-                  <th>Estado</th>
-                  <th></th>
-                </tr></thead>
-                <tbody>
-                  {notifRules.map(rule => {
-                    const trig = NOTIF_TRIGGERS.find(t => t.value === rule.trigger);
-                    const sendTo = NOTIF_SENDTO.find(t => t.value === rule.sendTo);
-                    let trigDetail = '';
-                    if (rule.trigger === 'STAGE_CHANGE') {
-                      trigDetail = [rule.stageFrom, rule.stageTo].filter(Boolean).join(' → ') || 'Cualquier cambio';
-                    } else if (rule.idleHours) {
-                      trigDetail = `${rule.idleHours}h sin movimiento`;
-                    }
-                    return (
-                      <tr key={rule.id}>
-                        <td>
-                          <div className="font-medium text-[13px]">{rule.name}</div>
-                          <div className="text-[11px] text-ink-500 mono truncate max-w-[220px]">{rule.subject}</div>
-                        </td>
-                        <td>
-                          <div className="text-[12px]">{trig?.label || rule.trigger}</div>
-                          {trigDetail && <div className="text-[11px] text-ink-500">{trigDetail}</div>}
-                        </td>
-                        <td className="text-[12px]">{sendTo?.label || rule.sendTo}</td>
-                        <td>
-                          <button onClick={async () => {
-                            try {
-                              const updated = await CrmApi.updateNotificationRule(rule.id, { active: !rule.active });
-                              setNotifRules(r => r.map(x => x.id === rule.id ? updated : x));
-                            } catch (err) {
-                              pushToast(err.message || 'Error', 'bad');
-                            }
-                          }} className={cx('w-9 h-5 rounded-full relative transition-colors', rule.active ? 'bg-brand' : 'bg-ink-300')}>
-                            <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', rule.active ? 'left-[18px]' : 'left-0.5')}/>
-                          </button>
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-1 justify-end">
-                            <button onClick={() => setNotifModal(rule)} className="btn-ghost p-1.5 text-ink-500 hover:text-brand">
-                              <Icon name="pencil" size={13}/>
-                            </button>
-                            <button onClick={async () => {
-                              if (!window.confirm(`¿Eliminar la regla "${rule.name}"?`)) return;
-                              try {
-                                await CrmApi.deleteNotificationRule(rule.id);
-                                setNotifRules(r => r.filter(x => x.id !== rule.id));
-                                pushToast('Regla eliminada');
-                              } catch (err) {
-                                pushToast(err.message || 'Error', 'bad');
-                              }
-                            }} className="btn-ghost p-1.5 text-ink-500 hover:text-bad">
-                              <Icon name="trash-2" size={13}/>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-          </div>{/* end reglas wrapper */}
         </div>
       )}
 
