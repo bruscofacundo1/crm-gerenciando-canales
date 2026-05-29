@@ -47,6 +47,8 @@ const DEFAULTS = {
   notify_stage_alert:          'true',
   // Mail global cuando llega un email sin cliente asignado (complementa campana por usuario)
   notify_unassigned_mail:      'true',
+  // Mail al vendedor cuando su cotización lleva X días sin actividad
+  notify_idle_email:           'true',
 
   // ── Alertas in-app (campanita) ───────────────────────────────────────────
   inapp_unassigned_quotes:     'true',   // Solicitudes sin vendedor asignado

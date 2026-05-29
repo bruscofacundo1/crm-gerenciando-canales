@@ -1676,6 +1676,7 @@ function Config() {
     notify_new_register:    'true',
     notify_stage_alert:     'true',
     notify_unassigned_mail: 'true',
+    notify_idle_email:      'true',
   });
   // System notification toggles (in-app)
   const [sysNotifInapp, setSysNotifInapp] = useState({
@@ -1724,6 +1725,7 @@ function Config() {
           notify_new_register:    s.notify_new_register    ?? 'true',
           notify_stage_alert:     s.notify_stage_alert     ?? 'true',
           notify_unassigned_mail: s.notify_unassigned_mail ?? 'true',
+          notify_idle_email:      s.notify_idle_email      ?? 'true',
         }));
         setSysNotifInapp(prev => ({
           ...prev,
@@ -2611,17 +2613,19 @@ function Config() {
               </button>
             );
             const mailRows = [
-              { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',             desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
-              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado',            desc: 'Mail cuando llega un email que no matchea ningún cliente registrado. Se combina con la campana 🔔 individual por usuario.', role: 'Configurable' },
-              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',             desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
+              { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',    desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
+              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado',  desc: 'Mail cuando llega un email que no matchea ningún cliente registrado. Se combina con la campana 🔔 individual por usuario.', role: 'Configurable' },
+              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',   desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
+              { key: 'notify_idle_email',      icon: 'clock',        color: 'orange', label: 'Recordatorio de inactividad', desc: 'Mail al vendedor cuando su cotización lleva días sin actividad. Se envía como máximo una vez por día.', role: 'Vendedor', extra: 'idleEmail' },
+              { key: 'weekly_report_enabled',  icon: 'bar-chart-2',  color: 'purple', label: 'Resumen semanal por mail',   desc: 'Resumen con KPIs y ranking de vendedores. Se envía todos los lunes a las 9:00 hs a los administradores.', role: 'Admin', isWeekly: true },
             ];
             const inappRows = [
-              { key: 'inapp_unassigned_quotes',     icon: 'user-x',      color: 'red',    label: 'Solicitudes sin asignar',        desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
-              { key: 'inapp_unlinked_presupuestos', icon: 'link-2-off',  color: 'orange', label: 'Presupuestos sin vincular',      desc: 'Presupuestos de mail que no están vinculados a una solicitud.', role: 'Admin' },
-              { key: 'inapp_pending_users',         icon: 'user-check',  color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
-              { key: 'inapp_overdue_stages',        icon: 'clock-alert', color: 'red',    label: 'Tiempo de etapa excedido',       desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
-              { key: 'inapp_idle_quotes',           icon: 'clock',       color: 'gray',   label: 'Cotizaciones sin actividad',     desc: 'Cotizaciones sin movimiento en más de X días (configurable abajo).', role: 'Todos' },
-              { key: 'inapp_follow_up',             icon: 'calendar-clock', color: 'blue', label: 'Seguimientos vencidos',         desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
+              { key: 'inapp_unassigned_quotes',     icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
+              { key: 'inapp_unlinked_presupuestos', icon: 'link-2-off',     color: 'orange', label: 'Presupuestos sin vincular',        desc: 'Presupuestos de mail que no están vinculados a una solicitud.', role: 'Admin' },
+              { key: 'inapp_pending_users',         icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
+              { key: 'inapp_overdue_stages',        icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
+              { key: 'inapp_idle_quotes',           icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días.', role: 'Todos', extra: 'idleInbox' },
+              { key: 'inapp_follow_up',             icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
             ];
             const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
             const RoleBadge = ({ r }) => {
@@ -2654,8 +2658,29 @@ function Config() {
                             <RoleBadge r={row.role}/>
                           </div>
                           <div className="text-[11.5px] text-ink-400 mt-0.5 leading-relaxed">{row.desc}</div>
+                          {row.extra === 'idleEmail' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Días sin actividad:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-24"
+                                value={idleEmailDays}
+                                onChange={e => saveAutoAlertSetting('idle_email_days', e.target.value, setIdleEmailDays)}
+                              >
+                                {[3,4,5,7,10,14,21,30].map(d => <option key={d} value={String(d)}>{d} días</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
-                        <Toggle value={sysNotifMail[row.key]} onClick={() => toggleSys(row.key, sysNotifMail[row.key], setSysNotifMail)}/>
+                        {row.isWeekly
+                          ? <Toggle value={weeklyReportEnabled} onClick={() => {
+                              const next = weeklyReportEnabled === 'true' ? 'false' : 'true';
+                              setWeeklyReportEnabled(next);
+                              saveAutoAlertSetting('weekly_report_enabled', next, () => {});
+                              saveAutoAlertSetting('weekly_report_day',  '1', setWeeklyReportDay);
+                              saveAutoAlertSetting('weekly_report_hour', '9', setWeeklyReportHour);
+                            }}/>
+                          : <Toggle value={sysNotifMail[row.key]} onClick={() => toggleSys(row.key, sysNotifMail[row.key], setSysNotifMail)}/>
+                        }
                       </div>
                     ))}
                   </div>
@@ -2678,6 +2703,18 @@ function Config() {
                             <RoleBadge r={row.role}/>
                           </div>
                           <div className="text-[11.5px] text-ink-400 mt-0.5">{row.desc}</div>
+                          {row.extra === 'idleInbox' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Días sin actividad:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-24"
+                                value={idleInboxDays}
+                                onChange={e => saveAutoAlertSetting('idle_inbox_days', e.target.value, setIdleInboxDays)}
+                              >
+                                {[2,3,4,5,7,10,14,21].map(d => <option key={d} value={String(d)}>{d} días</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
                         <Toggle value={sysNotifInapp[row.key]} onClick={() => toggleSys(row.key, sysNotifInapp[row.key], setSysNotifInapp)}/>
                       </div>
@@ -2688,107 +2725,6 @@ function Config() {
             );
           })()}
 
-          {/* ── Alertas automáticas (umbrales de tiempo) ────────────────────────── */}
-          <div className="bg-white border border-line rounded-xl overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-line">
-              <div className="font-semibold text-[13px]">Umbrales de tiempo</div>
-              <div className="text-[11.5px] text-ink-400 mt-0.5">
-                Configurá cuántos días sin actividad disparan alertas en el panel o recordatorios por mail.
-                Los tiempos de etapa se configuran en la pestaña <strong>Etapas</strong>.
-              </div>
-            </div>
-            <div className="divide-y divide-line">
-
-              {/* ── Alerta en panel del CRM ──────────────────────────────────────── */}
-              <div className="px-5 py-4 flex items-center gap-4">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                  <Icon name="bell" size={15} className="text-blue-500"/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-ink-800">Alerta en panel del CRM</div>
-                  <div className="text-[11.5px] text-ink-400 mt-0.5">
-                    Días sin actividad para que una cotización aparezca como alerta de seguimiento en tu panel de notificaciones (ícono de campana).
-                    El sistema lo chequea automáticamente cada vez que abrís el inbox.
-                  </div>
-                </div>
-                <select
-                  className="inp text-[13px] w-36 shrink-0"
-                  value={idleInboxDays}
-                  onChange={e => saveAutoAlertSetting('idle_inbox_days', e.target.value, setIdleInboxDays)}
-                >
-                  {[2,3,4,5,7,10,14,21].map(d => (
-                    <option key={d} value={String(d)}>{d} {d === 1 ? 'día' : 'días'}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* ── Recordatorio por mail al vendedor ────────────────────────────── */}
-              <div className="px-5 py-4 flex items-center gap-4">
-                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
-                  <Icon name="mail" size={15} className="text-orange-500"/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-ink-800">Recordatorio por mail al vendedor</div>
-                  <div className="text-[11.5px] text-ink-400 mt-0.5">
-                    Días sin actividad para enviar un mail recordatorio al vendedor. Se envía como máximo una vez por día.
-                    Recomendamos un valor mayor al del panel para no generar ruido innecesario.
-                  </div>
-                </div>
-                <select
-                  className="inp text-[13px] w-36 shrink-0"
-                  value={idleEmailDays}
-                  onChange={e => saveAutoAlertSetting('idle_email_days', e.target.value, setIdleEmailDays)}
-                >
-                  {[3,4,5,7,10,14,21,30].map(d => (
-                    <option key={d} value={String(d)}>{d} {d === 1 ? 'día' : 'días'}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* ── Resumen semanal ───────────────────────────────────────────────── */}
-              <div className="px-5 py-4 flex items-start gap-4">
-                <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center shrink-0 mt-0.5">
-                  <Icon name="bar-chart-2" size={15} className="text-purple-500"/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-ink-800">Resumen semanal por mail</div>
-                  <div className="text-[11.5px] text-ink-400 mt-0.5">
-                    Envía automáticamente un resumen con estadísticas de la semana a todos los administradores.
-                    Incluye KPIs, comparativa semana anterior, ranking de vendedores y estado del pipeline.
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                  <select
-                    className={cx('inp text-[13px] w-32 transition-opacity', weeklyReportEnabled !== 'true' ? 'opacity-40 pointer-events-none' : '')}
-                    value={weeklyReportDay}
-                    onChange={e => saveAutoAlertSetting('weekly_report_day', e.target.value, setWeeklyReportDay)}
-                  >
-                    {[['0','Domingo'],['1','Lunes'],['2','Martes'],['3','Miércoles'],['4','Jueves'],['5','Viernes'],['6','Sábado']].map(([v,l]) => (
-                      <option key={v} value={v}>{l}</option>
-                    ))}
-                  </select>
-                  <select
-                    className={cx('inp text-[13px] w-24 transition-opacity', weeklyReportEnabled !== 'true' ? 'opacity-40 pointer-events-none' : '')}
-                    value={weeklyReportHour}
-                    onChange={e => saveAutoAlertSetting('weekly_report_hour', e.target.value, setWeeklyReportHour)}
-                  >
-                    {Array.from({ length: 24 }, (_, i) => (
-                      <option key={i} value={String(i)}>{String(i).padStart(2,'0')}:00 hs</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      const next = weeklyReportEnabled === 'true' ? 'false' : 'true';
-                      saveAutoAlertSetting('weekly_report_enabled', next, setWeeklyReportEnabled);
-                    }}
-                    className={cx('w-10 h-5 rounded-full relative transition-colors shrink-0', weeklyReportEnabled === 'true' ? 'bg-brand' : 'bg-ink-300')}
-                  >
-                    <div className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all', weeklyReportEnabled === 'true' ? 'left-[22px]' : 'left-0.5')}/>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
 
         </div>
       )}
