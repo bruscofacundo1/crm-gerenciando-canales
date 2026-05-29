@@ -40,16 +40,24 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       Promise.all([
         getFlag('inapp_unassigned_quotes'),
         getFlag('inapp_pending_users'),
-        getFlag('inapp_quote_closed'),
         getFlag('inapp_overdue_stages'),
         getFlag('inapp_idle_quotes'),
         getFlag('inapp_follow_up'),
       ]),
     ]);
-    const [sysUnassigned, sysPending, sysQuoteClosed, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
+    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
     const prefs = userFull?.notificationPrefs || {};
     const idleInboxDays = parseInt(idleInboxSetting?.value ?? '5', 10);
     const idleCutoff    = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
+
+    // "Nuevo desde la última vez que el usuario abrió la campanita"
+    const lastCheck = prefs.lastInboxCheck ? new Date(prefs.lastInboxCheck) : null;
+
+    // Función: un alert está pospuesto si dismissed[key] > now
+    const isDismissed = (key) => {
+      const until = prefs.dismissed?.[key];
+      return until && new Date(until) > now;
+    };
 
     if (role === 'ADMIN') {
       // 1. Solicitudes sin vendedor asignado
@@ -78,47 +86,51 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         });
       }
 
-      // 3b. Cotizaciones cerradas esta semana (ganadas + perdidas)
-      if (sysQuoteClosed && userInappPref(prefs, 'quote_closed')) {
-        const weekCutoff = new Date(now.getTime() - 7 * 86400 * 1000);
-        const [won, lost] = await Promise.all([
-          prisma.quote.count({ where: { stage: 'aceptada', stageChangedAt: { gte: weekCutoff, not: null } } }),
-          prisma.quote.count({ where: { stage: 'rechazada', stageChangedAt: { gte: weekCutoff, not: null } } }),
+      // 3. Cotizaciones con tiempo de etapa excedido (todas) — con newCount + dismissable
+      if (sysOverdue && userInappPref(prefs, 'overdue_stages') && !isDismissed('overdue_stages')) {
+        const overdueResult = await _getOverdueItems(prisma, now, null, lastCheck);
+        if (overdueResult.total > 0) {
+          const nc = overdueResult.newCount;
+          alerts.push({
+            id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
+            title: nc > 0
+              ? `${nc} nueva${nc > 1 ? 's' : ''} con tiempo de etapa excedido`
+              : `${overdueResult.total} ítem${overdueResult.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
+            description: nc > 0
+              ? `${nc} nueva${nc > 1 ? 's' : ''} desde tu última visita (${overdueResult.total} en total).`
+              : overdueResult.detail,
+            action: { label: 'Ver cotizaciones', view: 'quotes' },
+            count: overdueResult.total, newCount: nc, items: overdueResult.items,
+            dismissable: true, dismissKey: 'overdue_stages',
+          });
+        }
+      }
+
+      // 4. Cotizaciones activas sin actividad en X días — con newCount + dismissable
+      if (sysIdle && userInappPref(prefs, 'idle_quotes') && !isDismissed('idle_quotes')) {
+        const idleBase = { isDraft: false, stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff } };
+        const [total, newIdle] = await Promise.all([
+          prisma.quote.count({ where: idleBase }),
+          lastCheck
+            ? prisma.quote.count({
+                where: { ...idleBase, updatedAt: { gt: new Date(lastCheck.getTime() - idleInboxDays * 86400 * 1000), lte: idleCutoff } },
+              })
+            : Promise.resolve(0),
         ]);
-        const total = won + lost;
-        if (total > 0) alerts.push({
-          id: 'quote-closed', type: 'QUOTE_CLOSED', severity: 'low', icon: 'check-circle',
-          title: `${total} cotización${total > 1 ? 'es' : ''} cerrada${total > 1 ? 's' : ''} esta semana`,
-          description: `${won} ganada${won !== 1 ? 's' : ''}, ${lost} perdida${lost !== 1 ? 's' : ''} en los últimos 7 días.`,
-          action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: total,
-        });
-      }
-
-      // 4. Cotizaciones con tiempo de etapa excedido (todas)
-      if (sysOverdue && userInappPref(prefs, 'overdue_stages')) {
-        const overdueQuotes = await _getOverdueItems(prisma, now, null);
-        if (overdueQuotes.total > 0) alerts.push({
-          id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
-          title: `${overdueQuotes.total} ítem${overdueQuotes.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
-          description: overdueQuotes.detail,
-          action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: overdueQuotes.total, items: overdueQuotes.items,
-        });
-      }
-
-      // 5. Cotizaciones activas sin actividad en X días
-      if (sysIdle && userInappPref(prefs, 'idle_quotes')) {
-        const idleQuotesAdmin = await prisma.quote.count({
-          where: { isDraft: false, stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff } },
-        });
-        if (idleQuotesAdmin > 0) alerts.push({
-          id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
-          title: `${idleQuotesAdmin} cotización${idleQuotesAdmin > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
-          description: `Cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
-          action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: idleQuotesAdmin,
-        });
+        if (total > 0) {
+          alerts.push({
+            id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
+            title: newIdle > 0
+              ? `${newIdle} cotización${newIdle > 1 ? 'es' : ''} nueva${newIdle > 1 ? 's' : ''} sin actividad`
+              : `${total} cotización${total > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
+            description: newIdle > 0
+              ? `${newIdle} nueva${newIdle > 1 ? 's' : ''} desde tu última visita (${total} en total, >${idleInboxDays} días sin movimiento).`
+              : `Cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
+            action: { label: 'Ver cotizaciones', view: 'quotes' },
+            count: total, newCount: newIdle,
+            dismissable: true, dismissKey: 'idle_quotes',
+          });
+        }
       }
 
     } else if (role === 'VENDEDOR') {
@@ -136,30 +148,54 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         });
       }
 
-      // 2. Cotizaciones del vendedor con tiempo de etapa excedido
-      if (sysOverdue && userInappPref(prefs, 'overdue_stages')) {
-        const overdueQuotes = await _getOverdueItems(prisma, now, userId);
-        if (overdueQuotes.total > 0) alerts.push({
-          id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
-          title: `${overdueQuotes.total} ítem${overdueQuotes.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
-          description: overdueQuotes.detail,
-          action: { label: 'Ver cotizaciones', view: 'quotes' },
-          count: overdueQuotes.total, items: overdueQuotes.items,
-        });
+      // 2. Cotizaciones del vendedor con tiempo de etapa excedido — con newCount + dismissable
+      if (sysOverdue && userInappPref(prefs, 'overdue_stages') && !isDismissed('overdue_stages')) {
+        const overdueResult = await _getOverdueItems(prisma, now, userId, lastCheck);
+        if (overdueResult.total > 0) {
+          const nc = overdueResult.newCount;
+          alerts.push({
+            id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
+            title: nc > 0
+              ? `${nc} nueva${nc > 1 ? 's' : ''} con tiempo de etapa excedido`
+              : `${overdueResult.total} ítem${overdueResult.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
+            description: nc > 0
+              ? `${nc} nueva${nc > 1 ? 's' : ''} desde tu última visita (${overdueResult.total} en total).`
+              : overdueResult.detail,
+            action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+            count: overdueResult.total, newCount: nc, items: overdueResult.items,
+            dismissable: true, dismissKey: 'overdue_stages',
+          });
+        }
       }
 
-      // 3. Cotizaciones del vendedor sin actividad en X días
-      if (sysIdle && userInappPref(prefs, 'idle_quotes')) {
-        const idleQuotesVend = await prisma.quote.count({
-          where: { sellerId: userId, isDraft: false, stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff } },
-        });
-        if (idleQuotesVend > 0) alerts.push({
-          id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
-          title: `${idleQuotesVend} cotización${idleQuotesVend > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
-          description: `Tus cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
-          action: { label: 'Ver mis cotizaciones', view: 'quotes' },
-          count: idleQuotesVend,
-        });
+      // 3. Cotizaciones del vendedor sin actividad en X días — con newCount + dismissable
+      if (sysIdle && userInappPref(prefs, 'idle_quotes') && !isDismissed('idle_quotes')) {
+        const idleBase = {
+          sellerId: userId, isDraft: false,
+          stage: { notIn: ['aceptada', 'rechazada'] }, updatedAt: { lte: idleCutoff },
+        };
+        const [total, newIdle] = await Promise.all([
+          prisma.quote.count({ where: idleBase }),
+          lastCheck
+            ? prisma.quote.count({
+                where: { ...idleBase, updatedAt: { gt: new Date(lastCheck.getTime() - idleInboxDays * 86400 * 1000), lte: idleCutoff } },
+              })
+            : Promise.resolve(0),
+        ]);
+        if (total > 0) {
+          alerts.push({
+            id: 'idle-quotes', type: 'IDLE_QUOTES', severity: 'low', icon: 'clock',
+            title: newIdle > 0
+              ? `${newIdle} cotización${newIdle > 1 ? 'es' : ''} nueva${newIdle > 1 ? 's' : ''} sin actividad`
+              : `${total} cotización${total > 1 ? 'es' : ''} sin actividad (>${idleInboxDays} días)`,
+            description: newIdle > 0
+              ? `${newIdle} nueva${newIdle > 1 ? 's' : ''} desde tu última visita (${total} en total, >${idleInboxDays} días sin movimiento).`
+              : `Tus cotizaciones activas que no tuvieron movimiento en más de ${idleInboxDays} días.`,
+            action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+            count: total, newCount: newIdle,
+            dismissable: true, dismissKey: 'idle_quotes',
+          });
+        }
       }
     }
 
@@ -170,12 +206,53 @@ router.get('/inbox', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/notifications/mark-seen — actualiza lastInboxCheck del usuario
+router.post('/mark-seen', authMiddleware, async (req, res) => {
+  try {
+    const { id: userId } = req.user;
+    const userFull = await prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } });
+    const prefs = userFull?.notificationPrefs || {};
+    const updated = { ...prefs, lastInboxCheck: new Date().toISOString() };
+    await prisma.user.update({ where: { id: userId }, data: { notificationPrefs: updated } });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /notifications/mark-seen error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/notifications/dismiss — pospone (snooze) una alerta por N días
+// Body: { key: 'overdue_stages' | 'idle_quotes', days: 3 | 7 | 30 }
+router.post('/dismiss', authMiddleware, async (req, res) => {
+  try {
+    const { id: userId } = req.user;
+    const { key, days } = req.body;
+    if (!key || !days) return res.status(400).json({ error: 'key y days son requeridos' });
+    const allowedKeys = ['overdue_stages', 'idle_quotes'];
+    if (!allowedKeys.includes(key)) return res.status(400).json({ error: 'key inválida' });
+    const allowedDays = [3, 7, 30];
+    const d = parseInt(days, 10);
+    if (!allowedDays.includes(d)) return res.status(400).json({ error: 'days debe ser 3, 7 o 30' });
+
+    const userFull = await prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } });
+    const prefs = userFull?.notificationPrefs || {};
+    const until = new Date(Date.now() + d * 86400 * 1000).toISOString();
+    const updated = { ...prefs, dismissed: { ...(prefs.dismissed || {}), [key]: until } };
+    await prisma.user.update({ where: { id: userId }, data: { notificationPrefs: updated } });
+    res.json({ ok: true, dismissedUntil: until });
+  } catch (err) {
+    console.error('POST /notifications/dismiss error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Función interna: detecta quotes/orders cuyo tiempo en la etapa actual supera maxHours
-async function _getOverdueItems(prisma, now, sellerId) {
+// lastInboxCheck: Date | null — si se provee, calcula newCount (items que entraron DESDE la última visita)
+async function _getOverdueItems(prisma, now, sellerId, lastInboxCheck) {
   const stagesWithLimit = await prisma.stageDefinition.findMany({
     where: { maxHours: { not: null }, active: true },
   });
-  if (!stagesWithLimit.length) return { total: 0, detail: '', items: [] };
+  if (!stagesWithLimit.length) return { total: 0, newCount: 0, detail: '', items: [] };
 
   const items = [];
   for (const stageDef of stagesWithLimit) {
@@ -189,20 +266,31 @@ async function _getOverdueItems(prisma, now, sellerId) {
     const quotes = await prisma.quote.findMany({
       where,
       select: { id: true, code: true, stageChangedAt: true, createdAt: true, client: { select: { name: true } } },
-      take: 5,
+      take: 20,
     });
     for (const q of quotes) {
       const changedAt = q.stageChangedAt || q.createdAt;
       if (changedAt <= cutoff) {
-        items.push({ kind: 'quote', code: q.code, id: q.id, stage: stageDef.label, clientName: q.client?.name });
+        items.push({
+          kind: 'quote', code: q.code, id: q.id,
+          stage: stageDef.label, clientName: q.client?.name,
+          becameOverdueAt: changedAt,
+        });
       }
     }
   }
 
-  if (!items.length) return { total: 0, detail: '', items: [] };
+  if (!items.length) return { total: 0, newCount: 0, detail: '', items: [] };
+
+  // newCount: items que se volvieron overdue DESPUÉS del lastInboxCheck
+  let newCount = 0;
+  if (lastInboxCheck) {
+    newCount = items.filter(i => i.becameOverdueAt > lastInboxCheck).length;
+  }
+
   const example = items[0];
   const detail = `${example.code}${items.length > 1 ? ` y ${items.length - 1} más` : ''} superaron el tiempo en su etapa.`;
-  return { total: items.length, detail, items };
+  return { total: items.length, newCount, detail, items };
 }
 
 // GET /api/notifications/counts — conteos ligeros para badges del sidebar (solo admin)

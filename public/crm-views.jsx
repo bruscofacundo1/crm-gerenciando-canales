@@ -1657,6 +1657,8 @@ function Config() {
   const [weeklyReportEnabled,  setWeeklyReportEnabled]  = useState('true');
   const [weeklyReportDay,      setWeeklyReportDay]      = useState('1');
   const [weeklyReportHour,     setWeeklyReportHour]     = useState('9');
+  const [stageCooldownDays,    setStageCooldownDays]    = useState('3');
+  const [unassignedMailFreq,   setUnassignedMailFreq]   = useState('daily');
   const [showVars, setShowVars] = useState(false);
 
   // Email templates state
@@ -1684,7 +1686,6 @@ function Config() {
     inapp_overdue_stages:    'true',
     inapp_idle_quotes:       'true',
     inapp_follow_up:         'true',
-    inapp_quote_closed:      'true',
   });
 
   // Mail state
@@ -1732,8 +1733,9 @@ function Config() {
           inapp_overdue_stages:    s.inapp_overdue_stages    ?? 'true',
           inapp_idle_quotes:       s.inapp_idle_quotes       ?? 'true',
           inapp_follow_up:         s.inapp_follow_up         ?? 'true',
-          inapp_quote_closed:      s.inapp_quote_closed      ?? 'true',
         }));
+        if (s.stage_alert_cooldown_days) setStageCooldownDays(s.stage_alert_cooldown_days);
+        if (s.unassigned_mail_frequency) setUnassignedMailFreq(s.unassigned_mail_frequency);
       })
       .catch(() => {});
   }, []);
@@ -2612,16 +2614,15 @@ function Config() {
             );
             const mailRows = [
               { key: 'notify_new_register',    icon: 'user-plus',    color: 'blue',   label: 'Nuevo registro pendiente',  desc: 'Mail a administradores cuando alguien solicita acceso al CRM.', role: 'Admin' },
-              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado', desc: 'Resumen diario de mails que llegaron sin matchear ningún cliente. Se agrupa en un único mail por día para no generar ruido.', role: 'Configurable' },
-              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',  desc: 'Mail al vendedor cuando su cotización supera el tiempo máximo configurado en la etapa. Se configura por etapa en la pestaña Etapas.', role: 'Vendedor' },
+              { key: 'notify_unassigned_mail', icon: 'mail-question', color: 'orange', label: 'Mail sin cliente asignado', desc: 'Mails que llegaron al CRM sin matchear ningún cliente.', role: 'Configurable', extra: 'unassignedFreq' },
+              { key: 'notify_stage_alert',     icon: 'clock-alert',  color: 'red',    label: 'Tiempo de etapa excedido',  desc: 'Digest por vendedor cuando sus cotizaciones superan el tiempo máximo de etapa.', role: 'Vendedor', extra: 'stageCooldown' },
               { key: 'weekly_report_enabled',  icon: 'bar-chart-2',  color: 'purple', label: 'Resumen semanal por mail',  desc: 'Resumen con KPIs y ranking de vendedores. Se envía todos los lunes a las 9:00 hs a los administradores.', role: 'Admin', isWeekly: true },
             ];
             const inappRows = [
               { key: 'inapp_unassigned_quotes', icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
               { key: 'inapp_pending_users',     icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
-              { key: 'inapp_quote_closed',      icon: 'check-circle',   color: 'green',  label: 'Cotizaciones cerradas',            desc: 'Cotizaciones ganadas o perdidas en los últimos 7 días. Útil para seguimiento del pipeline sin abrir el kanban.', role: 'Admin' },
-              { key: 'inapp_overdue_stages',    icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado.', role: 'Todos' },
-              { key: 'inapp_idle_quotes',       icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días.', role: 'Todos', extra: 'idleInbox' },
+              { key: 'inapp_overdue_stages',    icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado. Descartable por N días.', role: 'Todos' },
+              { key: 'inapp_idle_quotes',       icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días. Descartable por N días.', role: 'Todos', extra: 'idleInbox' },
               { key: 'inapp_follow_up',         icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
             ];
             const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
@@ -2655,6 +2656,33 @@ function Config() {
                             <RoleBadge r={row.role}/>
                           </div>
                           <div className="text-[11.5px] text-ink-400 mt-0.5 leading-relaxed">{row.desc}</div>
+                          {row.extra === 'unassignedFreq' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Frecuencia:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-36"
+                                value={unassignedMailFreq}
+                                onChange={e => saveAutoAlertSetting('unassigned_mail_frequency', e.target.value, setUnassignedMailFreq)}
+                              >
+                                <option value="immediate">Por mail (inmediato)</option>
+                                <option value="daily">Resumen diario</option>
+                                <option value="2days">Cada 2 días</option>
+                                <option value="weekly">Semanal</option>
+                              </select>
+                            </div>
+                          )}
+                          {row.extra === 'stageCooldown' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Cooldown entre alertas:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-24"
+                                value={stageCooldownDays}
+                                onChange={e => saveAutoAlertSetting('stage_alert_cooldown_days', e.target.value, setStageCooldownDays)}
+                              >
+                                {[1,2,3,5,7].map(d => <option key={d} value={String(d)}>{d} día{d > 1 ? 's' : ''}</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
                         {row.isWeekly
                           ? <Toggle value={weeklyReportEnabled} onClick={() => {

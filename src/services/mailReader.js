@@ -266,27 +266,32 @@ async function syncAccount(account) {
           }
         }
 
-        // ── Digest diario: mails sin cliente ─────────────────────────────────
+        // ── Notificación de mails sin cliente (frecuencia configurable) ─────
         if (unassignedItems.length > 0) {
           try {
-            const globalFlag = await prisma.appSetting.findUnique({ where: { key: 'notify_unassigned_mail' } });
+            const [globalFlag, freqSetting] = await Promise.all([
+              prisma.appSetting.findUnique({ where: { key: 'notify_unassigned_mail' } }),
+              prisma.appSetting.findUnique({ where: { key: 'unassigned_mail_frequency' } }),
+            ]);
             if (!globalFlag || globalFlag.value !== 'false') {
-              // Verificar si ya se envió el digest hoy
-              const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-              const lastSent = await prisma.appSetting.findUnique({ where: { key: 'last_unassigned_digest_sent' } });
-              if (lastSent?.value !== todayStr) {
-                // Obtener destinatarios
-                const toNotifyAll = await prisma.user.findMany({
-                  where: { active: true, notifyUnassigned: true },
-                  select: { email: true, name: true, notificationPrefs: true },
-                });
-                const toNotify = toNotifyAll.filter(a => {
-                  const p = a.notificationPrefs;
-                  return (!p || typeof p !== 'object') ? true : p.email?.unassigned_mail !== false;
-                });
-                if (toNotify.length > 0) {
-                  const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
-                  const rows = unassignedItems.map(r =>
+              const frequency = freqSetting?.value || 'daily'; // immediate | daily | 2days | weekly
+
+              // Obtener destinatarios (reutilizado en todos los modos)
+              const toNotifyAll = await prisma.user.findMany({
+                where: { active: true, notifyUnassigned: true },
+                select: { email: true, name: true, notificationPrefs: true },
+              });
+              const toNotify = toNotifyAll.filter(a => {
+                const p = a.notificationPrefs;
+                return (!p || typeof p !== 'object') ? true : p.email?.unassigned_mail !== false;
+              });
+
+              if (toNotify.length > 0) {
+                const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+                // Función auxiliar: construye HTML de tabla para el digest
+                const buildDigestHtml = (items, title) => {
+                  const rows = items.map(r =>
                     `<tr>
                       <td style="padding:5px 8px;font-family:monospace;font-size:12px">${r.unassignedCode}</td>
                       <td style="padding:5px 8px;font-size:12px">${r.unassignedMailType}</td>
@@ -294,10 +299,10 @@ async function syncAccount(account) {
                       <td style="padding:5px 8px;font-size:12px">${r.unassignedSubject}</td>
                     </tr>`
                   ).join('');
-                  const html = `
+                  return `
                     <div style="font-family:sans-serif;max-width:620px;margin:0 auto">
-                      <h2 style="color:#1B2A4A">Mails sin cliente — resumen del día</h2>
-                      <p>${unassignedItems.length} mail${unassignedItems.length > 1 ? 's' : ''} llegaron hoy al CRM sin poder asignarse a un cliente registrado.</p>
+                      <h2 style="color:#1B2A4A">Mails sin cliente — ${title}</h2>
+                      <p>${items.length} mail${items.length > 1 ? 's' : ''} llegaron al CRM sin poder asignarse a un cliente registrado.</p>
                       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid #e2e8f0">
                         <thead>
                           <tr style="background:#F8FAFC">
@@ -312,25 +317,51 @@ async function syncAccount(account) {
                       <p style="color:#64748B;font-size:13px">Ingresá al CRM para asignarlos manualmente.</p>
                       <a href="${baseUrl}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">Ir al CRM</a>
                     </div>`;
-                  await sendMail({
-                    to: toNotify.map(a => a.email).join(', '),
-                    subject: `[CRM] ${unassignedItems.length} mail${unassignedItems.length > 1 ? 's' : ''} sin cliente asignado`,
-                    html,
-                  });
-                  // Marcar digest como enviado hoy
-                  await prisma.appSetting.upsert({
-                    where: { key: 'last_unassigned_digest_sent' },
-                    update: { value: todayStr },
-                    create: { key: 'last_unassigned_digest_sent', value: todayStr },
-                  });
-                  console.log(`   📧 Digest unassigned enviado (${unassignedItems.length} items) → ${toNotify.length} usuario(s)`);
+                };
+
+                if (frequency === 'immediate') {
+                  // ── Modo inmediato: un mail por cada item sin cliente ──────
+                  for (const r of unassignedItems) {
+                    const html = buildDigestHtml([r], 'nuevo mail sin asignar');
+                    await sendMail({
+                      to: toNotify.map(a => a.email).join(', '),
+                      subject: `[CRM] Mail sin cliente: ${r.unassignedSubject || r.unassignedCode}`,
+                      html,
+                    });
+                    console.log(`   📧 Notif. inmediata: ${r.unassignedCode} → ${toNotify.length} usuario(s)`);
+                  }
+                } else {
+                  // ── Modos digest: verificar si ya se envió en el intervalo ─
+                  const intervalDays = frequency === 'weekly' ? 7 : frequency === '2days' ? 2 : 1;
+                  const intervalMs   = intervalDays * 86400 * 1000;
+
+                  const lastSent = await prisma.appSetting.findUnique({ where: { key: 'last_unassigned_digest_sent' } });
+                  const lastSentMs = lastSent?.value ? new Date(lastSent.value).getTime() : 0;
+                  const shouldSend = (Date.now() - lastSentMs) >= intervalMs;
+
+                  if (shouldSend) {
+                    const titleMap = { daily: 'resumen del día', '2days': 'resumen de 2 días', weekly: 'resumen semanal' };
+                    const html = buildDigestHtml(unassignedItems, titleMap[frequency] || 'resumen');
+                    await sendMail({
+                      to: toNotify.map(a => a.email).join(', '),
+                      subject: `[CRM] ${unassignedItems.length} mail${unassignedItems.length > 1 ? 's' : ''} sin cliente asignado`,
+                      html,
+                    });
+                    await prisma.appSetting.upsert({
+                      where:  { key: 'last_unassigned_digest_sent' },
+                      update: { value: new Date().toISOString() },
+                      create: { key: 'last_unassigned_digest_sent', value: new Date().toISOString() },
+                    });
+                    console.log(`   📧 Digest unassigned [${frequency}] enviado (${unassignedItems.length} items) → ${toNotify.length} usuario(s)`);
+                  } else {
+                    const nextSend = new Date(lastSentMs + intervalMs).toISOString();
+                    console.log(`   ℹ️  Digest unassigned ya enviado, próximo: ${nextSend} (frecuencia: ${frequency})`);
+                  }
                 }
-              } else {
-                console.log(`   ℹ️  Digest unassigned ya enviado hoy (${todayStr}), skip`);
               }
             }
           } catch (e) {
-            console.error('   ❌ Error enviando digest unassigned:', e.message);
+            console.error('   ❌ Error enviando notif. unassigned:', e.message);
           }
         }
 

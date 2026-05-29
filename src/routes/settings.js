@@ -41,19 +41,19 @@ const DEFAULTS = {
   weekly_report_hour:          '9',
 
   // ── Notificaciones por mail (sistema) ────────────────────────────────────
-  // Mail a admins cuando alguien se registra (solicitud de acceso)
-  notify_new_register:         'true',
-  // Mail al vendedor cuando su cotización supera el tiempo de etapa configurado
-  notify_stage_alert:          'true',
-  // Mail global cuando llega un email sin cliente asignado (complementa campana por usuario)
-  notify_unassigned_mail:      'true',
+  notify_new_register:            'true',
+  notify_stage_alert:             'true',
+  // Cooldown entre alertas de etapa para la misma cotización (días)
+  stage_alert_cooldown_days:      '3',
+  notify_unassigned_mail:         'true',
+  // Frecuencia del digest sin cliente: immediate | daily | 2days | weekly
+  unassigned_mail_frequency:      'daily',
   // ── Alertas in-app (campanita) ───────────────────────────────────────────
-  inapp_unassigned_quotes: 'true',   // Solicitudes sin vendedor asignado
-  inapp_pending_users:     'true',   // Usuarios esperando aprobación
-  inapp_quote_closed:      'true',   // Cotizaciones cerradas esta semana (admin)
-  inapp_overdue_stages:    'true',   // Ítems con tiempo de etapa excedido
-  inapp_idle_quotes:       'true',   // Cotizaciones sin actividad
-  inapp_follow_up:         'true',   // Seguimientos vencidos (vendedor)
+  inapp_unassigned_quotes: 'true',
+  inapp_pending_users:     'true',
+  inapp_overdue_stages:    'true',
+  inapp_idle_quotes:       'true',
+  inapp_follow_up:         'true',
 };
 
 // GET /api/settings — devuelve todos los settings con defaults

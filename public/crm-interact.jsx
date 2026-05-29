@@ -44,22 +44,37 @@ function AppProvider({ children }) {
     localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify([...existing].slice(-500)));
   };
 
-  // ── Snooze de inbox alerts (24 h en localStorage) ────────────────────────────
-  const SNOOZE_KEY = 'crm_inbox_snooze';
-  const getSnoozed = () => {
-    try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) || '{}'); }
-    catch { return {}; }
-  };
-  const snoozeAlert = (id) => {
-    const s = getSnoozed();
-    s[id] = Date.now() + 24 * 3600 * 1000;
-    localStorage.setItem(SNOOZE_KEY, JSON.stringify(s));
+  // ── Snooze / dismiss de inbox alerts ────────────────────────────────────────
+  // dismissKey: key del servidor ('overdue_stages' | 'idle_quotes')
+  // days: 3 | 7 | 30
+  const snoozeAlert = async (id, dismissKey, days) => {
+    // Quitar de la vista inmediatamente (UX optimista)
     setInboxAlerts(prev => prev.filter(a => a.id !== id));
+    if (!dismissKey) return; // alerta no-dismissable
+    try {
+      const token = localStorage.getItem('crm_token');
+      await fetch('/api/notifications/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: dismissKey, days }),
+      });
+    } catch (e) {
+      console.warn('dismiss error (no-crítico):', e.message);
+    }
   };
-  const isSnoozed = (id) => {
-    const s = getSnoozed();
-    return s[id] && s[id] > Date.now();
+  // mark-seen: actualiza lastInboxCheck en el servidor
+  const markInboxSeen = async () => {
+    try {
+      const token = localStorage.getItem('crm_token');
+      await fetch('/api/notifications/mark-seen', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Limpiar newCount local para que los badges se actualicen
+      setInboxAlerts(prev => prev.map(a => ({ ...a, newCount: 0 })));
+    } catch (_) {}
   };
+  const isSnoozed = (_id) => false; // ya no usamos localStorage para esto
 
   // ── Carga de actividades ─────────────────────────────────────────────────────
   useEff(() => {
@@ -265,7 +280,7 @@ function AppProvider({ children }) {
 
   const value = {
     quotes, setQuotes, orders, setOrders, clients, setClients, users, activity, comments, notifications,
-    inboxAlerts, snoozeAlert,
+    inboxAlerts, snoozeAlert, markInboxSeen,
     quoteFilters, setQuoteFilters, orderFilters, setOrderFilters,
     currentUserId, setCurrentUserId, roleKey, setRoleKey,
     addQuote, addOrder, addClient, updateQuote, updateOrder,
@@ -1170,8 +1185,20 @@ const MODAL_REGISTRY = {
 // ---------- Notifications Popover ----------
 function NotificationsPopover({ onClose }) {
   const { notifications, markNotificationRead, markAllNotificationsRead, openModal,
-          inboxAlerts, snoozeAlert } = useApp();
+          inboxAlerts, snoozeAlert, markInboxSeen } = useApp();
   const [tab, setTab] = useS(inboxAlerts.length > 0 ? 'inbox' : 'activity');
+  const [dismissOpen, setDismissOpen] = useS(null); // alert.id with open dismiss dropdown
+
+  // Llama mark-seen al abrir la pestaña inbox
+  const switchToInbox = useCallback(() => {
+    setTab('inbox');
+    markInboxSeen();
+  }, [markInboxSeen]);
+
+  // mark-seen también al montar si ya estamos en inbox
+  useEff(() => {
+    if (tab === 'inbox') markInboxSeen();
+  }, []);
 
   const toneClass  = { ok:'bg-emerald-500', bad:'bg-red-500', warn:'bg-orange-500', info:'bg-brand' };
   const sevColor   = { high:'text-red-500 bg-red-50 border-red-100',
@@ -1209,7 +1236,7 @@ function NotificationsPopover({ onClose }) {
             )}
           </div>
           <div className="flex gap-1">
-            <button onClick={() => setTab('inbox')}
+            <button onClick={switchToInbox}
               className={cx('px-3 py-1.5 text-[12px] font-medium rounded-t-md border-b-2 transition-colors',
                 tab === 'inbox' ? 'border-brand text-brand' : 'border-transparent text-ink-400 hover:text-ink-700')}>
               Pendiente
@@ -1249,7 +1276,14 @@ function NotificationsPopover({ onClose }) {
                       <div className="flex items-start gap-2">
                         <span className="text-base leading-none mt-0.5">{alertIcon[alert.type] || '📌'}</span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold leading-snug">{alert.title}</div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-[13px] font-semibold leading-snug">{alert.title}</div>
+                            {alert.newCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-bad text-white text-[9px] font-bold shrink-0">
+                                {alert.newCount} nuevo{alert.newCount > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                           {alert.description && (
                             <div className="text-[11px] mt-0.5 opacity-80 leading-snug">{alert.description}</div>
                           )}
@@ -1263,10 +1297,26 @@ function NotificationsPopover({ onClose }) {
                             {alert.action.label}
                           </button>
                         )}
-                        <button onClick={() => snoozeAlert(alert.id)}
-                          className="px-2.5 py-1 rounded-md text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity">
-                          Recordar en 24 h
-                        </button>
+                        {alert.dismissable && (
+                          <div className="relative">
+                            <button
+                              onClick={() => setDismissOpen(dismissOpen === alert.id ? null : alert.id)}
+                              className="px-2.5 py-1 rounded-md text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity">
+                              Posponer ▾
+                            </button>
+                            {dismissOpen === alert.id && (
+                              <div className="absolute left-0 top-full mt-1 bg-white border border-line rounded-lg shadow-pop z-50 py-1 min-w-[110px]">
+                                {[3, 7, 30].map(d => (
+                                  <button key={d}
+                                    onClick={() => { snoozeAlert(alert.id, alert.dismissKey, d); setDismissOpen(null); }}
+                                    className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-surface transition-colors">
+                                    {d} días
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

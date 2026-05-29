@@ -121,128 +121,120 @@ async function runIdleCheck() {
   }
 }
 
-// Corre diariamente para detectar quotes/orders que superaron el tiempo máximo de etapa
-// Solo envía si la etapa tiene emailAlert=true y aún no se envió alerta hoy.
+// Corre diariamente: detecta quotes/orders con etapa excedida y manda UN digest por vendedor.
+// Cooldown configurable (stage_alert_cooldown_days) para no repetir la misma alerta cada día.
 async function runStageAlerts() {
   try {
-    // Respetar toggle global del sistema
     const flagRow = await prisma.appSetting.findUnique({ where: { key: 'notify_stage_alert' } });
-    if (flagRow && flagRow.value === 'false') return;
+    if (flagRow?.value === 'false') return;
+
+    const cooldownRow = await prisma.appSetting.findUnique({ where: { key: 'stage_alert_cooldown_days' } });
+    const cooldownDays = Math.max(1, parseInt(cooldownRow?.value ?? '3', 10));
 
     const alertStages = await prisma.stageDefinition.findMany({
       where: { emailAlert: true, maxHours: { not: null }, active: true },
     });
     if (!alertStages.length) return;
 
-    const now = new Date();
-    const APP_URL = process.env.APP_URL || 'https://crm-gerenciando-canales-production-c7d6.up.railway.app';
+    const now       = new Date();
+    const APP_URL   = process.env.APP_URL || 'https://crm-gerenciando-canales-production-c7d6.up.railway.app';
+    const cooloffAt = new Date(now.getTime() - cooldownDays * 86400 * 1000);
 
-    for (const stageDef of alertStages) {
-      const cutoff = new Date(now.getTime() - stageDef.maxHours * 3600 * 1000);
-      const since24h = new Date(now.getTime() - 23 * 3600 * 1000);
+    // Construir mapa stageKey → { label, maxHours, cutoff }
+    const stageMap = Object.fromEntries(alertStages.map(s => [s.stageKey, {
+      label: s.label, maxHours: s.maxHours,
+      cutoff: new Date(now.getTime() - s.maxHours * 3600 * 1000),
+    }]));
+    const alertStageKeys = alertStages.map(s => s.stageKey);
 
-      // ── COTIZACIONES en esta etapa que superaron el tiempo ──────────────────
-      const quotes = await prisma.quote.findMany({
-        where: {
-          stage: stageDef.stageKey,
-          NOT: { stage: { in: ['aceptada', 'rechazada'] } },
+    // Cargar todos los items overdue de una sola vez, con activities del cooldown
+    const [allQuotes, allOrders] = await Promise.all([
+      prisma.quote.findMany({
+        where: { stage: { in: alertStageKeys }, NOT: { stage: { in: ['aceptada','rechazada'] } } },
+        include: {
+          client: true, seller: true,
+          activities: { where: { action: 'STAGE_ALERT_SENT', createdAt: { gte: cooloffAt } }, take: 1 },
         },
-        include: { client: true, seller: true, activities: { orderBy: { createdAt: 'desc' }, take: 5 } },
+      }),
+      prisma.order.findMany({
+        where: { stage: { in: alertStageKeys } },
+        include: {
+          client: true, seller: true,
+          activities: { where: { action: 'STAGE_ALERT_SENT', createdAt: { gte: cooloffAt } }, take: 1 },
+        },
+      }),
+    ]);
+
+    // Filtrar overdue + no en cooldown, agrupar por vendedor
+    const sellerMap = {};  // sellerId → { seller, quotes: [], orders: [] }
+    const addToSeller = (item, entry, kind) => {
+      const stageInfo = stageMap[item.stage];
+      if (!stageInfo) return;
+      const changedAt = item.stageChangedAt || item.createdAt;
+      if (changedAt > stageInfo.cutoff) return;      // aún no excedió
+      if (item.activities.length > 0) return;         // ya alertado en cooldown
+      const seller = item.seller;
+      if (!seller?.email) return;
+      if (!sellerMap[seller.id]) sellerMap[seller.id] = { seller, quotes: [], orders: [] };
+      sellerMap[seller.id][kind].push({
+        code: item.code, id: item.id,
+        clientName: item.client?.name || '—',
+        stageLabel: stageInfo.label,
+        hoursElapsed: Math.round((now - changedAt) / 3600000),
       });
+    };
 
-      for (const quote of quotes) {
-        const changedAt = quote.stageChangedAt || quote.createdAt;
-        if (changedAt > cutoff) continue; // aún dentro del tiempo límite
+    for (const q of allQuotes) addToSeller(q, q, 'quotes');
+    for (const o of allOrders) addToSeller(o, o, 'orders');
 
-        // Evitar duplicados: no enviar si ya se alertó en las últimas 23h
-        const alreadySent = quote.activities.some(
-          a => a.action === 'STAGE_ALERT_SENT' && new Date(a.createdAt) >= since24h
-        );
-        if (alreadySent) continue;
+    const { sendMail } = require('./mailer');
 
-        const seller = quote.seller;
-        const emails = [];
-        if (seller?.email) emails.push(seller.email);
-        if (!emails.length) continue;
+    for (const { seller, quotes, orders } of Object.values(sellerMap)) {
+      if (!quotes.length && !orders.length) continue;
+      const total = quotes.length + orders.length;
 
-        const hoursElapsed = Math.round((now - changedAt) / 3600000);
-        const subject = `⏰ ${quote.code} lleva ${hoursElapsed}h en "${stageDef.label}"`;
-        const body = `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
-            <h2 style="color:#1B2A4A">Recordatorio de seguimiento</h2>
-            <p>La cotización <strong>${quote.code}</strong>${quote.client ? ` de <strong>${quote.client.name}</strong>` : ''} lleva <strong>${hoursElapsed} horas</strong> en la etapa <strong>"${stageDef.label}"</strong>.</p>
-            <p style="color:#64748B">Tiempo máximo configurado: ${stageDef.maxHours} horas.</p>
-            <p>
-              <a href="${APP_URL}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">
-                Ver en el CRM →
-              </a>
-            </p>
-          </div>`;
+      // Construir tabla HTML
+      const buildRows = (items, kind) => items.map(i =>
+        '<tr>' +
+        '<td style="padding:6px 10px;font-family:monospace;font-size:12px;color:#1B2A4A">' + i.code + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:#64748B">' + kind + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:#475569">' + i.clientName + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:#475569">' + i.stageLabel + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:#EF4444;font-weight:600">' + i.hoursElapsed + 'h</td>' +
+        '</tr>'
+      ).join('');
 
-        const { sendMail } = require('./mailer');
-        await sendMail({ to: emails, subject, html: body }).catch(e =>
-          console.error(`⚠️  Stage alert mail para ${quote.code} falló:`, e.message)
-        );
+      const html =
+        '<div style="font-family:sans-serif;max-width:600px;margin:0 auto">' +
+        '<h2 style="color:#1B2A4A">⏰ Alerta de seguimiento · ' + total + ' ítem' + (total !== 1 ? 's' : '') + '</h2>' +
+        '<p>Hola ' + seller.name + ', los siguientes ítems superaron el tiempo de etapa configurado:</p>' +
+        '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;border:1px solid #e2e8f0">' +
+        '<thead><tr style="background:#F8FAFC">' +
+        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Código</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Tipo</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Cliente</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Etapa</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Tiempo</th>' +
+        '</tr></thead><tbody>' +
+        buildRows(quotes, 'Cotización') + buildRows(orders, 'Orden') +
+        '</tbody></table>' +
+        '<p style="color:#64748B;font-size:13px">Próximo recordatorio en ' + cooldownDays + ' día' + (cooldownDays !== 1 ? 's' : '') + ' si no hay cambios.</p>' +
+        '<a href="' + APP_URL + '" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">Ver en el CRM →</a>' +
+        '</div>';
 
-        // Registrar en Activity para no re-enviar
-        await prisma.activity.create({
-          data: {
-            action: 'STAGE_ALERT_SENT',
-            detail: `Alerta de tiempo enviada: ${quote.code} lleva ${hoursElapsed}h en "${stageDef.label}"`,
-            userId: null,
-            quoteId: quote.id,
-          },
-        }).catch(() => {});
-      }
+      await sendMail({
+        to: seller.email,
+        subject: '⏰ ' + total + ' ítem' + (total !== 1 ? 's' : '') + ' con tiempo de etapa excedido · MySelec CRM',
+        html,
+      }).catch(e => console.error('Stage alert digest falló para', seller.email, ':', e.message));
 
-      // ── ÓRDENES DE COMPRA en esta etapa ─────────────────────────────────────
-      const orders = await prisma.order.findMany({
-        where: { stage: stageDef.stageKey },
-        include: { client: true, seller: true, activities: { orderBy: { createdAt: 'desc' }, take: 5 } },
-      });
+      // Registrar en Activity para cada ítem (cooldown)
+      await Promise.all([
+        ...quotes.map(q => prisma.activity.create({ data: { action: 'STAGE_ALERT_SENT', detail: `Alerta digest: ${q.code} lleva ${q.hoursElapsed}h en "${q.stageLabel}"`, quoteId: q.id } }).catch(() => {})),
+        ...orders.map(o => prisma.activity.create({ data: { action: 'STAGE_ALERT_SENT', detail: `Alerta digest: ${o.code} lleva ${o.hoursElapsed}h en "${o.stageLabel}"`, orderId: o.id } }).catch(() => {})),
+      ]);
 
-      for (const order of orders) {
-        const changedAt = order.stageChangedAt || order.createdAt;
-        if (changedAt > cutoff) continue;
-
-        const alreadySent = order.activities.some(
-          a => a.action === 'STAGE_ALERT_SENT' && new Date(a.createdAt) >= since24h
-        );
-        if (alreadySent) continue;
-
-        const seller = order.seller;
-        const emails = [];
-        if (seller?.email) emails.push(seller.email);
-        if (!emails.length) continue;
-
-        const hoursElapsed = Math.round((now - changedAt) / 3600000);
-        const subject = `⏰ ${order.code} lleva ${hoursElapsed}h en "${stageDef.label}"`;
-        const body = `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
-            <h2 style="color:#1B2A4A">Recordatorio de seguimiento</h2>
-            <p>La orden <strong>${order.code}</strong>${order.client ? ` de <strong>${order.client.name}</strong>` : ''} lleva <strong>${hoursElapsed} horas</strong> en la etapa <strong>"${stageDef.label}"</strong>.</p>
-            <p style="color:#64748B">Tiempo máximo configurado: ${stageDef.maxHours} horas.</p>
-            <p>
-              <a href="${APP_URL}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">
-                Ver en el CRM →
-              </a>
-            </p>
-          </div>`;
-
-        const { sendMail } = require('./mailer');
-        await sendMail({ to: emails, subject, html: body }).catch(e =>
-          console.error(`⚠️  Stage alert mail para ${order.code} falló:`, e.message)
-        );
-
-        await prisma.activity.create({
-          data: {
-            action: 'STAGE_ALERT_SENT',
-            detail: `Alerta de tiempo enviada: ${order.code} lleva ${hoursElapsed}h en "${stageDef.label}"`,
-            userId: null,
-            orderId: order.id,
-          },
-        }).catch(() => {});
-      }
+      console.log(`📧 Stage alert digest → ${seller.email} (${total} ítems, cooldown ${cooldownDays}d)`);
     }
   } catch (e) {
     console.error('runStageAlerts error:', e.message);
@@ -319,8 +311,12 @@ async function runWeeklyReport() {
 
     // KPIs generales
     const totalActive = allQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
-    const wonThisWeek = await prisma.quote.count({ where: { stage: 'aceptada', updatedAt: { gte: weekStart } } });
-    const wonPrevWeek = await prisma.quote.count({ where: { stage: 'aceptada', updatedAt: { gte: prevWeekStart, lte: prevWeekEnd } } });
+    const [wonThisWeek, wonPrevWeek, lostThisWeek, lostPrevWeek] = await Promise.all([
+      prisma.quote.count({ where: { stage: 'aceptada', stageChangedAt: { gte: weekStart } } }),
+      prisma.quote.count({ where: { stage: 'aceptada', stageChangedAt: { gte: prevWeekStart, lte: prevWeekEnd } } }),
+      prisma.quote.count({ where: { stage: 'rechazada', stageChangedAt: { gte: weekStart } } }),
+      prisma.quote.count({ where: { stage: 'rechazada', stageChangedAt: { gte: prevWeekStart, lte: prevWeekEnd } } }),
+    ]);
     const totalMonto  = allQuotes.reduce((s, q) => s + (q.amount || 0), 0);
 
     // Pipeline por etapa
@@ -389,9 +385,13 @@ async function runWeeklyReport() {
     html +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(quotesThisWeek, quotesPrevWeek) + ' vs sem. ant.</div>';
     html += '</div>';
     html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
-    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Cotizaciones ganadas</div>';
-    html +=   '<div style="font-size:26px;font-weight:700;color:#22C55E">' + wonThisWeek + '</div>';
-    html +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(wonThisWeek, wonPrevWeek) + ' vs sem. ant.</div>';
+    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Cerradas esta semana</div>';
+    html +=   '<div style="display:flex;align-items:baseline;gap:10px">';
+    html +=     '<div style="font-size:22px;font-weight:700;color:#22C55E">' + wonThisWeek + ' ✅</div>';
+    html +=     '<div style="font-size:22px;font-weight:700;color:#EF4444">' + lostThisWeek + ' ❌</div>';
+    html +=   '</div>';
+    html +=   '<div style="font-size:11px;color:#94A3B8;margin-top:2px">ganadas / perdidas</div>';
+    html +=   '<div style="font-size:12px;margin-top:4px">' + deltaHtml(wonThisWeek, wonPrevWeek) + ' ganadas vs sem. ant.</div>';
     html += '</div>';
     html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
     html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Órdenes de compra</div>';
