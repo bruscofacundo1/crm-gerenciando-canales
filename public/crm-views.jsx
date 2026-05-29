@@ -1326,8 +1326,8 @@ function Team() {
         <td className="text-right">
           <div className="flex items-center justify-end gap-1">
             {!u.active && <Badge tone="gray" dot>Inactivo</Badge>}
-            {/* Toggle notificación mails sin cliente — solo admins */}
-            {u.role === 'ADMIN' && (
+            {/* Toggle notificación mails sin cliente */}
+            {(
               <button
                 onClick={async () => {
                   try {

@@ -51,7 +51,7 @@ router.post('/:id/approve', authMiddleware, adminOnly, async (req, res) => {
 
     const updated = await prisma.user.update({
       where: { id: req.params.id },
-      data: { role, active: true, pendingApproval: false },
+      data: { role, active: true, pendingApproval: false, notifyUnassigned: role === 'ADMIN' },
       select: { id: true, name: true, email: true, role: true, zone: true, active: true, createdAt: true },
     });
 
@@ -147,7 +147,7 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, role, zone: zone || null },
+      data: { name, email, password: hashed, role, zone: zone || null, notifyUnassigned: role === 'ADMIN' },
       select: { id: true, name: true, email: true, role: true, zone: true, active: true, createdAt: true },
     });
     res.json(user);
