@@ -544,6 +544,7 @@ function ProfileModal({ user, onClose, onUpdated }) {
                       <PrefRow section="inapp" k="idle_quotes" label="Cotizaciones sin actividad" desc="Sin movimiento en más de X días."/>
                       {isSeller && <PrefRow section="inapp" k="follow_up" label="Seguimientos vencidos" desc="Cotizaciones con fecha de seguimiento vencida."/>}
                       {isSeller && <PrefRow section="inapp" k="follow_up_upcoming" label="Seguimientos próximos" desc="Aviso anticipado antes de que venza un seguimiento."/>}
+                      {isSeller && <PrefRow section="inapp" k="no_response" label="Presupuestos sin respuesta" desc="Presupuestos enviados sin respuesta del cliente, con botón para enviar recordatorio."/>}
                     </div>
                   </div>
                 </div>

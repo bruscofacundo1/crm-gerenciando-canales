@@ -826,4 +826,71 @@ router.post('/:id/send-email', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/quotes/:id/send-reminder — enviar recordatorio al cliente por presupuesto sin respuesta
+router.post('/:id/send-reminder', authMiddleware, async (req, res) => {
+  try {
+    const { subject, body } = req.body;
+    if (!subject || !body) return res.status(400).json({ error: 'subject y body son requeridos' });
+
+    const quote = await prisma.quote.findUnique({
+      where: { id: req.params.id },
+      include: { client: { select: { name: true, email: true } }, seller: { select: { name: true } } },
+    });
+    if (!quote) return res.status(404).json({ error: 'Cotización no encontrada' });
+    if (req.user.role === 'VENDEDOR' && quote.sellerId !== req.user.id) {
+      return res.status(403).json({ error: 'Sin permiso para esta cotización' });
+    }
+    if (!quote.client?.email) return res.status(400).json({ error: 'El cliente no tiene email registrado' });
+
+    // Enviar mail al cliente
+    const { sendMail } = require('../services/mailer');
+    const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const htmlBody = body.replace(/\n/g, '<br/>');
+
+    await sendMail({
+      to: quote.client.email,
+      subject,
+      html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
+<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+  <div style="background:#1B2A4A;padding:24px 32px 20px">
+    <div style="color:#fff;font-size:16px;font-weight:700">MySelec</div>
+  </div>
+  <div style="padding:24px 32px">
+    <div style="color:#334155;font-size:14px;line-height:1.7">${htmlBody}</div>
+  </div>
+  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
+    <div style="font-size:11px;color:#94A3B8">MySelec · Este es un seguimiento del presupuesto enviado</div>
+  </div>
+</div>
+</body></html>`,
+    });
+
+    // Registrar actividad
+    await prisma.activity.create({
+      data: {
+        action: 'REMINDER_SENT',
+        detail: `Recordatorio enviado a ${quote.client.email} — "${subject}"`,
+        userId: req.user.id,
+        quoteId: req.params.id,
+      },
+    });
+
+    // Pushear followUpDate
+    const pushSetting = await prisma.appSetting.findUnique({ where: { key: 'reminder_followup_push_days' } });
+    const pushDays = parseInt(pushSetting?.value || '4', 10);
+    const newFollowUp = new Date();
+    newFollowUp.setDate(newFollowUp.getDate() + pushDays);
+    await prisma.quote.update({
+      where: { id: req.params.id },
+      data: { followUpDate: newFollowUp },
+    });
+
+    res.json({ ok: true, sentTo: quote.client.email, nextFollowUp: newFollowUp.toISOString() });
+  } catch (err) {
+    console.error('Error sending reminder:', err);
+    res.status(500).json({ error: err.message || 'Error al enviar recordatorio' });
+  }
+});
+
 module.exports = router;

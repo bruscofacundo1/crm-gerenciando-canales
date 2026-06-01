@@ -34,11 +34,12 @@ router.get('/inbox', authMiddleware, async (req, res) => {
     const alerts = [];
 
     // Leer usuario completo para prefs personales + settings del sistema
-    const [userFull, idleInboxSetting, solSetting, followUpUpcomingSetting, sysFlags] = await Promise.all([
+    const [userFull, idleInboxSetting, solSetting, followUpUpcomingSetting, noResponseSetting, sysFlags] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } }),
       prisma.appSetting.findUnique({ where: { key: 'idle_inbox_days' } }),
       prisma.appSetting.findUnique({ where: { key: 'solicitud_sin_pres_days' } }),
       prisma.appSetting.findUnique({ where: { key: 'follow_up_upcoming_days' } }),
+      prisma.appSetting.findUnique({ where: { key: 'no_response_days' } }),
       Promise.all([
         getFlag('inapp_unassigned_quotes'),
         getFlag('inapp_pending_users'),
@@ -47,15 +48,18 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         getFlag('inapp_follow_up'),
         getFlag('inapp_unlinked_solicitudes'),
         getFlag('inapp_follow_up_upcoming'),
+        getFlag('inapp_no_response'),
       ]),
     ]);
-    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp, sysUnlinkedSol, sysFollowUpUpcoming] = sysFlags;
+    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp, sysUnlinkedSol, sysFollowUpUpcoming, sysNoResponse] = sysFlags;
     const prefs = userFull?.notificationPrefs || {};
     const idleInboxDays      = parseInt(idleInboxSetting?.value       ?? '5', 10);
     const solSinPresDays     = parseInt(solSetting?.value             ?? '3', 10);
     const followUpUpcomingDays = parseInt(followUpUpcomingSetting?.value ?? '1', 10);
+    const noResponseDays     = parseInt(noResponseSetting?.value ?? '4', 10);
     const idleCutoff         = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
     const solCutoff          = new Date(now.getTime() - solSinPresDays * 86400 * 1000);
+    const noResponseCutoff   = new Date(now.getTime() - noResponseDays * 86400 * 1000);
     const followUpUpcomingEnd = new Date(now.getTime() + followUpUpcomingDays * 86400 * 1000);
 
     // "Nuevo desde la última vez que el usuario abrió la campanita"
@@ -287,6 +291,60 @@ router.get('/inbox', authMiddleware, async (req, res) => {
               followUpDate: q.followUpDate,
             })),
           });
+        }
+      }
+
+      // 6. Presupuestos sin respuesta — enviados hace >X días sin actividad del cliente
+      if (sysNoResponse && userInappPref(prefs, 'no_response')) {
+        // Buscar presupuestos enviados sin respuesta
+        const noResponseQuotes = await prisma.quote.findMany({
+          where: {
+            sellerId: userId,
+            mailType: 'PRESUPUESTO',
+            stage: 'enviado',
+            isDraft: false,
+            createdAt: { lte: noResponseCutoff },
+          },
+          select: {
+            id: true, code: true, flexxusCode: true, amount: true, createdAt: true,
+            client: { select: { id: true, name: true, email: true } },
+          },
+          take: 15,
+        });
+
+        if (noResponseQuotes.length > 0) {
+          // Filtrar: excluir los que ya tienen actividad reciente (nota de respuesta o reminder enviado)
+          const quoteIds = noResponseQuotes.map(q => q.id);
+          const recentActivity = await prisma.activity.findMany({
+            where: {
+              quoteId: { in: quoteIds },
+              action: { in: ['NOTE', 'REMINDER_SENT'] },
+              createdAt: { gte: noResponseCutoff },
+            },
+            select: { quoteId: true },
+          });
+          const activeQuoteIds = new Set(recentActivity.map(a => a.quoteId));
+          const filtered = noResponseQuotes.filter(q => !activeQuoteIds.has(q.id));
+
+          if (filtered.length > 0) {
+            alerts.push({
+              id: 'no-response', type: 'NO_RESPONSE', severity: 'medium', icon: 'mail-question',
+              title: `${filtered.length} presupuesto${filtered.length > 1 ? 's' : ''} sin respuesta`,
+              description: `Presupuestos enviados hace más de ${noResponseDays} días sin respuesta del cliente.`,
+              action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+              count: filtered.length,
+              items: filtered.map(q => ({
+                id: q.id,
+                code: q.code,
+                flexxusCode: q.flexxusCode,
+                clientName: q.client?.name,
+                clientEmail: q.client?.email,
+                amount: q.amount,
+                daysSent: Math.floor((now - new Date(q.createdAt)) / 86400000),
+                canRemind: !!q.client?.email,
+              })),
+            });
+          }
         }
       }
     }

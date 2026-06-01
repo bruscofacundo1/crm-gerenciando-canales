@@ -1372,6 +1372,9 @@ function NotificationsPopover({ onClose, setScreen }) {
                        low:'text-brand bg-brandSoft border-brandSoft' };
   const sevDot     = { high:'bg-red-400', medium:'bg-orange-400', low:'bg-brand' };
 
+  // State para el modal de recordatorio
+  const [reminderItem, setReminderItem] = useS(null); // item de la alerta para enviar recordatorio
+
   // Mapa de iconos por tipo de alerta
   const alertIcon = {
     UNASSIGNED_QUOTES:     '👤',
@@ -1382,6 +1385,7 @@ function NotificationsPopover({ onClose, setScreen }) {
     FOLLOW_UP_DUE:         '📅',
     FOLLOW_UP_UPCOMING:    '📆',
     UNLINKED_SOLICITUDES:  '📋',
+    NO_RESPONSE:           '📨',
   };
 
   const handleAlertAction = (alert) => {
@@ -1466,11 +1470,18 @@ function NotificationsPopover({ onClose, setScreen }) {
                                 <div key={i} className="flex items-center gap-1.5 text-[10.5px] opacity-70 leading-snug">
                                   <span className="font-mono font-medium">{item.code}</span>
                                   {item.clientName && <span className="truncate">· {item.clientName}</span>}
+                                  {item.daysSent !== undefined && <span className="shrink-0 text-[10px]">· {item.daysSent}d</span>}
                                   {item.daysOld !== undefined && <span className="shrink-0 text-[10px]">· {item.daysOld}d</span>}
                                   {item.followUpDate && (
                                     <span className="shrink-0 text-[10px]">· {new Date(item.followUpDate).toLocaleDateString('es-AR', { day:'2-digit', month:'short' })}</span>
                                   )}
                                   {item.stage && !item.clientName && <span className="opacity-60">· {item.stage}</span>}
+                                  {item.canRemind && alert.type === 'NO_RESPONSE' && (
+                                    <button onClick={(e) => { e.stopPropagation(); setReminderItem(item); }}
+                                      className="shrink-0 ml-auto px-1.5 py-0.5 rounded bg-white/80 hover:bg-white text-[9px] font-semibold border border-current/20">
+                                      Recordar
+                                    </button>
+                                  )}
                                 </div>
                               ))}
                               {alert.items.length > 3 && (
@@ -1544,10 +1555,96 @@ function NotificationsPopover({ onClose, setScreen }) {
           )}
         </div>
       </div>
+
+      {/* Modal de recordatorio — preview y envío */}
+      {reminderItem && (() => {
+        const ri = reminderItem;
+        const defaultSubject = `Seguimiento presupuesto ${ri.flexxusCode || ri.code} — MySelec`;
+        const defaultBody = `Hola ${ri.clientName || ''},\n\nTe escribimos para hacer seguimiento del presupuesto ${ri.flexxusCode || ri.code} que te enviamos hace ${ri.daysSent} días.\n\n¿Pudiste revisarlo? Quedamos a disposición para cualquier consulta.\n\nSaludos cordiales,\nEquipo MySelec`;
+
+        return <ReminderModal
+          item={ri}
+          defaultSubject={defaultSubject}
+          defaultBody={defaultBody}
+          onClose={() => setReminderItem(null)}
+          onSent={() => {
+            // Quitar el item de la alerta local (se actualiza en el próximo polling)
+            setInboxAlerts(prev => prev.map(a => {
+              if (a.type !== 'NO_RESPONSE') return a;
+              const newItems = (a.items || []).filter(it => it.id !== ri.id);
+              if (newItems.length === 0) return null;
+              return { ...a, items: newItems, count: newItems.length, title: `${newItems.length} presupuesto${newItems.length > 1 ? 's' : ''} sin respuesta` };
+            }).filter(Boolean));
+            setReminderItem(null);
+          }}
+        />;
+      })()}
     </>
   );
 }
 
+// ---------- ReminderModal — preview y envío de recordatorio ----------
+function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
+  const { pushToast } = useApp();
+  const [subject, setSubject] = useS(defaultSubject);
+  const [body, setBody]       = useS(defaultBody);
+  const [sending, setSending] = useS(false);
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      await CrmApi.sendReminder(item.id, { subject, body });
+      pushToast(`Recordatorio enviado a ${item.clientEmail}`, 'ok');
+      onSent();
+    } catch (err) {
+      pushToast(err.message || 'Error al enviar', 'bad');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose}/>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-pop w-full max-w-lg border border-line" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-ink-900 text-[14px]">Enviar recordatorio</div>
+              <div className="text-[11.5px] text-ink-400 mt-0.5">
+                {item.code} · {item.clientName} · {item.daysSent}d sin respuesta
+              </div>
+            </div>
+            <button onClick={onClose} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
+          </div>
+          <div className="p-5 space-y-3">
+            <div>
+              <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
+              <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={item.clientEmail} readOnly/>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-ink-500 mb-1">Asunto</label>
+              <input className="inp w-full text-[13px]" value={subject} onChange={e => setSubject(e.target.value)}/>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-ink-500 mb-1">Mensaje</label>
+              <textarea className="inp w-full text-[13px] min-h-[160px] leading-relaxed" value={body} onChange={e => setBody(e.target.value)}/>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700">
+              Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
+            </div>
+          </div>
+          <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+            <button onClick={onClose} className="btn-ghost" disabled={sending}>Cancelar</button>
+            <button onClick={handleSend} className="btn-primary" disabled={sending || !subject || !body}>
+              <Icon name="send" size={13}/>{sending ? 'Enviando...' : 'Enviar recordatorio'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ---------- More Filters Popover (Quotes) ----------
 function MoreFiltersPopover({ onClose, which='quote' }) {

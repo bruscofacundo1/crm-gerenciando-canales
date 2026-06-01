@@ -1756,6 +1756,7 @@ function Config() {
   const [unassignedMailFreq,   setUnassignedMailFreq]   = useState('daily');
   const [solSinPresDays,       setSolSinPresDays]       = useState('3');
   const [followUpUpcomingDays, setFollowUpUpcomingDays] = useState('1');
+  const [noResponseDays,       setNoResponseDays]       = useState('4');
   const [showVars, setShowVars] = useState(false);
 
   // Email templates state
@@ -1785,6 +1786,7 @@ function Config() {
     inapp_follow_up:             'true',
     inapp_unlinked_solicitudes:  'true',
     inapp_follow_up_upcoming:    'true',
+    inapp_no_response:           'true',
   });
 
   // Mail state
@@ -1834,11 +1836,13 @@ function Config() {
           inapp_follow_up:            s.inapp_follow_up            ?? 'true',
           inapp_unlinked_solicitudes: s.inapp_unlinked_solicitudes ?? 'true',
           inapp_follow_up_upcoming:   s.inapp_follow_up_upcoming   ?? 'true',
+          inapp_no_response:          s.inapp_no_response          ?? 'true',
         }));
         if (s.stage_alert_cooldown_days) setStageCooldownDays(s.stage_alert_cooldown_days);
         if (s.unassigned_mail_frequency) setUnassignedMailFreq(s.unassigned_mail_frequency);
         if (s.solicitud_sin_pres_days)   setSolSinPresDays(s.solicitud_sin_pres_days);
         if (s.follow_up_upcoming_days)   setFollowUpUpcomingDays(s.follow_up_upcoming_days);
+        if (s.no_response_days)          setNoResponseDays(s.no_response_days);
       })
       .catch(() => {});
   }, []);
@@ -2729,6 +2733,7 @@ function Config() {
               { key: 'inapp_idle_quotes',          icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días. Descartable por N días.', role: 'Todos', extra: 'idleInbox' },
               { key: 'inapp_follow_up',            icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento ya vencida.', role: 'Vendedor' },
               { key: 'inapp_follow_up_upcoming',   icon: 'calendar',       color: 'blue',   label: 'Seguimientos próximos',            desc: 'Aviso anticipado antes de que venza un seguimiento. Permite prepararse antes de que sea urgente.', role: 'Vendedor', extra: 'followUpUpcoming' },
+              { key: 'inapp_no_response',          icon: 'mail-question',  color: 'orange', label: 'Presupuestos sin respuesta',        desc: 'Presupuestos enviados sin respuesta del cliente después de X días. Incluye botón para enviar recordatorio.', role: 'Vendedor', extra: 'noResponse' },
             ];
             const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
             const RoleBadge = ({ r }) => {
@@ -2857,6 +2862,18 @@ function Config() {
                                 <option value="1">24 horas antes</option>
                                 <option value="2">2 días antes</option>
                                 <option value="3">3 días antes</option>
+                              </select>
+                            </div>
+                          )}
+                          {row.extra === 'noResponse' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Alertar después de:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-24"
+                                value={noResponseDays}
+                                onChange={e => saveAutoAlertSetting('no_response_days', e.target.value, setNoResponseDays)}
+                              >
+                                {[2,3,4,5,7,10,14].map(d => <option key={d} value={String(d)}>{d} días</option>)}
                               </select>
                             </div>
                           )}

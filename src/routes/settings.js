@@ -60,6 +60,15 @@ const DEFAULTS = {
   inapp_follow_up_upcoming:   'true',
   // Días de anticipación para aviso de follow-up próximo (0 = solo hoy)
   follow_up_upcoming_days:    '1',
+  // ── Recordatorio de presupuesto sin respuesta ───────────────────────────
+  inapp_no_response:          'true',
+  // Días sin respuesta para mostrar alerta de recordatorio
+  no_response_days:           '4',
+  // Días extra de followUp al enviar un recordatorio
+  reminder_followup_push_days: '4',
+  // Plantilla de recordatorio
+  reminder_subject:           'Seguimiento presupuesto {flexxusCode} — MySelec',
+  reminder_body:              'Hola {clientName},\n\nTe escribimos para hacer seguimiento del presupuesto {flexxusCode} que te enviamos hace {daysSent} días.\n\n¿Pudiste revisarlo? Quedamos a disposición para cualquier consulta.\n\nSaludos cordiales,\nEquipo MySelec',
 };
 
 // GET /api/settings — devuelve todos los settings con defaults

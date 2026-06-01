@@ -265,6 +265,7 @@ const CrmApi = {
   getEmailTemplates: () => apiFetch('/quotes/email-templates'),
   saveEmailTemplates: (data) => apiFetch('/quotes/email-templates', { method: 'PUT', body: JSON.stringify(data) }),
   sendQuoteEmail: (quoteId, data) => apiFetch(`/quotes/${quoteId}/send-email`, { method: 'POST', body: JSON.stringify(data) }),
+  sendReminder: (quoteId, data) => apiFetch(`/quotes/${quoteId}/send-reminder`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Upload attachments
   uploadAttachments: (quoteId, files) => {
