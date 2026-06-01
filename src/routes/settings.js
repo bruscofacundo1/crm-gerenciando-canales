@@ -49,11 +49,17 @@ const DEFAULTS = {
   // Frecuencia del digest sin cliente: immediate | daily | 2days | weekly
   unassigned_mail_frequency:      'daily',
   // ── Alertas in-app (campanita) ───────────────────────────────────────────
-  inapp_unassigned_quotes: 'true',
-  inapp_pending_users:     'true',
-  inapp_overdue_stages:    'true',
-  inapp_idle_quotes:       'true',
-  inapp_follow_up:         'true',
+  inapp_unassigned_quotes:    'true',
+  inapp_pending_users:        'true',
+  inapp_overdue_stages:       'true',
+  inapp_idle_quotes:          'true',
+  inapp_follow_up:            'true',
+  inapp_unlinked_solicitudes: 'true',
+  // Días sin presupuesto vinculado para alertar sobre una solicitud
+  solicitud_sin_pres_days:    '3',
+  inapp_follow_up_upcoming:   'true',
+  // Días de anticipación para aviso de follow-up próximo (0 = solo hoy)
+  follow_up_upcoming_days:    '1',
 };
 
 // GET /api/settings — devuelve todos los settings con defaults

@@ -34,21 +34,29 @@ router.get('/inbox', authMiddleware, async (req, res) => {
     const alerts = [];
 
     // Leer usuario completo para prefs personales + settings del sistema
-    const [userFull, idleInboxSetting, sysFlags] = await Promise.all([
+    const [userFull, idleInboxSetting, solSetting, followUpUpcomingSetting, sysFlags] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId }, select: { notificationPrefs: true } }),
       prisma.appSetting.findUnique({ where: { key: 'idle_inbox_days' } }),
+      prisma.appSetting.findUnique({ where: { key: 'solicitud_sin_pres_days' } }),
+      prisma.appSetting.findUnique({ where: { key: 'follow_up_upcoming_days' } }),
       Promise.all([
         getFlag('inapp_unassigned_quotes'),
         getFlag('inapp_pending_users'),
         getFlag('inapp_overdue_stages'),
         getFlag('inapp_idle_quotes'),
         getFlag('inapp_follow_up'),
+        getFlag('inapp_unlinked_solicitudes'),
+        getFlag('inapp_follow_up_upcoming'),
       ]),
     ]);
-    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp] = sysFlags;
+    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp, sysUnlinkedSol, sysFollowUpUpcoming] = sysFlags;
     const prefs = userFull?.notificationPrefs || {};
-    const idleInboxDays = parseInt(idleInboxSetting?.value ?? '5', 10);
-    const idleCutoff    = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
+    const idleInboxDays      = parseInt(idleInboxSetting?.value       ?? '5', 10);
+    const solSinPresDays     = parseInt(solSetting?.value             ?? '3', 10);
+    const followUpUpcomingDays = parseInt(followUpUpcomingSetting?.value ?? '1', 10);
+    const idleCutoff         = new Date(now.getTime() - idleInboxDays * 86400 * 1000);
+    const solCutoff          = new Date(now.getTime() - solSinPresDays * 86400 * 1000);
+    const followUpUpcomingEnd = new Date(now.getTime() + followUpUpcomingDays * 86400 * 1000);
 
     // "Nuevo desde la última vez que el usuario abrió la campanita"
     const lastCheck = prefs.lastInboxCheck ? new Date(prefs.lastInboxCheck) : null;
@@ -86,19 +94,20 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         });
       }
 
-      // 3. Cotizaciones con tiempo de etapa excedido (todas) — con newCount + dismissable
+      // 3. Cotizaciones con tiempo de etapa excedido (todas) — con newCount + byStage + dismissable
       if (sysOverdue && userInappPref(prefs, 'overdue_stages') && !isDismissed('overdue_stages')) {
         const overdueResult = await _getOverdueItems(prisma, now, null, lastCheck);
         if (overdueResult.total > 0) {
           const nc = overdueResult.newCount;
+          const stageDesc = _formatByStage(overdueResult.byStage);
           alerts.push({
             id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
             title: nc > 0
               ? `${nc} nueva${nc > 1 ? 's' : ''} con tiempo de etapa excedido`
               : `${overdueResult.total} ítem${overdueResult.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
-            description: nc > 0
+            description: stageDesc || (nc > 0
               ? `${nc} nueva${nc > 1 ? 's' : ''} desde tu última visita (${overdueResult.total} en total).`
-              : overdueResult.detail,
+              : overdueResult.detail),
             action: { label: 'Ver cotizaciones', view: 'quotes' },
             count: overdueResult.total, newCount: nc, items: overdueResult.items,
             dismissable: true, dismissKey: 'overdue_stages',
@@ -133,6 +142,34 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         }
       }
 
+      // 5. Solicitudes sin presupuesto vinculado en más de X días
+      if (sysUnlinkedSol && userInappPref(prefs, 'unlinked_solicitudes') && !isDismissed('unlinked_solicitudes')) {
+        const unlinkedSolicitudes = await prisma.quote.findMany({
+          where: {
+            mailType: 'SOLICITUD', linkedQuoteId: null, isDraft: false,
+            stage: { notIn: ['aceptada', 'rechazada'] },
+            createdAt: { lte: solCutoff },
+          },
+          select: { id: true, code: true, createdAt: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (unlinkedSolicitudes.length > 0) {
+          alerts.push({
+            id: 'unlinked-solicitudes', type: 'UNLINKED_SOLICITUDES', severity: 'high', icon: 'file-question',
+            title: `${unlinkedSolicitudes.length} solicitud${unlinkedSolicitudes.length > 1 ? 'es' : ''} sin presupuesto (>${solSinPresDays}d)`,
+            description: `Solicitudes sin presupuesto vinculado hace más de ${solSinPresDays} días.`,
+            action: { label: 'Ver solicitudes', view: 'quotes' },
+            count: unlinkedSolicitudes.length,
+            items: unlinkedSolicitudes.map(q => ({
+              code: q.code,
+              clientName: q.client?.name,
+              daysOld: Math.floor((now - new Date(q.createdAt)) / 86400000),
+            })),
+            dismissable: true, dismissKey: 'unlinked_solicitudes',
+          });
+        }
+      }
+
     } else if (role === 'VENDEDOR') {
       // 1. Cotizaciones del vendedor con followUpDate vencido
       if (sysFollowUp && userInappPref(prefs, 'follow_up')) {
@@ -148,19 +185,20 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         });
       }
 
-      // 2. Cotizaciones del vendedor con tiempo de etapa excedido — con newCount + dismissable
+      // 2. Cotizaciones del vendedor con tiempo de etapa excedido — con newCount + byStage + dismissable
       if (sysOverdue && userInappPref(prefs, 'overdue_stages') && !isDismissed('overdue_stages')) {
         const overdueResult = await _getOverdueItems(prisma, now, userId, lastCheck);
         if (overdueResult.total > 0) {
           const nc = overdueResult.newCount;
+          const stageDesc = _formatByStage(overdueResult.byStage);
           alerts.push({
             id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
             title: nc > 0
               ? `${nc} nueva${nc > 1 ? 's' : ''} con tiempo de etapa excedido`
               : `${overdueResult.total} ítem${overdueResult.total > 1 ? 's' : ''} con tiempo de etapa excedido`,
-            description: nc > 0
+            description: stageDesc || (nc > 0
               ? `${nc} nueva${nc > 1 ? 's' : ''} desde tu última visita (${overdueResult.total} en total).`
-              : overdueResult.detail,
+              : overdueResult.detail),
             action: { label: 'Ver mis cotizaciones', view: 'quotes' },
             count: overdueResult.total, newCount: nc, items: overdueResult.items,
             dismissable: true, dismissKey: 'overdue_stages',
@@ -194,6 +232,60 @@ router.get('/inbox', authMiddleware, async (req, res) => {
             action: { label: 'Ver mis cotizaciones', view: 'quotes' },
             count: total, newCount: newIdle,
             dismissable: true, dismissKey: 'idle_quotes',
+          });
+        }
+      }
+      // 4. Solicitudes del vendedor sin presupuesto en más de X días
+      if (sysUnlinkedSol && userInappPref(prefs, 'unlinked_solicitudes') && !isDismissed('unlinked_solicitudes')) {
+        const unlinkedSolicitudes = await prisma.quote.findMany({
+          where: {
+            sellerId: userId, mailType: 'SOLICITUD', linkedQuoteId: null, isDraft: false,
+            stage: { notIn: ['aceptada', 'rechazada'] },
+            createdAt: { lte: solCutoff },
+          },
+          select: { id: true, code: true, createdAt: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (unlinkedSolicitudes.length > 0) {
+          alerts.push({
+            id: 'unlinked-solicitudes', type: 'UNLINKED_SOLICITUDES', severity: 'high', icon: 'file-question',
+            title: `${unlinkedSolicitudes.length} solicitud${unlinkedSolicitudes.length > 1 ? 'es' : ''} sin presupuesto (>${solSinPresDays}d)`,
+            description: `Tenés solicitudes sin presupuesto enviado hace más de ${solSinPresDays} días.`,
+            action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+            count: unlinkedSolicitudes.length,
+            items: unlinkedSolicitudes.map(q => ({
+              code: q.code,
+              clientName: q.client?.name,
+              daysOld: Math.floor((now - new Date(q.createdAt)) / 86400000),
+            })),
+            dismissable: true, dismissKey: 'unlinked_solicitudes',
+          });
+        }
+      }
+
+      // 5. Seguimientos próximos (en las siguientes X horas/días)
+      if (sysFollowUpUpcoming && userInappPref(prefs, 'follow_up_upcoming')) {
+        const upcoming = await prisma.quote.findMany({
+          where: {
+            sellerId: userId,
+            followUpDate: { gt: now, lte: followUpUpcomingEnd },
+            stage: { notIn: ['aceptada', 'rechazada'] },
+          },
+          select: { id: true, code: true, followUpDate: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (upcoming.length > 0) {
+          alerts.push({
+            id: 'follow-up-upcoming', type: 'FOLLOW_UP_UPCOMING', severity: 'low', icon: 'calendar',
+            title: `${upcoming.length} seguimiento${upcoming.length > 1 ? 's' : ''} próximo${upcoming.length > 1 ? 's' : ''}`,
+            description: `Cotizaciones con seguimiento en las próximas ${followUpUpcomingDays <= 1 ? '24 horas' : followUpUpcomingDays + ' días'}.`,
+            action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+            count: upcoming.length,
+            items: upcoming.map(q => ({
+              code: q.code,
+              clientName: q.client?.name,
+              followUpDate: q.followUpDate,
+            })),
           });
         }
       }
@@ -248,13 +340,15 @@ router.post('/dismiss', authMiddleware, async (req, res) => {
 
 // Función interna: detecta quotes/orders cuyo tiempo en la etapa actual supera maxHours
 // lastInboxCheck: Date | null — si se provee, calcula newCount (items que entraron DESDE la última visita)
+// Retorna byStage: { stageName: count } para descripción agrupada
 async function _getOverdueItems(prisma, now, sellerId, lastInboxCheck) {
   const stagesWithLimit = await prisma.stageDefinition.findMany({
     where: { maxHours: { not: null }, active: true },
   });
-  if (!stagesWithLimit.length) return { total: 0, newCount: 0, detail: '', items: [] };
+  if (!stagesWithLimit.length) return { total: 0, newCount: 0, detail: '', items: [], byStage: {} };
 
   const items = [];
+  const byStage = {};
   for (const stageDef of stagesWithLimit) {
     const cutoff = new Date(now.getTime() - stageDef.maxHours * 3600 * 1000);
     const where = {
@@ -268,6 +362,7 @@ async function _getOverdueItems(prisma, now, sellerId, lastInboxCheck) {
       select: { id: true, code: true, stageChangedAt: true, createdAt: true, client: { select: { name: true } } },
       take: 20,
     });
+    let stageCount = 0;
     for (const q of quotes) {
       const changedAt = q.stageChangedAt || q.createdAt;
       if (changedAt <= cutoff) {
@@ -276,11 +371,13 @@ async function _getOverdueItems(prisma, now, sellerId, lastInboxCheck) {
           stage: stageDef.label, clientName: q.client?.name,
           becameOverdueAt: changedAt,
         });
+        stageCount++;
       }
     }
+    if (stageCount > 0) byStage[stageDef.label] = stageCount;
   }
 
-  if (!items.length) return { total: 0, newCount: 0, detail: '', items: [] };
+  if (!items.length) return { total: 0, newCount: 0, detail: '', items: [], byStage: {} };
 
   // newCount: items que se volvieron overdue DESPUÉS del lastInboxCheck
   let newCount = 0;
@@ -290,7 +387,15 @@ async function _getOverdueItems(prisma, now, sellerId, lastInboxCheck) {
 
   const example = items[0];
   const detail = `${example.code}${items.length > 1 ? ` y ${items.length - 1} más` : ''} superaron el tiempo en su etapa.`;
-  return { total: items.length, newCount, detail, items };
+  return { total: items.length, newCount, detail, items, byStage };
+}
+
+// Formatea byStage como "3 en Presupuesto Enviado · 2 en Revisión"
+function _formatByStage(byStage) {
+  if (!byStage || !Object.keys(byStage).length) return '';
+  return Object.entries(byStage)
+    .map(([stage, count]) => `${count} en ${stage}`)
+    .join(' · ');
 }
 
 // GET /api/notifications/counts — conteos ligeros para badges del sidebar (solo admin)

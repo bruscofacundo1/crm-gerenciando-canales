@@ -1659,6 +1659,8 @@ function Config() {
   const [weeklyReportHour,     setWeeklyReportHour]     = useState('9');
   const [stageCooldownDays,    setStageCooldownDays]    = useState('3');
   const [unassignedMailFreq,   setUnassignedMailFreq]   = useState('daily');
+  const [solSinPresDays,       setSolSinPresDays]       = useState('3');
+  const [followUpUpcomingDays, setFollowUpUpcomingDays] = useState('1');
   const [showVars, setShowVars] = useState(false);
 
   // Email templates state
@@ -1685,7 +1687,9 @@ function Config() {
     inapp_pending_users:     'true',
     inapp_overdue_stages:    'true',
     inapp_idle_quotes:       'true',
-    inapp_follow_up:         'true',
+    inapp_follow_up:             'true',
+    inapp_unlinked_solicitudes:  'true',
+    inapp_follow_up_upcoming:    'true',
   });
 
   // Mail state
@@ -1728,14 +1732,18 @@ function Config() {
         }));
         setSysNotifInapp(prev => ({
           ...prev,
-          inapp_unassigned_quotes: s.inapp_unassigned_quotes ?? 'true',
-          inapp_pending_users:     s.inapp_pending_users     ?? 'true',
-          inapp_overdue_stages:    s.inapp_overdue_stages    ?? 'true',
-          inapp_idle_quotes:       s.inapp_idle_quotes       ?? 'true',
-          inapp_follow_up:         s.inapp_follow_up         ?? 'true',
+          inapp_unassigned_quotes:    s.inapp_unassigned_quotes    ?? 'true',
+          inapp_pending_users:        s.inapp_pending_users        ?? 'true',
+          inapp_overdue_stages:       s.inapp_overdue_stages       ?? 'true',
+          inapp_idle_quotes:          s.inapp_idle_quotes          ?? 'true',
+          inapp_follow_up:            s.inapp_follow_up            ?? 'true',
+          inapp_unlinked_solicitudes: s.inapp_unlinked_solicitudes ?? 'true',
+          inapp_follow_up_upcoming:   s.inapp_follow_up_upcoming   ?? 'true',
         }));
         if (s.stage_alert_cooldown_days) setStageCooldownDays(s.stage_alert_cooldown_days);
         if (s.unassigned_mail_frequency) setUnassignedMailFreq(s.unassigned_mail_frequency);
+        if (s.solicitud_sin_pres_days)   setSolSinPresDays(s.solicitud_sin_pres_days);
+        if (s.follow_up_upcoming_days)   setFollowUpUpcomingDays(s.follow_up_upcoming_days);
       })
       .catch(() => {});
   }, []);
@@ -2619,11 +2627,13 @@ function Config() {
               { key: 'weekly_report_enabled',  icon: 'bar-chart-2',  color: 'purple', label: 'Resumen semanal por mail',  desc: 'Resumen con KPIs y ranking de vendedores. Se envía todos los lunes a las 9:00 hs a los administradores.', role: 'Admin', isWeekly: true },
             ];
             const inappRows = [
-              { key: 'inapp_unassigned_quotes', icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
-              { key: 'inapp_pending_users',     icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
-              { key: 'inapp_overdue_stages',    icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo configurado. Descartable por N días.', role: 'Todos' },
-              { key: 'inapp_idle_quotes',       icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días. Descartable por N días.', role: 'Todos', extra: 'idleInbox' },
-              { key: 'inapp_follow_up',         icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento vencida.', role: 'Vendedor' },
+              { key: 'inapp_unassigned_quotes',    icon: 'user-x',         color: 'red',    label: 'Solicitudes sin asignar',          desc: 'Cotizaciones recibidas sin vendedor asignado.', role: 'Admin' },
+              { key: 'inapp_pending_users',        icon: 'user-check',     color: 'purple', label: 'Usuarios pendientes de aprobación', desc: 'Usuarios registrados esperando que un admin les dé acceso.', role: 'Admin' },
+              { key: 'inapp_unlinked_solicitudes', icon: 'file-question',  color: 'orange', label: 'Solicitudes sin presupuesto',       desc: 'Solicitudes sin presupuesto vinculado después de X días. Alerta accionable para no dejar caer leads.', role: 'Todos', extra: 'solSinPres' },
+              { key: 'inapp_overdue_stages',       icon: 'clock-alert',    color: 'red',    label: 'Tiempo de etapa excedido',         desc: 'Ítems cuyo tiempo en la etapa actual superó el máximo. Muestra desglose por etapa. Descartable.', role: 'Todos' },
+              { key: 'inapp_idle_quotes',          icon: 'clock',          color: 'gray',   label: 'Cotizaciones sin actividad',       desc: 'Cotizaciones sin movimiento en más de X días. Descartable por N días.', role: 'Todos', extra: 'idleInbox' },
+              { key: 'inapp_follow_up',            icon: 'calendar-clock', color: 'blue',   label: 'Seguimientos vencidos',            desc: 'Cotizaciones con fecha de seguimiento ya vencida.', role: 'Vendedor' },
+              { key: 'inapp_follow_up_upcoming',   icon: 'calendar',       color: 'blue',   label: 'Seguimientos próximos',            desc: 'Aviso anticipado antes de que venza un seguimiento. Permite prepararse antes de que sea urgente.', role: 'Vendedor', extra: 'followUpUpcoming' },
             ];
             const iconColor = { blue:'text-blue-500 bg-blue-50', orange:'text-orange-500 bg-orange-50', red:'text-red-500 bg-red-50', purple:'text-purple-500 bg-purple-50', gray:'text-ink-400 bg-surface' };
             const RoleBadge = ({ r }) => {
@@ -2725,6 +2735,33 @@ function Config() {
                                 onChange={e => saveAutoAlertSetting('idle_inbox_days', e.target.value, setIdleInboxDays)}
                               >
                                 {[2,3,4,5,7,10,14,21].map(d => <option key={d} value={String(d)}>{d} días</option>)}
+                              </select>
+                            </div>
+                          )}
+                          {row.extra === 'solSinPres' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Alertar después de:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-24"
+                                value={solSinPresDays}
+                                onChange={e => saveAutoAlertSetting('solicitud_sin_pres_days', e.target.value, setSolSinPresDays)}
+                              >
+                                {[1,2,3,5,7].map(d => <option key={d} value={String(d)}>{d} día{d > 1 ? 's' : ''}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          {row.extra === 'followUpUpcoming' && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[11.5px] text-ink-400">Anticipación:</span>
+                              <select
+                                className="inp text-[12px] py-0.5 w-28"
+                                value={followUpUpcomingDays}
+                                onChange={e => saveAutoAlertSetting('follow_up_upcoming_days', e.target.value, setFollowUpUpcomingDays)}
+                              >
+                                <option value="0">Solo hoy</option>
+                                <option value="1">24 horas antes</option>
+                                <option value="2">2 días antes</option>
+                                <option value="3">3 días antes</option>
                               </select>
                             </div>
                           )}

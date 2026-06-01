@@ -539,9 +539,11 @@ function ProfileModal({ user, onClose, onUpdated }) {
                       {isAdmin && <PrefRow section="inapp" k="unassigned_quotes" label="Solicitudes sin asignar" desc="Cotizaciones sin vendedor."/>}
                       {isAdmin && <PrefRow section="inapp" k="unlinked_presupuestos" label="Presupuestos sin vincular" desc="Presupuestos de mail sin solicitud asociada."/>}
                       {isAdmin && <PrefRow section="inapp" k="pending_users" label="Usuarios pendientes" desc="Solicitudes de acceso esperando aprobación."/>}
+                      <PrefRow section="inapp" k="unlinked_solicitudes" label="Solicitudes sin presupuesto" desc="Solicitudes sin presupuesto vinculado después de X días."/>
                       <PrefRow section="inapp" k="overdue_stages" label="Tiempo de etapa excedido" desc="Ítems que superaron el plazo en su etapa actual."/>
                       <PrefRow section="inapp" k="idle_quotes" label="Cotizaciones sin actividad" desc="Sin movimiento en más de X días."/>
                       {isSeller && <PrefRow section="inapp" k="follow_up" label="Seguimientos vencidos" desc="Cotizaciones con fecha de seguimiento vencida."/>}
+                      {isSeller && <PrefRow section="inapp" k="follow_up_upcoming" label="Seguimientos próximos" desc="Aviso anticipado antes de que venza un seguimiento."/>}
                     </div>
                   </div>
                 </div>

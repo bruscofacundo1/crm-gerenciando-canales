@@ -1212,7 +1212,10 @@ function NotificationsPopover({ onClose, setScreen }) {
     UNLINKED_PRESUPUESTOS: '🔗',
     PENDING_USERS:         '✅',
     OVERDUE_STAGES:        '⏰',
+    IDLE_QUOTES:           '💤',
     FOLLOW_UP_DUE:         '📅',
+    FOLLOW_UP_UPCOMING:    '📆',
+    UNLINKED_SOLICITUDES:  '📋',
   };
 
   const handleAlertAction = (alert) => {
@@ -1289,6 +1292,25 @@ function NotificationsPopover({ onClose, setScreen }) {
                           </div>
                           {alert.description && (
                             <div className="text-[11px] mt-0.5 opacity-80 leading-snug">{alert.description}</div>
+                          )}
+                          {/* Mini-lista: top 3 ítems de la alerta */}
+                          {alert.items?.length > 0 && (
+                            <div className="mt-1.5 space-y-0.5">
+                              {alert.items.slice(0, 3).map((item, i) => (
+                                <div key={i} className="flex items-center gap-1.5 text-[10.5px] opacity-70 leading-snug">
+                                  <span className="font-mono font-medium">{item.code}</span>
+                                  {item.clientName && <span className="truncate">· {item.clientName}</span>}
+                                  {item.daysOld !== undefined && <span className="shrink-0 text-[10px]">· {item.daysOld}d</span>}
+                                  {item.followUpDate && (
+                                    <span className="shrink-0 text-[10px]">· {new Date(item.followUpDate).toLocaleDateString('es-AR', { day:'2-digit', month:'short' })}</span>
+                                  )}
+                                  {item.stage && !item.clientName && <span className="opacity-60">· {item.stage}</span>}
+                                </div>
+                              ))}
+                              {alert.items.length > 3 && (
+                                <div className="text-[10px] opacity-50">+{alert.items.length - 3} más</div>
+                              )}
+                            </div>
                           )}
                         </div>
                         <span className={cx('w-2 h-2 rounded-full mt-1 shrink-0', sevDot[alert.severity])}/>
