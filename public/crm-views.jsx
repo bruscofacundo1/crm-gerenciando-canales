@@ -1197,18 +1197,49 @@ function UserModal({ user, onClose, onSave }) {
               </div>
             </div>
           )}
-          {/* Al editar: campo opcional para cambiar contraseña */}
-          {user && (
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">
-                Nueva contraseña (dejar vacío para no cambiar)
-              </label>
-              <input className="inp w-full" type="password" placeholder="••••••••" {...f('password')}/>
-            </div>
+          {/* Al editar: campo opcional para cambiar contraseña con validación + visibilidad */}
+          {user && (() => {
+            const pw = form.password;
+            const pwRules = pw ? [
+              { label: 'Mínimo 8 caracteres',    ok: pw.length >= 8 },
+              { label: 'Al menos una mayúscula', ok: /[A-Z]/.test(pw) },
+              { label: 'Al menos un número',     ok: /[0-9]/.test(pw) },
+            ] : [];
+            const pwValid = !pw || pwRules.every(r => r.ok);
+            return (
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">
+                  Nueva contraseña (dejar vacío para no cambiar)
+                </label>
+                <div className="relative">
+                  <input
+                    className={cx('inp w-full pr-10', pw && !pwValid && 'border-red-400')}
+                    type={form._showPw ? 'text' : 'password'} placeholder="••••••••" {...f('password')}/>
+                  <button type="button" onClick={() => setForm(v => ({...v, _showPw: !v._showPw}))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700" tabIndex={-1}>
+                    <Icon name={form._showPw ? 'eye-off' : 'eye'} size={15}/>
+                  </button>
+                </div>
+                {pw && (
+                  <div className="space-y-1 mt-2">
+                    {pwRules.map(r => (
+                      <div key={r.label} className={cx('flex items-center gap-2 text-[12px]', r.ok ? 'text-ok' : 'text-ink-400')}>
+                        <Icon name={r.ok ? 'check-circle' : 'circle'} size={13} className={r.ok ? 'text-ok' : 'text-ink-300'}/>
+                        {r.label}
+                      </div>
+                    ))}
+                    <div className="text-[11px] text-ink-400 mt-1.5 leading-relaxed">
+                      Se notificará al usuario por mail que su contraseña fue cambiada.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()
           )}
           <div className="flex gap-2 pt-2">
             <button type="submit" className="btn-primary flex-1 justify-center"
-              disabled={loading || (!user && !!emailError)}>
+              disabled={loading || (!user && !!emailError) || (user && form.password && (form.password.length < 8 || !/[A-Z]/.test(form.password) || !/[0-9]/.test(form.password)))}>
               {loading ? 'Guardando...' : (user ? 'Guardar cambios' : 'Crear usuario')}
             </button>
             <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>

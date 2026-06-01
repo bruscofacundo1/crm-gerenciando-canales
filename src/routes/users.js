@@ -57,22 +57,40 @@ router.post('/:id/approve', authMiddleware, adminOnly, async (req, res) => {
       select: { id: true, name: true, email: true, role: true, zone: true, active: true, createdAt: true },
     });
 
-    const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const roleLabel = role === 'ADMIN' ? 'Administrador' : role === 'VENDEDOR' ? 'Vendedor' : 'Logística';
     await sendMail({
       to: user.email,
-      subject: 'Tu cuenta fue aprobada · MySelec CRM',
-      html: `
-        <div style="font-family:sans-serif;max-width:500px;margin:0 auto">
-          <h2 style="color:#1B2A4A">¡Bienvenido/a a MySelec CRM!</h2>
-          <p>Hola ${user.name}, tu cuenta fue aprobada. Ya podés ingresar al sistema.</p>
-          <p>
-            <a href="${baseUrl}"
-               style="display:inline-block;padding:12px 24px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">
-              Ingresar al CRM
-            </a>
-          </p>
-        </div>
-      `,
+      subject: '🎉 Tu cuenta fue aprobada · MySelec CRM',
+      html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
+<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+  <div style="background:#1B2A4A;padding:28px 32px 24px">
+    <div style="color:#fff;font-size:20px;font-weight:700">🎉 ¡Bienvenido a MySelec CRM!</div>
+  </div>
+  <div style="padding:28px 32px">
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Hola <strong>${user.name}</strong>,
+    </p>
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Tu solicitud de acceso fue aprobada. Ya podés ingresar al sistema con el email y contraseña que usaste al registrarte.
+    </p>
+    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 20px">
+      <div style="font-size:12px;color:#64748B;margin-bottom:4px">Tu cuenta</div>
+      <div style="font-size:14px;color:#1B2A4A"><strong>Email:</strong> ${user.email}</div>
+      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
+    </div>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${APP_URL}" style="display:inline-block;padding:14px 32px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700">
+        Ingresar al CRM →
+      </a>
+    </div>
+  </div>
+  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
+    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
+  </div>
+</div>
+</body></html>`,
     });
 
     res.json(updated);
@@ -337,6 +355,13 @@ router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
       }
     }
 
+    // Validar contraseña si se está cambiando
+    if (password) {
+      if (password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+      if (!/[A-Z]/.test(password)) return res.status(400).json({ error: 'La contraseña debe incluir al menos una mayúscula' });
+      if (!/[0-9]/.test(password)) return res.status(400).json({ error: 'La contraseña debe incluir al menos un número' });
+    }
+
     const data = {};
     if (name)  data.name  = name;
     if (email) data.email = email;
@@ -349,6 +374,47 @@ router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
       data,
       select: { id: true, name: true, email: true, role: true, zone: true, active: true, createdAt: true },
     });
+
+    // Si se cambió la contraseña, notificar al usuario por mail
+    if (password) {
+      const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const adminName = req.user.name || 'Un administrador';
+      sendMail({
+        to: user.email,
+        subject: '🔑 Tu contraseña fue cambiada · MySelec CRM',
+        html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
+<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+  <div style="background:#1B2A4A;padding:24px 32px 20px">
+    <div style="color:#fff;font-size:18px;font-weight:700">🔑 Contraseña actualizada</div>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Hola <strong>${user.name}</strong>,
+    </p>
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      ${adminName} cambió la contraseña de tu cuenta en MySelec CRM. Contactalo para obtener tu nueva contraseña.
+    </p>
+    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px 16px;margin:0 0 20px">
+      <div style="font-size:12px;color:#9A3412;font-weight:600">💡 Recomendación</div>
+      <div style="font-size:12px;color:#9A3412;margin-top:4px">
+        Una vez que ingreses, podés cambiar tu contraseña desde <strong>Mi Perfil → Seguridad</strong>.
+      </div>
+    </div>
+    <div style="text-align:center">
+      <a href="${APP_URL}" style="display:inline-block;padding:12px 28px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700">
+        Ingresar al CRM →
+      </a>
+    </div>
+  </div>
+  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
+    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
+  </div>
+</div>
+</body></html>`,
+      }).catch(err => console.error('Error enviando mail de cambio de contraseña:', err.message));
+    }
+
     res.json(user);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Usuario no encontrado' });
