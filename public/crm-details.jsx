@@ -663,6 +663,10 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [uploading, setUploading] = useState(false);
   const [pdfPreview, setPdfPreview] = useState(null); // { url, filename }
   const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderSubject, setReminderSubject] = useState('');
+  const [reminderBody, setReminderBody] = useState('');
+  const [reminderSending, setReminderSending] = useState(false);
 
   const handleUploadFiles = async (files) => {
     if (!files || files.length === 0) return;
@@ -892,6 +896,12 @@ function QuoteDetail({ code, onClose, canReassign }) {
             onClick={() => setEmailModalOpen(true)}>
             <Icon name="send" size={13}/>Enviar mail
           </button>
+          {q.mailType === 'PRESUPUESTO' && q.stage === 'enviado' && cli?.email && (
+            <button className="btn-ghost text-orange-600 border-orange-300 hover:bg-orange-50"
+              onClick={() => setReminderOpen(true)}>
+              <Icon name="mail" size={13}/>Recordatorio
+            </button>
+          )}
           {canReassign && (
             <div className="relative">
               <button className="btn-primary" onClick={()=>setStageOpen(o=>!o)}>
@@ -1675,6 +1685,73 @@ function QuoteDetail({ code, onClose, canReassign }) {
         }}
       />
     )}
+    {reminderOpen && (() => {
+      const daysSent = Math.floor((Date.now() - new Date(q.createdAt).getTime()) / 86400000);
+      const defSubject = reminderSubject || `Seguimiento presupuesto ${q.flexxus || q.code} — MySelec`;
+      const defBody = reminderBody || `Hola ${cli?.name || ''},\n\nTe escribimos para hacer seguimiento del presupuesto ${q.flexxus || q.code} que te enviamos hace ${daysSent} días.\n\n¿Pudiste revisarlo? Quedamos a disposición para cualquier consulta.\n\nSaludos cordiales,\nEquipo MySelec`;
+      return (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/40" onClick={() => setReminderOpen(false)}/>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setReminderOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-pop w-full max-w-lg border border-line" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-ink-900 text-[14px]">Enviar recordatorio</div>
+                  <div className="text-[11.5px] text-ink-400 mt-0.5">
+                    {q.code} · {cli?.name || 'Sin cliente'} · {daysSent}d sin respuesta
+                  </div>
+                </div>
+                <button onClick={() => setReminderOpen(false)} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
+              </div>
+              <div className="p-5 space-y-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
+                  <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={cli?.email || ''} readOnly/>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-500 mb-1">Asunto</label>
+                  <input className="inp w-full text-[13px]" value={reminderSubject || defSubject}
+                    onChange={e => setReminderSubject(e.target.value)}/>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-500 mb-1">Mensaje</label>
+                  <textarea className="inp w-full text-[13px] min-h-[160px] leading-relaxed"
+                    value={reminderBody || defBody}
+                    onChange={e => setReminderBody(e.target.value)}/>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700">
+                  Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
+                </div>
+              </div>
+              <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+                <button onClick={() => setReminderOpen(false)} className="btn-ghost" disabled={reminderSending}>Cancelar</button>
+                <button className="btn-primary" disabled={reminderSending}
+                  onClick={async () => {
+                    setReminderSending(true);
+                    try {
+                      await CrmApi.sendReminder(q.id, {
+                        subject: reminderSubject || defSubject,
+                        body: reminderBody || defBody,
+                      });
+                      pushToast(`Recordatorio enviado a ${cli?.email}`, 'ok');
+                      setReminderOpen(false);
+                      // Refrescar quote
+                      const fresh = await CrmApi.getQuotes();
+                      setQuotes(fresh);
+                    } catch (err) {
+                      pushToast(err.message || 'Error al enviar', 'bad');
+                    } finally {
+                      setReminderSending(false);
+                    }
+                  }}>
+                  <Icon name="send" size={13}/>{reminderSending ? 'Enviando...' : 'Enviar recordatorio'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    })()}
     </>
   );
 }
