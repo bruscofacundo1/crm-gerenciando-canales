@@ -127,12 +127,47 @@ router.get('/:id', authMiddleware, async (req, res) => {
       where: { id: req.params.id },
       include: {
         defaultSeller: { select: { id: true, name: true } },
-        quotes: { select: { code: true, stage: true, amount: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 20 },
-        orders: { select: { code: true, stage: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 20 },
+        quotes: {
+          select: {
+            id: true, code: true, stage: true, amount: true, mailType: true,
+            flexxusCode: true, linkedQuoteId: true, createdAt: true, updatedAt: true,
+            seller: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' }, take: 50,
+        },
+        orders: {
+          select: {
+            id: true, code: true, stage: true, flexxusCode: true,
+            createdAt: true, updatedAt: true,
+            seller: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' }, take: 20,
+        },
       },
     });
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
-    res.json(client);
+
+    // Timeline: actividades de todas las cotizaciones y órdenes de este cliente
+    const quoteIds = client.quotes.map(q => q.id);
+    const orderIds = client.orders.map(o => o.id);
+    const activities = await prisma.activity.findMany({
+      where: {
+        OR: [
+          ...(quoteIds.length ? [{ quoteId: { in: quoteIds } }] : []),
+          ...(orderIds.length ? [{ orderId: { in: orderIds } }] : []),
+        ],
+      },
+      select: {
+        id: true, action: true, detail: true, createdAt: true,
+        quote: { select: { code: true } },
+        order: { select: { code: true } },
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    res.json({ ...client, activities });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
   }

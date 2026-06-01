@@ -75,6 +75,7 @@ const CrmApi = {
   createUser: (data) => apiFetch('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleUser: (id) => apiFetch(`/users/${id}/toggle`, { method: 'PATCH' }),
+  resendWelcome: (id) => apiFetch(`/users/${id}/resend-welcome`, { method: 'POST' }),
   approveUser: (id, role) => apiFetch(`/users/${id}/approve`, { method: 'POST', body: JSON.stringify({ role }) }),
   rejectUser: (id) => apiFetch(`/users/${id}/reject`, { method: 'POST' }),
   changeUserPassword: (id, password, currentPassword) => apiFetch(`/users/${id}/password`, {

@@ -262,6 +262,65 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
+// POST /api/users/:id/resend-welcome — reenviar mail de bienvenida (admin only)
+router.post('/:id/resend-welcome', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, email: true, role: true } });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Invalidar tokens previos y crear uno nuevo
+    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 48 * 3600 * 1000);
+    await prisma.passwordResetToken.create({ data: { token: resetToken, userId: user.id, expiresAt } });
+
+    const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resetLink = `${APP_URL}?reset=${resetToken}`;
+    const roleLabel = user.role === 'ADMIN' ? 'Administrador' : user.role === 'VENDEDOR' ? 'Vendedor' : 'Logística';
+
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
+<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+  <div style="background:#1B2A4A;padding:28px 32px 24px">
+    <div style="color:#fff;font-size:20px;font-weight:700">🎉 Bienvenido a MySelec CRM</div>
+  </div>
+  <div style="padding:28px 32px">
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Hola <strong>${user.name}</strong>,
+    </p>
+    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Te reenviamos el link para configurar tu contraseña en MySelec CRM.
+    </p>
+    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 20px">
+      <div style="font-size:12px;color:#64748B;margin-bottom:4px">Tu cuenta</div>
+      <div style="font-size:14px;color:#1B2A4A"><strong>Email:</strong> ${user.email}</div>
+      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
+    </div>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${resetLink}" style="display:inline-block;padding:14px 32px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700">
+        Configurar mi contraseña →
+      </a>
+    </div>
+    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px 16px;margin:20px 0 0">
+      <div style="font-size:12px;color:#9A3412;font-weight:600">⚠️ Este enlace expira en 48 horas</div>
+      <div style="font-size:12px;color:#9A3412;margin-top:4px">
+        Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login.
+      </div>
+    </div>
+  </div>
+  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
+    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
+  </div>
+</div>
+</body></html>`;
+
+    await sendMail({ to: user.email, subject: '🎉 Bienvenido a MySelec CRM — Configurá tu contraseña', html });
+    res.json({ ok: true, sentTo: user.email });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/users/:id — actualizar usuario (admin only)
 router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
   try {

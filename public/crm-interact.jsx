@@ -1170,11 +1170,177 @@ function OrderDetailWrapper({ code }) {
   return <OrderDetail code={code} onClose={closeModal} canReassign={roleKey==='admin'}/>;
 }
 
+// ---------- ClientDetail — timeline de un cliente ----------
+function ClientDetailModal({ clientId }) {
+  const { closeModal, openModal } = useApp();
+  const [data, setData] = useS(null);
+  const [loading, setLoading] = useS(true);
+
+  useEff(() => {
+    if (!clientId) return;
+    fetch(`/api/clients/${clientId}`, { headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` } })
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [clientId]);
+
+  if (loading) return (
+    <Modal onClose={closeModal} title="Detalle del cliente" width={720}>
+      <div className="py-16 text-center text-ink-400 text-sm">Cargando...</div>
+    </Modal>
+  );
+  if (!data) return (
+    <Modal onClose={closeModal} title="Cliente no encontrado" width={720}>
+      <div className="py-16 text-center text-ink-400 text-sm">No se pudo cargar la información.</div>
+    </Modal>
+  );
+
+  const mailTypeLabel = { SOLICITUD: 'Solicitud', PRESUPUESTO: 'Presupuesto', NOTA_PEDIDO: 'Nota de Pedido', OC: 'OC' };
+  const mailTypeColor = { SOLICITUD: 'bg-blue-50 text-blue-700', PRESUPUESTO: 'bg-purple-50 text-purple-700', NOTA_PEDIDO: 'bg-orange-50 text-orange-700' };
+
+  const actionIcon = {
+    CREATED:      { icon: 'plus-circle', color: 'text-ok' },
+    STAGE_CHANGE: { icon: 'arrow-right', color: 'text-brand' },
+    NOTE:         { icon: 'message-square', color: 'text-ink-400' },
+    ASSIGNED:     { icon: 'user', color: 'text-purple-500' },
+    EMAIL_SENT:   { icon: 'send', color: 'text-blue-500' },
+  };
+
+  const fmtDate = (d) => new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' });
+  const fmtTime = (d) => new Date(d).toLocaleString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+
+  // Calcular totales
+  const totalAmount = data.quotes.reduce((s, q) => s + (q.amount || 0), 0);
+  const wonCount = data.quotes.filter(q => q.stage === 'aceptada').length;
+  const activeCount = data.quotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
+
+  return (
+    <Modal onClose={closeModal} title={data.name} subtitle={data.cuit || data.code} width={780}
+      footer={
+        <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => { closeModal(); openModal('editClient', { clientId }); }}>
+            <Icon name="pencil" size={13}/>Editar cliente
+          </button>
+          <button className="btn-ghost" onClick={closeModal}>Cerrar</button>
+        </div>
+      }
+    >
+      {/* KPIs */}
+      <div className="grid grid-cols-4 gap-3 mb-5">
+        {[
+          { label: 'Cotizaciones', value: data.quotes.length, color: 'text-ink-800' },
+          { label: 'Activas', value: activeCount, color: 'text-brand' },
+          { label: 'Ganadas', value: wonCount, color: 'text-ok' },
+          { label: 'Monto total', value: totalAmount > 0 ? `U$S ${Math.round(totalAmount).toLocaleString('es-AR')}` : '—', color: 'text-ink-800' },
+        ].map(k => (
+          <div key={k.label} className="bg-surface rounded-lg p-3 text-center">
+            <div className="text-[10px] font-medium text-ink-400 uppercase tracking-wider">{k.label}</div>
+            <div className={cx('text-lg font-bold mt-0.5', k.color)}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Info del cliente */}
+      <div className="bg-surface rounded-lg p-4 mb-5 grid grid-cols-2 gap-x-6 gap-y-2 text-[12.5px]">
+        {data.email && <div><span className="text-ink-400">Email:</span> <span className="text-ink-800">{data.email}</span></div>}
+        {data.phone && <div><span className="text-ink-400">Tel:</span> <span className="text-ink-800">{data.phone}</span></div>}
+        {data.address && <div><span className="text-ink-400">Dir:</span> <span className="text-ink-800">{data.address}</span></div>}
+        {data.city && <div><span className="text-ink-400">Localidad:</span> <span className="text-ink-800">{data.city}{data.province ? `, ${data.province}` : ''}</span></div>}
+        {data.zone && <div><span className="text-ink-400">Zona:</span> <span className="text-ink-800">{data.zone}</span></div>}
+        {data.defaultSeller && <div><span className="text-ink-400">Vendedor:</span> <span className="text-ink-800">{data.defaultSeller.name}</span></div>}
+      </div>
+
+      {/* Cotizaciones */}
+      {data.quotes.length > 0 && (
+        <div className="mb-5">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-400 mb-2">Cotizaciones</div>
+          <div className="border border-line rounded-lg overflow-hidden divide-y divide-line">
+            {data.quotes.map(q => (
+              <button key={q.id} onClick={() => { closeModal(); openModal('quoteDetail', { code: q.code }); }}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-surface text-left transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-mono font-semibold text-ink-800">{q.code}</span>
+                    {q.mailType && <span className={cx('px-1.5 py-0.5 rounded text-[10px] font-semibold', mailTypeColor[q.mailType] || 'bg-surface text-ink-500')}>{mailTypeLabel[q.mailType] || q.mailType}</span>}
+                    {q.flexxusCode && <span className="text-[10px] text-ink-400 font-mono">{q.flexxusCode}</span>}
+                  </div>
+                  <div className="text-[11px] text-ink-400 mt-0.5">
+                    {fmtDate(q.createdAt)}{q.seller ? ` · ${q.seller.name}` : ''}{q.amount ? ` · U$S ${Math.round(q.amount).toLocaleString('es-AR')}` : ''}
+                  </div>
+                </div>
+                <span className={cx('px-2 py-0.5 rounded text-[10px] font-semibold',
+                  q.stage === 'aceptada' ? 'bg-emerald-50 text-emerald-700' :
+                  q.stage === 'rechazada' ? 'bg-red-50 text-red-700' :
+                  'bg-surface text-ink-500'
+                )}>{q.stage}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Órdenes */}
+      {data.orders.length > 0 && (
+        <div className="mb-5">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-400 mb-2">Órdenes de compra</div>
+          <div className="border border-line rounded-lg overflow-hidden divide-y divide-line">
+            {data.orders.map(o => (
+              <button key={o.id} onClick={() => { closeModal(); openModal('orderDetail', { code: o.code }); }}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-surface text-left transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-mono font-semibold text-ink-800">{o.code}</div>
+                  <div className="text-[11px] text-ink-400 mt-0.5">
+                    {fmtDate(o.createdAt)}{o.seller ? ` · ${o.seller.name}` : ''}{o.flexxusCode ? ` · NP: ${o.flexxusCode}` : ''}
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-surface text-ink-500">{o.stage}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline de actividades */}
+      {data.activities?.length > 0 && (
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-400 mb-2">Actividad reciente</div>
+          <div className="space-y-0">
+            {data.activities.map((a, i) => {
+              const ai = actionIcon[a.action] || { icon: 'activity', color: 'text-ink-300' };
+              const ref = a.quote?.code || a.order?.code || '';
+              return (
+                <div key={a.id} className="flex gap-3 py-2.5 group">
+                  <div className="flex flex-col items-center">
+                    <div className={cx('w-6 h-6 rounded-full flex items-center justify-center bg-surface shrink-0', ai.color)}>
+                      <Icon name={ai.icon} size={12}/>
+                    </div>
+                    {i < data.activities.length - 1 && <div className="w-px flex-1 bg-line mt-1"/>}
+                  </div>
+                  <div className="flex-1 min-w-0 pb-1">
+                    <div className="text-[12.5px] text-ink-700 leading-snug">
+                      {ref && <span className="font-mono font-medium text-brand mr-1">{ref}</span>}
+                      {(a.detail || '').replace(/\[.*?\]\s*/, '').substring(0, 200)}
+                    </div>
+                    <div className="text-[10.5px] text-ink-400 mt-0.5">
+                      {fmtTime(a.createdAt)}{a.user?.name ? ` · ${a.user.name}` : ''}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 const MODAL_REGISTRY = {
   newQuote: NewQuoteModal,
   newOrder: NewOrderModal,
   newClient: NewClientModal,
   editClient: EditClientModal,
+  clientDetail: ClientDetailModal,
   inviteUser: InviteUserModal,
   permissions: PermissionsModal,
   search: SearchPaletteModal,

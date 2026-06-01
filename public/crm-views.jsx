@@ -911,6 +911,7 @@ function Clients({ readonly=false }) {
             </div>
             {!readonly && (
               <div className="flex gap-2">
+                <button className="btn-ghost" onClick={()=>openModal('clientDetail', { clientId: cli.id })}><Icon name="clock" size={13}/>Timeline</button>
                 <button className="btn-ghost" onClick={()=>openModal('editClient', { clientId: cli.id })}><Icon name="pencil" size={13}/>Editar</button>
                 {isAdmin && (
                   <button
@@ -1408,6 +1409,19 @@ function Team() {
                 </span>
               </button>
             )}
+            <button
+              onClick={async () => {
+                try {
+                  await CrmApi.resendWelcome(u.id);
+                  pushToast(`Mail de bienvenida reenviado a ${u.email}`, 'ok');
+                } catch (e) { pushToast(e.message || 'Error al reenviar', 'bad'); }
+              }}
+              className="btn-ghost p-1.5 relative group" title="Reenviar mail de bienvenida">
+              <Icon name="mail" size={13} className="text-ink-400"/>
+              <span className="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-ink-900 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-10">
+                Reenviar bienvenida
+              </span>
+            </button>
             <button onClick={() => setModal({ mode:'edit', user: u })}
               className="btn-ghost p-1.5" title="Editar">
               <Icon name="pencil" size={13} className="text-ink-500"/>
