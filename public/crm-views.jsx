@@ -2330,6 +2330,7 @@ function Config() {
         { id:'notifs',   label:'Notificaciones' },
         { id:'articles', label:'Artículos' },
         { id:'access',   label:'Acceso' },
+        { id:'logs',     label:'Registros' },
       ]}/>
 
       {tab==='stages' && (
@@ -2993,6 +2994,168 @@ function Config() {
         </div>
       )}
 
+      {tab==='logs' && <LoginLogs/>}
+
+    </div>
+  );
+}
+
+// ---------- LoginLogs — registros de ingreso ----------
+function LoginLogs() {
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [page,    setPage]    = useState(1);
+  const [filters, setFilters] = useState({ email: '', result: '', from: '', to: '' });
+  const [applied, setApplied] = useState({ email: '', result: '', from: '', to: '' });
+
+  const load = async (p = 1, f = applied) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(p) });
+      if (f.email)  params.set('email',  f.email);
+      if (f.result) params.set('result', f.result);
+      if (f.from)   params.set('from',   f.from);
+      if (f.to)     params.set('to',     f.to);
+      const res = await fetch(`/api/logs/logins?${params}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+      });
+      setData(await res.json());
+    } catch (_) {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(1); }, []);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    setApplied(filters);
+    setPage(1);
+    load(1, filters);
+  };
+
+  const handleExport = async () => {
+    try {
+      const res = await fetch('/api/logs/logins/export', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+      });
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `logins-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (_) {}
+  };
+
+  return (
+    <div className="p-6 max-w-4xl space-y-4">
+      <div className="bg-white border border-line rounded-xl overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-line flex items-center justify-between">
+          <div>
+            <div className="font-semibold text-[13px]">Registros de ingreso</div>
+            <div className="text-[11.5px] text-ink-400 mt-0.5">Historial de accesos al CRM (últimos 90 días)</div>
+          </div>
+          {data?.showExportAlert && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5">
+                <Icon name="alert-circle" size={12}/>
+                {data.totalAll} registros — exportá para liberar espacio
+              </div>
+              <button onClick={handleExport} className="btn-primary text-[12px] py-1.5">
+                <Icon name="download" size={13}/>Exportar CSV
+              </button>
+            </div>
+          )}
+          {!data?.showExportAlert && data && (
+            <button onClick={handleExport} className="btn-ghost text-[12px]">
+              <Icon name="download" size={13}/>Exportar CSV
+            </button>
+          )}
+        </div>
+
+        {/* Filtros */}
+        <form onSubmit={handleSearch} className="px-5 py-3 border-b border-line flex flex-wrap gap-2 items-end">
+          <div>
+            <label className="block text-[10px] font-medium text-ink-500 mb-1">Email</label>
+            <input className="inp text-[12px] w-44" placeholder="Buscar email..."
+              value={filters.email} onChange={e => setFilters(f => ({...f, email: e.target.value}))}/>
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-ink-500 mb-1">Resultado</label>
+            <select className="inp text-[12px] w-32"
+              value={filters.result} onChange={e => setFilters(f => ({...f, result: e.target.value}))}>
+              <option value="">Todos</option>
+              <option value="ok">Exitosos</option>
+              <option value="failed">Fallidos</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-ink-500 mb-1">Desde</label>
+            <input type="date" className="inp text-[12px] w-36"
+              value={filters.from} onChange={e => setFilters(f => ({...f, from: e.target.value}))}/>
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-ink-500 mb-1">Hasta</label>
+            <input type="date" className="inp text-[12px] w-36"
+              value={filters.to} onChange={e => setFilters(f => ({...f, to: e.target.value}))}/>
+          </div>
+          <button type="submit" className="btn-ghost text-[12px]"><Icon name="search" size={13}/>Filtrar</button>
+        </form>
+
+        {/* Tabla */}
+        {loading ? (
+          <div className="py-12 text-center text-ink-400 text-sm">Cargando...</div>
+        ) : !data?.logs?.length ? (
+          <div className="py-12 text-center text-ink-400 text-sm">Sin registros para los filtros aplicados.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="bg-surface border-b border-line text-left text-[11px] font-semibold text-ink-500 uppercase tracking-wider">
+                  <th className="px-4 py-2.5">Fecha y hora</th>
+                  <th className="px-4 py-2.5">Usuario</th>
+                  <th className="px-4 py-2.5">Email</th>
+                  <th className="px-4 py-2.5">Resultado</th>
+                  <th className="px-4 py-2.5">IP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {data.logs.map(l => (
+                  <tr key={l.id} className="hover:bg-surface/50">
+                    <td className="px-4 py-2.5 font-mono text-ink-500 whitespace-nowrap">
+                      {new Date(l.createdAt).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-ink-800">{l.user?.name || <span className="text-ink-300 italic">desconocido</span>}</td>
+                    <td className="px-4 py-2.5 text-ink-600">{l.email}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={cx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold',
+                        l.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
+                        {l.success ? '✅ Exitoso' : '❌ Fallido'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-ink-400 text-[11px]">{l.ip || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Paginación */}
+        {data?.pages > 1 && (
+          <div className="px-5 py-3 border-t border-line flex items-center justify-between text-[12px]">
+            <span className="text-ink-400">{data.total} resultado{data.total !== 1 ? 's' : ''}</span>
+            <div className="flex gap-1">
+              <button onClick={() => { setPage(p => p-1); load(page-1); }} disabled={page <= 1}
+                className="btn-ghost py-1 px-2 disabled:opacity-30">← Anterior</button>
+              <span className="px-3 py-1 text-ink-500">{page} / {data.pages}</span>
+              <button onClick={() => { setPage(p => p+1); load(page+1); }} disabled={page >= data.pages}
+                className="btn-ghost py-1 px-2 disabled:opacity-30">Siguiente →</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

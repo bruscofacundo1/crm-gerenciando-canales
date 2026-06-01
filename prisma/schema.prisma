@@ -32,6 +32,7 @@ model User {
   activities        Activity[]
   clientsDefault    Client[]             @relation("DefaultSeller")
   passwordResetTokens PasswordResetToken[]
+  loginLogs           LoginLog[]
 }
 
 // ─── Tokens de recuperación de contraseña ───
@@ -309,4 +310,21 @@ model Article {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+
+// ─── Logs de ingreso ────────────────────────────────────────────────────────
+model LoginLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  email     String
+  success   Boolean
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([email])
 }

@@ -51,6 +51,20 @@ router.get('/config', async (req, res) => {
 });
 
 // POST /api/auth/login
+// Helper: registrar intento de login (async, no bloquea respuesta)
+async function logLogin({ email, userId, success, req }) {
+  try {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+              || req.socket?.remoteAddress
+              || null;
+    const userAgent = req.headers['user-agent']?.substring(0, 200) || null;
+    await prisma.loginLog.create({ data: { email, userId: userId || null, success, ip, userAgent } });
+    // Limpiar logs viejos: mantener solo últimos 90 días
+    const cutoff = new Date(Date.now() - 90 * 86400 * 1000);
+    prisma.loginLog.deleteMany({ where: { createdAt: { lt: cutoff } } }).catch(() => {});
+  } catch (_) {} // nunca romper el login por un error de log
+}
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -59,18 +73,27 @@ router.post('/login', async (req, res) => {
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!user) {
+      logLogin({ email, userId: null, success: false, req });
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
     if (user.pendingApproval) {
+      logLogin({ email, userId: user.id, success: false, req });
       return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación. Te avisaremos por mail cuando esté lista.' });
     }
     if (!user.active) {
+      logLogin({ email, userId: user.id, success: false, req });
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
+      logLogin({ email, userId: user.id, success: false, req });
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
+
+    // Login exitoso
+    logLogin({ email, userId: user.id, success: true, req });
 
     const { rememberMe } = req.body;
     const token = jwt.sign(

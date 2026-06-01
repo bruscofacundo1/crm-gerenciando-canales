@@ -91,6 +91,7 @@ app.use('/api/data',          require('./routes/data'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/settings',      require('./routes/settings'));
 app.use('/api/articles',      require('./routes/articles'));
+app.use('/api/logs',          require('./routes/logs'));
 
 // POST /api/quotes/:id/attachments — upload de adjunto manual
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'attachments');
