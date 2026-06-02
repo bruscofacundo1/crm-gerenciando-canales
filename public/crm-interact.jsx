@@ -1589,18 +1589,37 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
   const [subject, setSubject] = useS(defaultSubject);
   const [body, setBody]       = useS(defaultBody);
   const [sending, setSending] = useS(false);
+  const [sendAccounts, setSendAccounts] = useS([]);
+  const [fromEmail, setFromEmail]       = useS('');
+
+  // Cargar cuentas de envío
+  React.useEffect(() => {
+    CrmApi.getSendAccounts().then(data => {
+      setSendAccounts(data.accounts || []);
+      setFromEmail(data.defaultAccount || '');
+    }).catch(() => {});
+  }, []);
 
   const handleSend = async () => {
     setSending(true);
     try {
-      await CrmApi.sendReminder(item.id, { subject, body });
-      pushToast(`Recordatorio enviado a ${item.clientEmail}`, 'ok');
+      await CrmApi.sendReminder(item.id, { subject, body, fromEmail: fromEmail || null });
+      pushToast('Recordatorio enviado a ' + item.clientEmail, 'ok');
       onSent();
     } catch (err) {
       pushToast(err.message || 'Error al enviar', 'bad');
     } finally {
       setSending(false);
     }
+  };
+
+  const buildGmailUrl = () => {
+    const params = new URLSearchParams();
+    if (item.clientEmail) params.set('to', item.clientEmail);
+    params.set('su', subject || '');
+    params.set('body', body || '');
+    params.set('view', 'cm'); params.set('fs', '1');
+    return 'https://mail.google.com/mail/?' + params.toString();
   };
 
   return (
@@ -1618,6 +1637,14 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
             <button onClick={onClose} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
           </div>
           <div className="p-5 space-y-3">
+            {sendAccounts.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-medium text-ink-500 mb-1">Desde</label>
+                <select className="inp w-full text-[13px]" value={fromEmail} onChange={e => setFromEmail(e.target.value)}>
+                  {sendAccounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
               <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={item.clientEmail} readOnly/>
@@ -1634,11 +1661,16 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
               Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
             </div>
           </div>
-          <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+          <div className="px-5 py-4 border-t border-line flex items-center justify-between">
             <button onClick={onClose} className="btn-ghost" disabled={sending}>Cancelar</button>
-            <button onClick={handleSend} className="btn-primary" disabled={sending || !subject || !body}>
-              <Icon name="send" size={13}/>{sending ? 'Enviando...' : 'Enviar recordatorio'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={handleSend} className="btn-primary" disabled={sending || !subject || !body}>
+                <Icon name="send" size={13}/>{sending ? 'Enviando...' : 'Enviar recordatorio'}
+              </button>
+              <button className="btn-ghost border border-line" onClick={() => window.open(buildGmailUrl(), '_blank')}>
+                <Icon name="external-link" size={13}/>Abrir en Gmail
+              </button>
+            </div>
           </div>
         </div>
       </div>

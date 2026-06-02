@@ -276,6 +276,9 @@ async function getTransportForEmail(email, fromName) {
       host: smtp.host, port: smtp.port, secure: smtp.secure,
       auth: { user: account.user, pass: account.password },
       tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000,  // 10s para conectar
+      greetingTimeout: 10000,
+      socketTimeout: 15000,      // 15s para enviar
     });
 
     return { transport, fromEmail: account.user, fromName: fromName || 'MySelec' };

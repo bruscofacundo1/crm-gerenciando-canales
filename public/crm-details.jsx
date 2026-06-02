@@ -448,6 +448,27 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
   );
 }
 
+// ─── Selector "Desde" reutilizable para recordatorios ─────────────────────────
+function ReminderFromSelector({ quoteId }) {
+  const [accounts, setAccounts] = React.useState([]);
+  const [selected, setSelected] = React.useState('');
+  React.useEffect(() => {
+    CrmApi.getSendAccounts().then(data => {
+      setAccounts(data.accounts || []);
+      setSelected(data.defaultAccount || '');
+    }).catch(() => {});
+  }, []);
+  if (!accounts.length) return null;
+  return (
+    <div>
+      <label className="block text-[11px] font-medium text-ink-500 mb-1">Desde</label>
+      <select id={'reminder-from-' + quoteId} className="inp w-full text-[13px]" value={selected} onChange={e => setSelected(e.target.value)}>
+        {accounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
+      </select>
+    </div>
+  );
+}
+
 // ─── Modal: Enviar presupuesto por email ─────────────────────────────────────
 function SendEmailModal({ quote, attachments, onClose, onSent }) {
   const { pushToast } = useApp();
@@ -568,6 +589,18 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto scroll-thin px-5 py-4 space-y-3">
+          {/* Desde (selector de cuenta) */}
+          {sendAccounts.length > 0 && (
+            <div>
+              <label className="text-[11px] font-semibold text-ink-600 uppercase tracking-wide mb-1 block">Desde</label>
+              <select className="inp w-full text-sm" value={fromEmail} onChange={e => setFromEmail(e.target.value)}>
+                {sendAccounts.map(acc => (
+                  <option key={acc} value={acc}>{acc}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Template selector */}
           {templates.length > 0 && (
             <div>
@@ -606,24 +639,12 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
               value={body} onChange={e => setBody(e.target.value)}/>
           </div>
 
-          {/* Selector de cuenta "Desde" */}
-          {sendAccounts.length > 0 && (
-            <div>
-              <label className="text-[11px] font-semibold text-ink-600 uppercase tracking-wide mb-1 block">Desde</label>
-              <select className="inp w-full text-sm" value={fromEmail} onChange={e => setFromEmail(e.target.value)}>
-                {sendAccounts.map(acc => (
-                  <option key={acc} value={acc}>{acc}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Nota adjunto para Gmail */}
+          {/* Nota informativa */}
           <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[12px] text-blue-800">
             <Icon name="info" size={13} className="shrink-0 mt-0.5 text-blue-500"/>
             <span>
-              <strong>Enviar:</strong> manda el mail directo con el adjunto PDF (si hay).<br/>
-              <strong>Abrir en Gmail:</strong> abre un borrador en Gmail para agregar firma o personalizar.
+              <strong>Enviar:</strong> manda el mail directo desde el CRM con el adjunto PDF incluido (si hay).<br/>
+              <strong>Abrir en Gmail:</strong> abre un borrador en Gmail para agregar firma o personalizar. <em>El adjunto PDF hay que cargarlo a mano en Gmail.</em>
             </span>
           </div>
         </div>
@@ -1738,6 +1759,14 @@ function QuoteDetail({ code, onClose, canReassign }) {
       const daysSent = Math.floor((Date.now() - new Date(q.createdAt).getTime()) / 86400000);
       const defSubject = reminderSubject || `Seguimiento presupuesto ${q.flexxus || q.code} — MySelec`;
       const defBody = reminderBody || `Hola ${cli?.name || ''},\n\nTe escribimos para hacer seguimiento del presupuesto ${q.flexxus || q.code} que te enviamos hace ${daysSent} días.\n\n¿Pudiste revisarlo? Quedamos a disposición para cualquier consulta.\n\nSaludos cordiales,\nEquipo MySelec`;
+      const buildReminderGmailUrl = () => {
+        const params = new URLSearchParams();
+        if (cli?.email) params.set('to', cli.email);
+        params.set('su', reminderSubject || defSubject);
+        params.set('body', reminderBody || defBody);
+        params.set('view', 'cm'); params.set('fs', '1');
+        return 'https://mail.google.com/mail/?' + params.toString();
+      };
       return (
         <>
           <div className="fixed inset-0 z-50 bg-black/40" onClick={() => setReminderOpen(false)}/>
@@ -1753,6 +1782,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                 <button onClick={() => setReminderOpen(false)} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
               </div>
               <div className="p-5 space-y-3">
+                <ReminderFromSelector quoteId={q.id}/>
                 <div>
                   <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
                   <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={cli?.email || ''} readOnly/>
@@ -1772,29 +1802,36 @@ function QuoteDetail({ code, onClose, canReassign }) {
                   Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
                 </div>
               </div>
-              <div className="px-5 py-4 border-t border-line flex justify-end gap-2">
+              <div className="px-5 py-4 border-t border-line flex items-center justify-between">
                 <button onClick={() => setReminderOpen(false)} className="btn-ghost" disabled={reminderSending}>Cancelar</button>
-                <button className="btn-primary" disabled={reminderSending}
-                  onClick={async () => {
-                    setReminderSending(true);
-                    try {
-                      await CrmApi.sendReminder(q.id, {
-                        subject: reminderSubject || defSubject,
-                        body: reminderBody || defBody,
-                      });
-                      pushToast(`Recordatorio enviado a ${cli?.email}`, 'ok');
-                      setReminderOpen(false);
-                      // Refrescar quote
-                      const fresh = await CrmApi.getQuotes();
-                      setQuotes(fresh);
-                    } catch (err) {
-                      pushToast(err.message || 'Error al enviar', 'bad');
-                    } finally {
-                      setReminderSending(false);
-                    }
-                  }}>
-                  <Icon name="send" size={13}/>{reminderSending ? 'Enviando...' : 'Enviar recordatorio'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button className="btn-primary" disabled={reminderSending}
+                    onClick={async () => {
+                      setReminderSending(true);
+                      try {
+                        const fromEl = document.getElementById('reminder-from-' + q.id);
+                        const fromEmail = fromEl ? fromEl.value : null;
+                        await CrmApi.sendReminder(q.id, {
+                          subject: reminderSubject || defSubject,
+                          body: reminderBody || defBody,
+                          fromEmail,
+                        });
+                        pushToast('Recordatorio enviado a ' + (cli?.email || ''), 'ok');
+                        setReminderOpen(false);
+                        const fresh = await CrmApi.getQuotes();
+                        setQuotes(fresh);
+                      } catch (err) {
+                        pushToast(err.message || 'Error al enviar', 'bad');
+                      } finally {
+                        setReminderSending(false);
+                      }
+                    }}>
+                    <Icon name="send" size={13}/>{reminderSending ? 'Enviando...' : 'Enviar recordatorio'}
+                  </button>
+                  <button className="btn-ghost border border-line" onClick={() => { window.open(buildReminderGmailUrl(), '_blank'); }}>
+                    <Icon name="external-link" size={13}/>Abrir en Gmail
+                  </button>
+                </div>
               </div>
             </div>
           </div>
