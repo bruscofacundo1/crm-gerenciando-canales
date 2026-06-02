@@ -4202,8 +4202,9 @@ function Comparativa() {
 
 // ─── FeedbackView — Foro de soporte interno ────────────────────────────────
 function FeedbackView() {
-  const { user } = useApp();
-  const isAdmin = user?.role === 'ADMIN';
+  const { roleKey, currentUserId } = useApp();
+  const isAdmin = roleKey === 'admin';
+  const user = CrmAuth.getUser();
 
   const [posts,       setPosts]       = useState([]);
   const [meta,        setMeta]        = useState({ meetingLink: '', templates: {} });
@@ -4317,8 +4318,8 @@ function FeedbackView() {
   };
   const STATUS_LABELS = { OPEN: 'Abierto', IN_PROGRESS: 'En progreso', RESOLVED: 'Resuelto' };
 
-  const myPosts    = posts.filter(p => p.userId === user?.id);
-  const otherPosts = isAdmin ? posts.filter(p => p.userId !== user?.id) : [];
+  const myPosts    = posts.filter(p => p.userId === currentUserId);
+  const otherPosts = isAdmin ? posts.filter(p => p.userId !== currentUserId) : [];
 
   const filteredAdmin = isAdmin
     ? (filter === 'ALL' ? posts : posts.filter(p => p.status === filter))
