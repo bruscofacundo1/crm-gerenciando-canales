@@ -43,10 +43,10 @@ async function emailAllowed(email) {
 // GET /api/auth/config — configuración pública (sin auth) para el frontend
 router.get('/config', async (req, res) => {
   try {
-    const domains = await getAllowedDomains();
-    res.json({ allowedDomains: domains });
+    const [domains, emails] = await Promise.all([getAllowedDomains(), getAllowedEmails()]);
+    res.json({ allowedDomains: domains, allowedEmails: emails });
   } catch (err) {
-    res.json({ allowedDomains: DEFAULT_ALLOWED_DOMAINS.split(',') });
+    res.json({ allowedDomains: DEFAULT_ALLOWED_DOMAINS.split(','), allowedEmails: [] });
   }
 });
 

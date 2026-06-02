@@ -1096,27 +1096,33 @@ function UserModal({ user, onClose, onSave }) {
   const [loading,    setLoading]    = useState(false);
   const [emailError, setEmailError] = useState('');
   const [allowedDomains, setAllowedDomains] = useState([]);
+  const [allowedEmails, setAllowedEmails] = useState([]);
   const { pushToast } = useApp();
 
-  // Cargar dominios permitidos al montar
+  // Cargar dominios y correos permitidos al montar
   useEffect(() => {
     fetch('/api/auth/config').then(r => r.json())
-      .then(d => setAllowedDomains(d.allowedDomains || []))
+      .then(d => {
+        setAllowedDomains(d.allowedDomains || []);
+        setAllowedEmails((d.allowedEmails || []).map(e => e.toLowerCase()));
+      })
       .catch(() => {});
   }, []);
 
   // Validar dominio del email en tiempo real
   useEffect(() => {
     if (!form.email || user || allowedDomains.length === 0) { setEmailError(''); return; }
-    const domain = form.email.split('@')[1]?.toLowerCase();
+    const normalized = form.email.toLowerCase().trim();
+    // Si el correo completo está en la whitelist individual, permitir
+    if (allowedEmails.includes(normalized)) { setEmailError(''); return; }
+    const domain = normalized.split('@')[1];
     if (!domain) { setEmailError(''); return; }
-    // Verificar dominio (la whitelist de emails individuales se valida server-side)
     if (!allowedDomains.includes(domain)) {
-      setEmailError(`Dominio @${domain} no permitido. Válidos: ${allowedDomains.join(', ')}`);
+      setEmailError(`Dominio @${domain} no permitido. Válidos: ${allowedDomains.join(', ')}. También podés agregar correos individuales en Config → Acceso.`);
     } else {
       setEmailError('');
     }
-  }, [form.email, allowedDomains, user]);
+  }, [form.email, allowedDomains, allowedEmails, user]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
