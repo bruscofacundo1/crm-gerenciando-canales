@@ -94,6 +94,29 @@ app.use('/api/articles',      require('./routes/articles'));
 app.use('/api/logs',          require('./routes/logs'));
 app.use('/api/feedback',      require('./routes/feedback'));
 
+// POST /api/feedback/upload-image — captura de pantalla adjunta al reporte
+const FEEDBACK_IMG_DIR = path.join(__dirname, '..', 'uploads', 'feedback');
+require('fs').mkdirSync(FEEDBACK_IMG_DIR, { recursive: true });
+const feedbackImgStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, FEEDBACK_IMG_DIR),
+  filename:    (req, file, cb) => {
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._\-]/g, '_');
+    cb(null, `${Date.now()}-${safe}`);
+  },
+});
+const feedbackUpload = multer({
+  storage: feedbackImgStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (['image/jpeg','image/png','image/gif','image/webp'].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes PNG, JPG, GIF o WEBP.'));
+  },
+});
+app.post('/api/feedback/upload-image', authMiddleware, feedbackUpload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió imagen.' });
+  res.json({ url: `/uploads/feedback/${req.file.filename}` });
+});
+
 // POST /api/quotes/:id/attachments — upload de adjunto manual
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'attachments');
 const storage = multer.diskStorage({

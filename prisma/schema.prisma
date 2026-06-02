@@ -318,11 +318,15 @@ model Article {
 // ─── Foro de feedback / soporte interno ─────────────────────────────────────
 model FeedbackPost {
   id        String             @id @default(uuid())
-  type      String             // "BUG" | "QUESTION" | "MEETING"
+  code      String             @unique          // MYS-0001
+  type      String             // "BUG" | "QUESTION"
+  module    String?            // Cotizaciones | Órdenes de Compra | Clientes | etc.
   title     String
   body      String             @db.Text
-  status    String             @default("OPEN") // "OPEN" | "IN_PROGRESS" | "RESOLVED"
-  voters    String[]           @default([])     // IDs de usuarios que hicieron +1
+  imageUrl  String?            // Captura adjunta (opcional)
+  status    String             @default("OPEN")
+  // OPEN | REVIEWING | PENDING_FIX | SCHEDULE_MEETING | RESPONDED | RESOLVED | CLOSED
+  voters    String[]           @default([])
   userId    String
   user      User               @relation("FeedbackAuthor", fields: [userId], references: [id])
   responses FeedbackResponse[]

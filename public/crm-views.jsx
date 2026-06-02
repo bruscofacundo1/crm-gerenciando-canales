@@ -4201,432 +4201,695 @@ function Comparativa() {
 }
 
 // ─── FeedbackView — Foro de soporte interno ────────────────────────────────
+
+const FEEDBACK_MODULES = ['Cotizaciones','Órdenes de Compra','Clientes','Correo / Mail','Notificaciones','Configuración','Otro'];
+
+const FEEDBACK_STATUS = {
+  OPEN:             { label: 'Abierto',                 dot: 'bg-blue-400',   badge: 'bg-blue-100 text-blue-700 border-blue-200' },
+  REVIEWING:        { label: 'En revisión',             dot: 'bg-yellow-400', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  PENDING_FIX:      { label: 'Pendiente de corrección', dot: 'bg-orange-400', badge: 'bg-orange-100 text-orange-700 border-orange-200' },
+  SCHEDULE_MEETING: { label: 'Agendar reunión',         dot: 'bg-violet-400', badge: 'bg-violet-100 text-violet-700 border-violet-200' },
+  RESPONDED:        { label: 'Respondido',              dot: 'bg-green-400',  badge: 'bg-green-100 text-green-700 border-green-200' },
+  RESOLVED:         { label: 'Resuelto',                dot: 'bg-emerald-500',badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  CLOSED:           { label: 'Cerrado',                 dot: 'bg-slate-400',  badge: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+
+function FbStatusBadge({ status, size = 'sm' }) {
+  const s = FEEDBACK_STATUS[status] || FEEDBACK_STATUS.OPEN;
+  return (
+    <span className={cx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium', size === 'xs' ? 'text-[10px]' : 'text-[11px]', s.badge)}>
+      <span className={cx('w-1.5 h-1.5 rounded-full', s.dot)}/>
+      {s.label}
+    </span>
+  );
+}
+
+function FbTypeBadge({ type }) {
+  if (type === 'BUG') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-red-50 text-red-700 border-red-200"><Icon name="alert-circle" size={10}/>Error</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold bg-blue-50 text-blue-700 border-blue-200"><Icon name="help-circle" size={10}/>Pregunta</span>;
+}
+
+// ── Vista lista ───────────────────────────────────────────────────────────────
+function FeedbackListView({ onNew, onOpen, posts, loading, isAdmin, currentUserId }) {
+  const [search,     setSearch]     = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [stFilter,   setStFilter]   = useState('ALL');
+
+  const filtered = posts.filter(p => {
+    if (typeFilter !== 'ALL' && p.type !== typeFilter) return false;
+    if (stFilter   !== 'ALL' && p.status !== stFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      if (!p.title.toLowerCase().includes(q) && !p.code.toLowerCase().includes(q) && !p.user.name.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const counts = {
+    total:    posts.length,
+    open:     posts.filter(p => p.status === 'OPEN').length,
+    resolved: posts.filter(p => p.status === 'RESOLVED' || p.status === 'CLOSED').length,
+  };
+
+  const ST_FILTERS = [
+    { k: 'ALL',             label: 'Todos' },
+    { k: 'OPEN',            label: 'Abierto' },
+    { k: 'REVIEWING',       label: 'En revisión' },
+    { k: 'PENDING_FIX',     label: 'Pendiente de corrección' },
+    { k: 'SCHEDULE_MEETING',label: 'Agendar reunión' },
+    { k: 'RESPONDED',       label: 'Respondido' },
+    { k: 'RESOLVED',        label: 'Resuelto' },
+    { k: 'CLOSED',          label: 'Cerrado' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-6 py-5">
+        <div className="max-w-4xl mx-auto flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Icon name="message-circle" size={20} className="text-brand"/>
+              Foro de Soporte
+            </h1>
+            <p className="text-sm text-slate-500 mt-0.5">Reportá errores o hacé preguntas sobre el sistema. El equipo responde y hace seguimiento de forma pública.</p>
+          </div>
+          <button onClick={onNew}
+            className="shrink-0 flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 shadow-sm">
+            <Icon name="plus" size={15}/>Nueva publicación
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="max-w-4xl mx-auto mt-4 flex items-center gap-6">
+          <div className="text-sm text-slate-500"><span className="font-bold text-slate-800 text-base">{counts.total}</span> {counts.total === 1 ? 'caso total' : 'casos totales'}</div>
+          <div className="text-sm text-slate-500"><span className="font-bold text-blue-600 text-base">{counts.open}</span> abiertos</div>
+          <div className="text-sm text-slate-500"><span className="font-bold text-emerald-600 text-base">{counts.resolved}</span> resueltos</div>
+        </div>
+
+        {/* Admin banner */}
+        {isAdmin && (
+          <div className="max-w-4xl mx-auto mt-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-[12px] text-amber-800 flex items-center gap-2">
+            <Icon name="shield-check" size={13} className="text-amber-500 shrink-0"/>
+            Estás viendo el foro como <strong>administrador</strong> — podés responder casos y cambiar su estado.
+          </div>
+        )}
+      </div>
+
+      {/* Filtros */}
+      <div className="max-w-4xl mx-auto px-6 pt-4 pb-2 space-y-2">
+        {/* Buscador */}
+        <div className="relative">
+          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por título, código (MYS-…) o autor…"
+            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand/30"/>
+        </div>
+
+        {/* Chips tipo + estado */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Tipo:</span>
+          {[['ALL','Todos'],['BUG','🐛 Errores'],['QUESTION','❓ Preguntas']].map(([k,lbl]) => (
+            <button key={k} onClick={() => setTypeFilter(k)}
+              className={cx('px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all',
+                typeFilter === k ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+              {lbl}
+            </button>
+          ))}
+          <span className="ml-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Estado:</span>
+          {ST_FILTERS.map(({ k, label }) => (
+            <button key={k} onClick={() => setStFilter(k)}
+              className={cx('px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all',
+                stFilter === k ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="max-w-4xl mx-auto px-6 pb-10 space-y-2">
+        {loading ? (
+          <div className="flex justify-center py-16 text-slate-400"><Icon name="loader" size={22} className="animate-spin"/></div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+            <Icon name="message-circle" size={30} className="mx-auto mb-2 opacity-30"/>
+            <p className="text-sm">No hay publicaciones con ese filtro.</p>
+          </div>
+        ) : filtered.map(post => {
+          const voteCount      = (post.voters || []).length;
+          const totalReporters = voteCount + 1;
+          const iVoted         = (post.voters || []).includes(currentUserId);
+          return (
+            <button key={post.id} onClick={() => onOpen(post.id)}
+              className="w-full text-left bg-white border border-slate-200 rounded-xl px-4 py-3.5 hover:border-brand/40 hover:shadow-sm transition-all flex gap-3 items-start">
+
+              {/* Contador votos */}
+              <div className={cx('shrink-0 flex flex-col items-center justify-center w-10 h-10 rounded-lg border text-center',
+                iVoted ? 'bg-brand/5 border-brand/30 text-brand' : 'bg-slate-50 border-slate-200 text-slate-400')}>
+                <Icon name="chevron-up" size={12}/>
+                <span className="text-[11px] font-bold leading-none">{totalReporters}</span>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                {/* Badges + código */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <FbTypeBadge type={post.type}/>
+                  <FbStatusBadge status={post.status} size="xs"/>
+                  <span className="text-[10px] text-slate-400 font-mono">{post.code}</span>
+                  {post.module && <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">{post.module}</span>}
+                </div>
+
+                {/* Título */}
+                <div className="font-semibold text-sm text-slate-800 leading-snug truncate">{post.title}</div>
+
+                {/* Meta */}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <span className="text-[11px] text-slate-500 font-medium">{post.user.name}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] text-slate-400">{fmtDate(post.createdAt)}</span>
+                  {post.responses.length > 0 && <>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-[11px] text-slate-400 flex items-center gap-0.5">
+                      <Icon name="message-square" size={10}/>{post.responses.length} {post.responses.length === 1 ? 'respuesta' : 'respuestas'}
+                    </span>
+                  </>}
+                  {totalReporters > 1 && <>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-[11px] text-orange-500 font-semibold">{totalReporters} personas</span>
+                  </>}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Vista nueva publicación ───────────────────────────────────────────────────
+function FeedbackNewView({ onBack, onCreated }) {
+  const [type,       setType]       = useState('BUG');
+  const [mod,        setMod]        = useState('');
+  const [title,      setTitle]      = useState('');
+  const [body,       setBody]        = useState('');
+  const [imageFile,  setImageFile]  = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [err,        setErr]        = useState('');
+
+  function handleImageChange(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImageFile(f);
+    const reader = new FileReader();
+    reader.onload = ev => setImagePreview(ev.target.result);
+    reader.readAsDataURL(f);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!title.trim() || !body.trim()) { setErr('Completá el título y la descripción.'); return; }
+    setErr(''); setSubmitting(true);
+    try {
+      let imageUrl = null;
+      if (imageFile) {
+        const up = await CrmApi.uploadFeedbackImage(imageFile);
+        imageUrl = up.url || null;
+      }
+      const post = await CrmApi.createFeedbackPost({ type, module: mod || null, title, body, imageUrl });
+      onCreated(post);
+    } catch (e) {
+      setErr(e.message || 'Error al publicar. Intentá de nuevo.');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-2xl mx-auto px-6 py-8">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-6">
+          <Icon name="chevron-left" size={15}/>Cancelar
+        </button>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Nueva publicación</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Contanos qué te pasó o qué necesitás saber. Cuanto más detalle, más rápido te ayudamos.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Tipo */}
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">¿Qué querés publicar?</div>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setType('BUG')}
+                  className={cx('flex items-start gap-3 p-3.5 rounded-xl border-2 text-left transition-all',
+                    type === 'BUG' ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white hover:border-slate-300')}>
+                  <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                    type === 'BUG' ? 'bg-red-100' : 'bg-slate-100')}>
+                    <Icon name="alert-circle" size={16} className={type === 'BUG' ? 'text-red-600' : 'text-slate-400'}/>
+                  </div>
+                  <div>
+                    <div className={cx('font-semibold text-sm', type === 'BUG' ? 'text-red-700' : 'text-slate-700')}>Reportar un error</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Algo no funciona como debería</div>
+                  </div>
+                </button>
+                <button type="button" onClick={() => setType('QUESTION')}
+                  className={cx('flex items-start gap-3 p-3.5 rounded-xl border-2 text-left transition-all',
+                    type === 'QUESTION' ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300')}>
+                  <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                    type === 'QUESTION' ? 'bg-blue-100' : 'bg-slate-100')}>
+                    <Icon name="help-circle" size={16} className={type === 'QUESTION' ? 'text-blue-600' : 'text-slate-400'}/>
+                  </div>
+                  <div>
+                    <div className={cx('font-semibold text-sm', type === 'QUESTION' ? 'text-blue-700' : 'text-slate-700')}>Hacer una pregunta</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Necesito ayuda o información</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Título */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Título</label>
+              <input type="text" value={title} onChange={e => setTitle(e.target.value)} maxLength={120}
+                placeholder={type === 'BUG' ? 'Ej: El cotizador no suma bien los subtotales' : 'Ej: ¿Cómo descargo mi cotización en PDF?'}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"/>
+            </div>
+
+            {/* Módulo */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Módulo del sistema</label>
+              <div className="flex gap-2 flex-wrap">
+                {FEEDBACK_MODULES.map(m => (
+                  <button key={m} type="button" onClick={() => setMod(mod === m ? '' : m)}
+                    className={cx('px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-all',
+                      mod === m ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Detalle */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Detalle</label>
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={5}
+                placeholder={type === 'BUG'
+                  ? 'Contanos qué pasó, qué esperabas que pasara y los pasos para reproducirlo. ¿En qué navegador te ocurre?'
+                  : 'Escribí tu pregunta con el mayor detalle posible…'}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-y"/>
+            </div>
+
+            {/* Adjuntar captura */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Adjuntar captura <span className="normal-case font-normal text-slate-400">(opcional)</span>
+              </label>
+              {imagePreview ? (
+                <div className="relative">
+                  <img src={imagePreview} alt="preview" className="max-h-40 rounded-lg border border-slate-200 object-contain"/>
+                  <button type="button" onClick={() => { setImageFile(null); setImagePreview(null); }}
+                    className="absolute top-1 right-1 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center shadow-sm hover:bg-red-50 hover:border-red-200 hover:text-red-600">
+                    <Icon name="x" size={11}/>
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl py-6 cursor-pointer hover:border-brand/40 hover:bg-brand/5 transition-all">
+                  <Icon name="upload" size={18} className="text-brand mb-1.5"/>
+                  <span className="text-sm text-brand font-medium">Hacé clic para adjuntar una imagen</span>
+                  <span className="text-[11px] text-slate-400 mt-0.5">PNG o JPG · hasta 5 MB</span>
+                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleImageChange}/>
+                </label>
+              )}
+            </div>
+
+            {err && <p className="text-xs text-red-600">{err}</p>}
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-slate-400">Tu publicación será visible para todos en el foro.</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={onBack}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={submitting}
+                  className="px-4 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2">
+                  {submitting ? <><Icon name="loader" size={13} className="animate-spin"/>Publicando…</> : 'Publicar en el foro'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Vista detalle del post ────────────────────────────────────────────────────
+function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }) {
+  const [post,          setPost]          = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [meta,          setMeta]          = useState({ meetingLink: '', templates: {} });
+  const [respondOpen,   setRespondOpen]   = useState(false);
+  const [replyBody,     setReplyBody]     = useState('');
+  const [replyStatus,   setReplyStatus]   = useState('');
+  const [sending,       setSending]       = useState(false);
+  const [votingLoading, setVotingLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([CrmApi.getFeedbackPost(postId), CrmApi.getFeedbackMeta()])
+      .then(([p, m]) => { setPost(p); setMeta(m); setReplyStatus(p.status === 'OPEN' ? 'REVIEWING' : p.status); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [postId]);
+
+  async function handleVote() {
+    if (!post || post.userId === currentUserId) return;
+    setVotingLoading(true);
+    try {
+      const upd = await CrmApi.voteFeedback(post.id);
+      setPost(prev => ({ ...prev, voters: upd.voters }));
+    } catch (_) {}
+    setVotingLoading(false);
+  }
+
+  function applyTemplate(tpl) {
+    setReplyBody(tpl.body);
+    setReplyStatus(tpl.status);
+  }
+
+  async function handleRespond() {
+    if (!replyBody.trim()) return;
+    setSending(true);
+    try {
+      const result = await CrmApi.respondFeedback(post.id, replyBody, replyStatus);
+      setPost(prev => ({
+        ...prev,
+        status: result.newStatus || prev.status,
+        responses: [...prev.responses, result.response],
+      }));
+      setReplyBody('');
+      setRespondOpen(false);
+      onUpdate && onUpdate();
+    } catch (e) {
+      alert(e.message || 'Error al responder.');
+    }
+    setSending(false);
+  }
+
+  async function handleStatusChange(status) {
+    try {
+      await CrmApi.setFeedbackStatus(post.id, status);
+      setPost(prev => ({ ...prev, status }));
+      onUpdate && onUpdate();
+    } catch (_) {}
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <Icon name="loader" size={24} className="animate-spin text-slate-400"/>
+    </div>
+  );
+  if (!post) return null;
+
+  const iVoted         = (post.voters || []).includes(currentUserId);
+  const totalReporters = (post.voters || []).length + 1;
+  const isOwn          = post.userId === currentUserId;
+  const isNew          = post.status === 'OPEN' && post.responses.length === 0;
+
+  const bugTemplates   = meta.templates?.BUG   || [];
+  const otherTemplates = meta.templates?.OTHER  || [];
+
+  const STATUS_BUTTONS = [
+    { k: 'OPEN',             label: 'Abierto' },
+    { k: 'REVIEWING',        label: 'En revisión' },
+    { k: 'PENDING_FIX',      label: 'Pendiente de corrección' },
+    { k: 'SCHEDULE_MEETING', label: 'Agendar reunión' },
+    { k: 'RESPONDED',        label: 'Respondido' },
+    { k: 'RESOLVED',         label: 'Resuelto' },
+    { k: 'CLOSED',           label: 'Cerrado' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-32">
+      <div className="max-w-3xl mx-auto px-6 py-6">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-5">
+          <Icon name="chevron-left" size={15}/>Volver al foro
+        </button>
+
+        {/* Post card */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <FbTypeBadge type={post.type}/>
+              <FbStatusBadge status={post.status}/>
+              <span className="text-[11px] font-mono text-slate-400">{post.code}</span>
+              {isNew && <span className="text-[10px] text-slate-400 ml-auto">Recién publicado, sin revisar.</span>}
+            </div>
+            <h1 className="text-lg font-bold text-slate-800 leading-snug">{post.title}</h1>
+          </div>
+
+          {/* Cuerpo + voto */}
+          <div className="px-5 py-4 flex gap-4">
+            {/* Caja de voto */}
+            <div className="shrink-0 flex flex-col items-center gap-1">
+              <button
+                onClick={handleVote}
+                disabled={isOwn || votingLoading}
+                title={isOwn ? 'No podés votar tu propio reporte' : iVoted ? 'Quitar voto' : 'Me pasa también'}
+                className={cx(
+                  'flex flex-col items-center justify-center w-12 h-14 rounded-xl border-2 transition-all',
+                  isOwn ? 'cursor-default opacity-40 border-slate-200 bg-slate-50' :
+                  iVoted ? 'border-brand bg-brand/5 text-brand hover:bg-brand/10' :
+                           'border-slate-200 bg-slate-50 text-slate-400 hover:border-brand/40 hover:text-brand hover:bg-brand/5'
+                )}>
+                <Icon name="chevron-up" size={16}/>
+                <span className="text-sm font-bold leading-none">{totalReporters}</span>
+              </button>
+              <span className="text-[9px] text-slate-400 text-center leading-tight">me<br/>pasa</span>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              {/* Autor */}
+              <div className="flex items-center gap-2 mb-3 text-[12px] text-slate-500">
+                <div className="w-5 h-5 rounded-full bg-brand/10 flex items-center justify-center text-[9px] font-bold text-brand">
+                  {post.user.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="font-medium text-slate-600">{post.user.name}</span>
+                {post.module && <><span className="text-slate-300">·</span><span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200 text-[10px]">{post.module}</span></>}
+                <span className="text-slate-300">·</span>
+                <span>{fmtDate(post.createdAt)}</span>
+              </div>
+
+              {/* Cuerpo */}
+              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{post.body}</div>
+
+              {/* Imagen adjunta */}
+              {post.imageUrl && (
+                <a href={post.imageUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block">
+                  <img src={post.imageUrl} alt="captura adjunta"
+                    className="max-h-48 rounded-lg border border-slate-200 object-contain hover:opacity-90 transition-opacity"/>
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Respuestas */}
+        <div className="mt-4">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 px-1">
+            {post.responses.length} {post.responses.length === 1 ? 'respuesta' : 'respuestas'}
+          </div>
+
+          {post.responses.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 px-5 py-6 text-center text-sm text-slate-400">
+              Todavía no hay respuestas. {isAdmin ? 'Sé el primero en responder.' : ''}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {post.responses.map(r => (
+                <div key={r.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon name="shield-check" size={13} className="text-white"/>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-600">{r.user.name}</span>
+                      <span className="px-1.5 py-0.5 bg-brand/10 text-brand rounded text-[9px] font-bold">Admin</span>
+                      <span>·</span>
+                      {fmtDate(r.createdAt)}
+                    </div>
+                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{r.body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Barra admin fija al fondo ── */}
+      {isAdmin && post.status !== 'CLOSED' && (
+        <div className="fixed bottom-0 left-0 right-0 z-30">
+          {/* Panel de respuesta expandido */}
+          {respondOpen && (
+            <div className="bg-white border-t border-slate-200 shadow-xl max-w-3xl mx-auto rounded-t-2xl overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-slate-100" style={{minHeight: 260}}>
+                {/* Plantillas */}
+                <div className="p-4 overflow-y-auto" style={{maxHeight: 340}}>
+                  {post.type === 'BUG' && bugTemplates.length > 0 && (
+                    <>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Plantillas rápidas · Error</div>
+                      <div className="space-y-2 mb-3">
+                        {bugTemplates.map(tpl => (
+                          <button key={tpl.id} onClick={() => applyTemplate(tpl)}
+                            className={cx('w-full text-left p-2.5 rounded-lg border hover:border-brand/40 hover:bg-brand/5 transition-all',
+                              replyBody === tpl.body ? 'border-brand/40 bg-brand/5' : 'border-slate-200 bg-slate-50')}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[12px] font-semibold text-slate-700">{tpl.label}</span>
+                              <FbStatusBadge status={tpl.status} size="xs"/>
+                            </div>
+                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-tight">{tpl.body}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {otherTemplates.length > 0 && (
+                    <>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Otras</div>
+                      <div className="space-y-2">
+                        {otherTemplates.map(tpl => (
+                          <button key={tpl.id} onClick={() => applyTemplate(tpl)}
+                            className={cx('w-full text-left p-2.5 rounded-lg border hover:border-brand/40 hover:bg-brand/5 transition-all',
+                              replyBody === tpl.body ? 'border-brand/40 bg-brand/5' : 'border-slate-200 bg-slate-50')}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[12px] font-semibold text-slate-700">{tpl.label}</span>
+                              <FbStatusBadge status={tpl.status} size="xs"/>
+                            </div>
+                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-tight">{tpl.body}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Textarea + estado */}
+                <div className="p-4 flex flex-col gap-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Respuesta del equipo</div>
+                  <textarea
+                    value={replyBody}
+                    onChange={e => setReplyBody(e.target.value)}
+                    placeholder="Escribí la respuesta o elegí una plantilla…"
+                    rows={5}
+                    className="flex-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"/>
+                  {meta.meetingLink && (
+                    <button type="button"
+                      onClick={() => setReplyBody(prev => prev + (prev ? '\n' : '') + meta.meetingLink)}
+                      className="flex items-center gap-1.5 text-xs text-brand hover:underline self-start">
+                      <Icon name="calendar" size={12}/>Insertar link de agenda
+                    </button>
+                  )}
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Marcar el caso como</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {STATUS_BUTTONS.map(({ k, label }) => (
+                        <button key={k} type="button" onClick={() => setReplyStatus(k)}
+                          className={cx('px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all',
+                            replyStatus === k ? 'bg-brand text-white border-brand' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100')}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={() => setRespondOpen(false)}
+                      className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50">
+                      Cancelar
+                    </button>
+                    <button onClick={handleRespond} disabled={sending || !replyBody.trim()}
+                      className="px-4 py-1.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2">
+                      {sending ? <><Icon name="loader" size={13} className="animate-spin"/>Enviando…</> : 'Responder y cambiar estado'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Barra oscura */}
+          <div className="bg-slate-900 text-white px-6 py-3 flex items-center gap-3 max-w-3xl mx-auto">
+            <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center shrink-0">
+              <Icon name="shield-check" size={13} className="text-white"/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-semibold">Modo administrador</span>
+              <span className="text-slate-400 text-xs ml-2">Respondé con plantillas y actualizá el estado del caso.</span>
+            </div>
+            <button onClick={() => setRespondOpen(v => !v)}
+              className="flex items-center gap-2 px-4 py-1.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/80 shrink-0">
+              <Icon name="message-square" size={13}/>
+              {respondOpen ? 'Cerrar' : 'Responder caso'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Contenedor principal ──────────────────────────────────────────────────────
 function FeedbackView() {
   const { roleKey, currentUserId } = useApp();
   const isAdmin = roleKey === 'admin';
-  const user = CrmAuth.getUser();
 
-  const [posts,       setPosts]       = useState([]);
-  const [meta,        setMeta]        = useState({ meetingLink: '', templates: {} });
-  const [loading,     setLoading]     = useState(true);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [expandedId,  setExpandedId]  = useState(null);
+  const [view,    setView]    = useState('list');  // 'list' | 'new' | 'detail'
+  const [postId,  setPostId]  = useState(null);
+  const [posts,   setPosts]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [meta,    setMeta]    = useState({});
 
-  // Form nuevo reporte
-  const [type,  setType]  = useState('BUG');
-  const [title, setTitle] = useState('');
-  const [body,  setBody]  = useState('');
-  const [formErr, setFormErr] = useState('');
-
-  // Responder (admin)
-  const [replyText,    setReplyText]    = useState({});   // { postId: text }
-  const [replyLoading, setReplyLoading] = useState(null); // postId en curso
-
-  // Filtro admin
-  const [filter, setFilter] = useState('OPEN'); // 'ALL' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'
-
-  // meeting_link editable
-  const [editLink,     setEditLink]     = useState(false);
-  const [linkVal,      setLinkVal]      = useState('');
-  const [savingLink,   setSavingLink]   = useState(false);
-
-  async function load() {
+  async function loadPosts() {
     setLoading(true);
     try {
       const [p, m] = await Promise.all([CrmApi.getFeedbackPosts(), CrmApi.getFeedbackMeta()]);
       setPosts(p);
       setMeta(m);
-      setLinkVal(m.meetingLink || '');
     } catch (_) {}
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadPosts(); }, []);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!title.trim() || !body.trim()) { setFormErr('Completá el título y la descripción.'); return; }
-    setFormErr('');
-    setSubmitting(true);
-    try {
-      const post = await CrmApi.createFeedbackPost({ type, title, body });
-      setPosts(prev => [post, ...prev]);
-      setTitle(''); setBody(''); setType('BUG');
-      setExpandedId(post.id); // abrir el recién creado
-    } catch (err) {
-      setFormErr(err.message || 'Error al enviar. Intentá de nuevo.');
-    }
-    setSubmitting(false);
+  if (view === 'new') {
+    return <FeedbackNewView
+      onBack={() => setView('list')}
+      onCreated={(post) => { loadPosts(); setPostId(post.id); setView('detail'); }}
+    />;
   }
-
-  async function handleRespond(postId) {
-    const text = replyText[postId]?.trim();
-    if (!text) return;
-    setReplyLoading(postId);
-    try {
-      const resp = await CrmApi.respondFeedback(postId, text);
-      setPosts(prev => prev.map(p => {
-        if (p.id !== postId) return p;
-        return { ...p, status: p.status === 'OPEN' ? 'IN_PROGRESS' : p.status, responses: [...p.responses, resp] };
-      }));
-      setReplyText(prev => ({ ...prev, [postId]: '' }));
-    } catch (err) {
-      alert(err.message || 'Error al responder.');
-    }
-    setReplyLoading(null);
+  if (view === 'detail') {
+    return <FeedbackDetailView
+      postId={postId}
+      isAdmin={isAdmin}
+      currentUserId={currentUserId}
+      onBack={() => { setView('list'); loadPosts(); }}
+      onUpdate={loadPosts}
+    />;
   }
-
-  async function handleStatus(postId, status) {
-    try {
-      await CrmApi.setFeedbackStatus(postId, status);
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, status } : p));
-    } catch (_) {}
-  }
-
-  async function handleSaveLink() {
-    setSavingLink(true);
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
-        body: JSON.stringify({ meeting_link: linkVal.trim() }),
-      });
-      if (!res.ok) throw new Error('Error al guardar');
-      setMeta(prev => ({ ...prev, meetingLink: linkVal.trim() }));
-      setEditLink(false);
-    } catch (err) {
-      alert('Error al guardar: ' + err.message);
-    }
-    setSavingLink(false);
-  }
-
-  function loadTemplate(postType) {
-    const tpl = meta.templates?.[postType] || '';
-    setReplyText(prev => ({ ...prev, [expandedId]: tpl }));
-  }
-
-  const TYPE_COLORS = {
-    BUG:      'bg-red-100 text-red-700 border-red-200',
-    QUESTION: 'bg-blue-100 text-blue-700 border-blue-200',
-    MEETING:  'bg-violet-100 text-violet-700 border-violet-200',
-  };
-  const TYPE_LABELS = { BUG: '🐛 Error', QUESTION: '❓ Pregunta', MEETING: '📅 Reunión' };
-  const STATUS_COLORS = {
-    OPEN:        'bg-yellow-100 text-yellow-700',
-    IN_PROGRESS: 'bg-blue-100 text-blue-700',
-    RESOLVED:    'bg-green-100 text-green-700',
-  };
-  const STATUS_LABELS = { OPEN: 'Abierto', IN_PROGRESS: 'En progreso', RESOLVED: 'Resuelto' };
-
-  // Todos ven todos los posts — foro público
-  const filteredPosts = filter === 'ALL' ? posts : posts.filter(p => p.status === filter);
-
-  return (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
-      <PageHead
-        title="Foro de soporte"
-        subtitle="Reportá errores, hacé preguntas o pedí una reunión de 10 minutos."
-        icon="message-circle"
-      />
-
-      {/* ── Nuevo reporte ── */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-          <Icon name="plus-circle" size={16} className="text-brand"/>
-          <span className="font-semibold text-sm text-slate-700">Nuevo reporte</span>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Tipo — solo BUG y QUESTION para los usuarios */}
-          <div className="flex gap-2 flex-wrap">
-            {['BUG','QUESTION'].map(t => (
-              <button key={t} type="button"
-                onClick={() => setType(t)}
-                className={cx(
-                  'px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-all',
-                  type === t
-                    ? TYPE_COLORS[t] + ' ring-2 ring-offset-1 ring-current'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                )}
-              >
-                {TYPE_LABELS[t]}
-              </button>
-            ))}
-          </div>
-
-          {/* Título */}
-          <input
-            type="text"
-            placeholder="Título breve..."
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            maxLength={120}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-          />
-
-          {/* Descripción */}
-          <textarea
-            placeholder={
-              type === 'BUG'      ? 'Describí el error: ¿qué hiciste? ¿qué esperabas? ¿qué pasó?' :
-              type === 'QUESTION' ? 'Escribí tu pregunta con el mayor detalle posible...' :
-                                    'Describí brevemente de qué querés hablar en la reunión...'
-            }
-            value={body}
-            onChange={e => setBody(e.target.value)}
-            rows={4}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
-          />
-
-          {formErr && <p className="text-xs text-red-600">{formErr}</p>}
-
-          <div className="flex justify-end">
-            <button type="submit" disabled={submitting}
-              className="px-4 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2">
-              {submitting
-                ? <><Icon name="loader" size={13} className="animate-spin"/>Enviando...</>
-                : <><Icon name="send" size={13}/>Enviar reporte</>
-              }
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* ── Panel admin: link de reunión ── */}
-      {isAdmin && (
-        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 flex items-center gap-3">
-          <Icon name="link" size={15} className="text-violet-500 shrink-0"/>
-          <div className="flex-1 min-w-0">
-            {editLink ? (
-              <div className="flex gap-2 items-center">
-                <input
-                  type="url"
-                  value={linkVal}
-                  onChange={e => setLinkVal(e.target.value)}
-                  placeholder="https://calendly.com/..."
-                  className="flex-1 border border-violet-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                />
-                <button onClick={handleSaveLink} disabled={savingLink}
-                  className="px-3 py-1 bg-violet-600 text-white text-xs rounded-lg hover:bg-violet-700 disabled:opacity-50">
-                  {savingLink ? 'Guardando…' : 'Guardar'}
-                </button>
-                <button onClick={() => { setEditLink(false); setLinkVal(meta.meetingLink || ''); }}
-                  className="px-3 py-1 border border-violet-300 text-violet-700 text-xs rounded-lg hover:bg-violet-100">
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-violet-700 font-medium">Link de reunión:</span>
-                <span className="text-sm text-violet-600 truncate">
-                  {meta.meetingLink || <em className="text-violet-400">sin configurar</em>}
-                </span>
-                <button onClick={() => setEditLink(true)}
-                  className="ml-1 text-violet-500 hover:text-violet-700 text-xs underline">
-                  {meta.meetingLink ? 'Editar' : 'Configurar'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Listado ── */}
-      {loading ? (
-        <div className="flex justify-center py-10 text-slate-400">
-          <Icon name="loader" size={20} className="animate-spin"/>
-        </div>
-      ) : (
-        <>
-          {/* Filtros — visibles para todos */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500 font-medium">Ver:</span>
-            {['ALL','OPEN','IN_PROGRESS','RESOLVED'].map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={cx(
-                  'px-2.5 py-1 rounded-lg text-xs font-medium border transition-all',
-                  filter === f
-                    ? 'bg-brand text-white border-brand'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                )}>
-                {f === 'ALL' ? `Todos (${posts.length})` : `${STATUS_LABELS[f]} (${posts.filter(p=>p.status===f).length})`}
-              </button>
-            ))}
-          </div>
-
-          {/* Lista de posts */}
-          {filteredPosts.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <Icon name="message-circle" size={28} className="mx-auto mb-2 opacity-40"/>
-              <p className="text-sm">No hay reportes con este filtro.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredPosts.map(post => {
-                const open      = expandedId === post.id;
-                const isOwn     = post.userId === currentUserId;
-                const hasVoted  = (post.voters || []).includes(currentUserId);
-                const voteCount = (post.voters || []).length;
-                const totalReporters = voteCount + 1; // autor + votantes
-
-                return (
-                  <div key={post.id}
-                    className={cx('bg-white rounded-xl border shadow-sm overflow-hidden transition-all',
-                      open ? 'border-brand/40' : 'border-slate-200'
-                    )}>
-
-                    {/* Header clickeable */}
-                    <button
-                      className="w-full text-left px-4 py-3.5 flex items-start gap-3 hover:bg-slate-50 transition-colors"
-                      onClick={() => setExpandedId(open ? null : post.id)}
-                    >
-                      {/* Badge tipo */}
-                      <span className={cx('shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold border mt-0.5', TYPE_COLORS[post.type])}>
-                        {TYPE_LABELS[post.type]}
-                      </span>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-sm text-slate-800 leading-tight">{post.title}</span>
-                          {/* Estado */}
-                          <span className={cx('px-1.5 py-0.5 rounded text-[10px] font-bold', STATUS_COLORS[post.status])}>
-                            {post.status === 'RESOLVED' ? '✓ Resuelto' : STATUS_LABELS[post.status]}
-                          </span>
-                          {/* Respuestas */}
-                          {post.responses.length > 0 && (
-                            <span className="text-[11px] text-slate-400 flex items-center gap-0.5">
-                              <Icon name="message-square" size={11}/>{post.responses.length}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="font-medium text-slate-500">{post.user.name}</span>
-                          <span>·</span>
-                          <span>{fmtDate(post.createdAt)}</span>
-                          {totalReporters > 1 && (
-                            <><span>·</span>
-                            <span className="text-orange-500 font-semibold">{totalReporters} personas con este problema</span></>
-                          )}
-                        </div>
-                      </div>
-
-                      <Icon name={open ? 'chevron-up' : 'chevron-down'} size={15} className="text-slate-400 shrink-0 mt-1"/>
-                    </button>
-
-                    {/* Contenido expandido */}
-                    {open && (
-                      <div className="border-t border-slate-100 px-4 py-4 space-y-4">
-
-                        {/* Cuerpo del post */}
-                        <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                          {post.body}
-                        </div>
-
-                        {/* Botón +1 para no-autores en posts no resueltos */}
-                        {!isOwn && post.status !== 'RESOLVED' && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const upd = await CrmApi.voteFeedback(post.id);
-                                setPosts(prev => prev.map(p => p.id === post.id ? { ...p, voters: upd.voters } : p));
-                              } catch (_) {}
-                            }}
-                            className={cx(
-                              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
-                              hasVoted
-                                ? 'bg-orange-50 border-orange-200 text-orange-700'
-                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700'
-                            )}>
-                            <Icon name="thumbs-up" size={12}/>
-                            {hasVoted ? 'Me pasa también ✓' : 'Me pasa también'}
-                            {voteCount > 0 && <span className="ml-1 font-bold">{totalReporters}</span>}
-                          </button>
-                        )}
-
-                        {/* Respuestas del equipo */}
-                        {post.responses.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Respuesta del equipo</div>
-                            {post.responses.map(r => (
-                              <div key={r.id} className="flex gap-2.5">
-                                <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0 mt-0.5">
-                                  <Icon name="shield-check" size={12} className="text-brand"/>
-                                </div>
-                                <div className="flex-1">
-                                  <div className="text-[11px] text-slate-400 mb-0.5">
-                                    <span className="font-medium text-slate-600">{r.user.name}</span>
-                                    {' · '}{fmtDate(r.createdAt)}
-                                  </div>
-                                  <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
-                                    {r.body}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Formulario respuesta (solo admin, no resuelto) */}
-                        {isAdmin && post.status !== 'RESOLVED' && (
-                          <div className="space-y-2 border-t border-slate-100 pt-3">
-                            <div className="flex gap-2 flex-wrap items-center">
-                              <span className="text-[11px] text-slate-400">Plantillas:</span>
-                              {[['BUG','🐛 Error'],['QUESTION','❓ Pregunta'],['MEETING','📅 Reunión']].map(([t, lbl]) => (
-                                <button key={t} type="button"
-                                  onClick={() => setReplyText(prev => ({ ...prev, [post.id]: meta.templates?.[t] || '' }))}
-                                  className="px-2 py-0.5 rounded text-[11px] border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100">
-                                  {lbl}
-                                </button>
-                              ))}
-                            </div>
-                            <textarea
-                              placeholder="Escribí tu respuesta..."
-                              value={replyText[post.id] || ''}
-                              onChange={e => setReplyText(prev => ({ ...prev, [post.id]: e.target.value }))}
-                              rows={3}
-                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
-                            />
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex gap-2">
-                                <button onClick={() => handleStatus(post.id, 'RESOLVED')}
-                                  className="px-3 py-1.5 border border-green-200 text-green-700 bg-green-50 rounded-lg text-xs font-medium hover:bg-green-100 flex items-center gap-1">
-                                  <Icon name="check-circle" size={12}/>Marcar resuelto
-                                </button>
-                                {post.status !== 'IN_PROGRESS' && (
-                                  <button onClick={() => handleStatus(post.id, 'IN_PROGRESS')}
-                                    className="px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 rounded-lg text-xs font-medium hover:bg-blue-100">
-                                    En progreso
-                                  </button>
-                                )}
-                              </div>
-                              <button onClick={() => handleRespond(post.id)}
-                                disabled={replyLoading === post.id || !replyText[post.id]?.trim()}
-                                className="px-4 py-1.5 bg-brand text-white rounded-lg text-xs font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-1.5">
-                                {replyLoading === post.id
-                                  ? <><Icon name="loader" size={12} className="animate-spin"/>Enviando...</>
-                                  : <><Icon name="corner-down-right" size={12}/>Responder</>
-                                }
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Reabrir (admin, resuelto) */}
-                        {isAdmin && post.status === 'RESOLVED' && (
-                          <button onClick={() => handleStatus(post.id, 'OPEN')}
-                            className="text-xs text-slate-400 hover:text-slate-600 underline">
-                            Reabrir reporte
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
+  return <FeedbackListView
+    posts={posts}
+    loading={loading}
+    isAdmin={isAdmin}
+    currentUserId={currentUserId}
+    onNew={() => setView('new')}
+    onOpen={(id) => { setPostId(id); setView('detail'); }}
+  />;
 }
 
 Object.assign(window, { MySalesView, LogisticsView, Clients, Articles, Team, Config, PageHead, Comparativa, ArticleFormModal, ClientImportModal, FeedbackView });

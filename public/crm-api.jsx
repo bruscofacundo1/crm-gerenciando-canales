@@ -268,9 +268,21 @@ const CrmApi = {
   getFeedbackMeta:    ()           => apiFetch('/feedback/meta'),
   getFeedbackPosts:   ()           => apiFetch('/feedback'),
   createFeedbackPost: (data)       => apiFetch('/feedback', { method: 'POST', body: JSON.stringify(data) }),
-  respondFeedback:    (id, body)   => apiFetch(`/feedback/${id}/respond`, { method: 'POST', body: JSON.stringify({ body }) }),
+  respondFeedback:    (id, body, status) => apiFetch(`/feedback/${id}/respond`, { method: 'POST', body: JSON.stringify({ body, status }) }),
   setFeedbackStatus:  (id, status) => apiFetch(`/feedback/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   voteFeedback:       (id)         => apiFetch(`/feedback/${id}/vote`, { method: 'POST' }),
+  getFeedbackPost:    (id)         => apiFetch(`/feedback/${id}`),
+
+  uploadFeedbackImage: (file) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    const token = localStorage.getItem('crm_token');
+    return fetch('/api/feedback/upload-image', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    }).then(r => r.json());
+  },
 
   // Email templates
   getEmailTemplates: () => apiFetch('/quotes/email-templates'),
