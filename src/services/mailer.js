@@ -14,33 +14,95 @@ function getGmailClient() {
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
-// Construye un mensaje MIME multipart (plain + html)
-function buildMime({ from, to, subject, html, text }) {
+// Construye un mensaje MIME — soporta adjuntos y Reply-To
+function buildMime({ from, to, cc, subject, html, text, replyTo, attachments }) {
   const toStr = Array.isArray(to) ? to.join(', ') : to;
-  const boundary = 'myseleccrm' + Date.now();
-  // Codificar el asunto en Base64 para soportar caracteres especiales (tildes, ñ)
   const subjectEncoded = `=?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`;
+  const hasAttachments = attachments && attachments.length > 0;
+
+  if (!hasAttachments) {
+    // Sin adjuntos: multipart/alternative (plain + html)
+    const boundary = 'myseleccrm_alt_' + Date.now();
+    const lines = [
+      `From: ${from}`,
+      `To: ${toStr}`,
+      ...(cc ? [`CC: ${cc}`] : []),
+      ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
+      `Subject: ${subjectEncoded}`,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(text || '').toString('base64'),
+      '',
+      `--${boundary}`,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(html || `<pre>${text || ''}</pre>`).toString('base64'),
+      '',
+      `--${boundary}--`,
+    ];
+    return lines.join('\r\n');
+  }
+
+  // Con adjuntos: multipart/mixed que contiene multipart/alternative + adjuntos
+  const fs = require('fs');
+  const path = require('path');
+  const outerBoundary = 'myseleccrm_mix_' + Date.now();
+  const innerBoundary = 'myseleccrm_alt_' + (Date.now() + 1);
+
   const lines = [
     `From: ${from}`,
     `To: ${toStr}`,
+    ...(cc ? [`CC: ${cc}`] : []),
+    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
     `Subject: ${subjectEncoded}`,
     'MIME-Version: 1.0',
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/mixed; boundary="${outerBoundary}"`,
     '',
-    `--${boundary}`,
+    `--${outerBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${innerBoundary}"`,
+    '',
+    `--${innerBoundary}`,
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
     Buffer.from(text || '').toString('base64'),
     '',
-    `--${boundary}`,
+    `--${innerBoundary}`,
     'Content-Type: text/html; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
     Buffer.from(html || `<pre>${text || ''}</pre>`).toString('base64'),
     '',
-    `--${boundary}--`,
+    `--${innerBoundary}--`,
   ];
+
+  // Agregar adjuntos
+  for (const att of attachments) {
+    try {
+      const fileData = fs.readFileSync(att.path);
+      const filename = att.filename || path.basename(att.path);
+      const mimeType = att.mimeType || 'application/octet-stream';
+      const filenameEncoded = `=?UTF-8?B?${Buffer.from(filename).toString('base64')}?=`;
+      lines.push('');
+      lines.push(`--${outerBoundary}`);
+      lines.push(`Content-Type: ${mimeType}; name="${filenameEncoded}"`);
+      lines.push('Content-Transfer-Encoding: base64');
+      lines.push(`Content-Disposition: attachment; filename="${filenameEncoded}"`);
+      lines.push('');
+      lines.push(fileData.toString('base64'));
+    } catch (e) {
+      console.warn('⚠️  No se pudo leer adjunto:', att.path, e.message);
+    }
+  }
+
+  lines.push('');
+  lines.push(`--${outerBoundary}--`);
   return lines.join('\r\n');
 }
 
@@ -60,14 +122,14 @@ function toArray(to) {
   return String(to).split(',').map(s => s.trim()).filter(Boolean);
 }
 
-async function sendMail({ to, subject, html, text }) {
+async function sendMail({ to, cc, subject, html, text, replyTo, attachments }) {
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_REFRESH_TOKEN) {
     console.warn('⚠️  Mailer: GMAIL_CLIENT_ID/GMAIL_REFRESH_TOKEN no configurados, mail omitido.');
     return;
   }
   const gmail = getGmailClient();
   const from  = `MySelec CRM <${GMAIL_USER}>`;
-  const mime  = buildMime({ from, to: toArray(to), subject, html, text });
+  const mime  = buildMime({ from, to: toArray(to), cc, subject, html, text, replyTo, attachments });
   const raw   = Buffer.from(mime).toString('base64url');
   await gmail.users.messages.send({
     userId: 'me',

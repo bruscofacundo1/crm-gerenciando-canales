@@ -841,21 +841,63 @@ router.post('/:id/send-email', authMiddleware, async (req, res) => {
       }
     }
 
-    console.log(`📧 send-email → to:${to} from:${fromEmail || 'fallback'} adjunto:${attachmentPath ? 'sí' : 'no'}`);
+    // Enviar via Gmail API (funciona en Railway — usa HTTPS, no SMTP)
+    const { sendMail } = require('../services/mailer');
+    const htmlBody = `<pre style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">${body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+
+    const attachments = [];
+    if (attachmentPath) {
+      attachments.push({ path: attachmentPath, filename: attachmentName, mimeType: 'application/pdf' });
+    }
+
+    console.log(`📧 send-email (Gmail API) → to:${to} adjunto:${attachments.length > 0 ? attachmentName : 'no'}`);
     const start = Date.now();
-    const result = await sendQuoteEmail(req.params.id, {
-      to, cc, subject, body,
-      attachmentPath, attachmentName,
-      userId: req.user.id,
-      fromEmail: fromEmail || null,
-      fromName: req.user.name || 'MySelec',
+
+    await sendMail({
+      to,
+      cc: cc || undefined,
+      subject,
+      text: body,
+      html: htmlBody,
+      replyTo: req.user.email || undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
-    console.log(`✅ send-email OK en ${Date.now() - start}ms — sentFrom:${result.sentFrom}`);
-    res.json(result);
+    console.log(`✅ send-email OK en ${Date.now() - start}ms`);
+
+    // Log actividad + avanzar etapa
+    await prisma.activity.create({
+      data: {
+        action: 'EMAIL_SENT',
+        detail: `Presupuesto enviado vía Gmail CRM a ${to}${cc ? ` (CC: ${cc})` : ''}${attachments.length ? ' con adjunto PDF' : ''} · Asunto: "${subject}"`,
+        userId: req.user.id,
+        quoteId: req.params.id,
+      },
+    });
+
+    const STAGES_TO_ADVANCE = ['asignada', 'armado', 'revision', 'presupuestado'];
+    const quoteForStage = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { stage: true } });
+    let stageAdvanced = false;
+    if (quoteForStage && STAGES_TO_ADVANCE.includes(quoteForStage.stage)) {
+      const fudSetting = await prisma.appSetting.findUnique({ where: { key: 'follow_up_days' } });
+      const fudDays = Math.max(1, parseInt(fudSetting?.value || '4'));
+      const followUpDate = new Date();
+      followUpDate.setDate(followUpDate.getDate() + fudDays);
+      await prisma.quote.update({ where: { id: req.params.id }, data: { stage: 'enviado', followUpDate } });
+      await prisma.activity.create({
+        data: {
+          action: 'STAGE_CHANGE',
+          detail: `Etapa cambiada de "${quoteForStage.stage}" a "enviado" (envío por Gmail CRM)`,
+          userId: req.user.id,
+          quoteId: req.params.id,
+        },
+      });
+      stageAdvanced = true;
+    }
+
+    res.json({ messageId: null, stageAdvanced, sentFrom: process.env.MAIL_USER || 'iamyselec@gmail.com' });
   } catch (err) {
     console.error('❌ send-email ERROR:', err.message);
-    console.error('   código:', err.code, '| responseCode:', err.responseCode);
     res.status(500).json({ error: err.message || 'Error al enviar el email' });
   }
 });
@@ -876,10 +918,8 @@ router.post('/:id/send-reminder', authMiddleware, async (req, res) => {
     }
     if (!quote.client?.email) return res.status(400).json({ error: 'El cliente no tiene email registrado' });
 
-    // Enviar mail al cliente — usar cuenta específica si se indica, sino fallback a Gmail API
-    const { getTransportForEmail } = require('../services/mailSender');
+    // Enviar via Gmail API (funciona en Railway — usa HTTPS, no SMTP)
     const { sendMail: sendMailGmailApi } = require('../services/mailer');
-    const { fromEmail: reminderFrom } = req.body;
     const htmlBody = body.replace(/\n/g, '<br/>');
     const htmlContent = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
@@ -896,21 +936,14 @@ router.post('/:id/send-reminder', authMiddleware, async (req, res) => {
 </div>
 </body></html>`;
 
-    let sentFrom = null;
-    const smtpTransport = reminderFrom ? await getTransportForEmail(reminderFrom, req.user.name) : null;
-    if (smtpTransport) {
-      await smtpTransport.transport.sendMail({
-        from: `"${smtpTransport.fromName}" <${smtpTransport.fromEmail}>`,
-        to: quote.client.email,
-        subject,
-        text: body,
-        html: htmlContent,
-      });
-      sentFrom = smtpTransport.fromEmail;
-    } else {
-      await sendMailGmailApi({ to: quote.client.email, subject, html: htmlContent });
-      sentFrom = process.env.MAIL_USER || 'iamyselec@gmail.com';
-    }
+    await sendMailGmailApi({
+      to: quote.client.email,
+      subject,
+      html: htmlContent,
+      text: body,
+      replyTo: req.user.email || undefined,
+    });
+    const sentFrom = process.env.MAIL_USER || 'iamyselec@gmail.com';
 
     // Registrar actividad
     await prisma.activity.create({

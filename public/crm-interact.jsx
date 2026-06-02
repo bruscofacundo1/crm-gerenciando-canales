@@ -1589,21 +1589,11 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
   const [subject, setSubject] = useS(defaultSubject);
   const [body, setBody]       = useS(defaultBody);
   const [sending, setSending] = useS(false);
-  const [sendAccounts, setSendAccounts] = useS([]);
-  const [fromEmail, setFromEmail]       = useS('');
-
-  // Cargar cuentas de envío
-  React.useEffect(() => {
-    CrmApi.getSendAccounts().then(data => {
-      setSendAccounts(data.accounts || []);
-      setFromEmail(data.defaultAccount || '');
-    }).catch(() => {});
-  }, []);
 
   const handleSend = async () => {
     setSending(true);
     try {
-      await CrmApi.sendReminder(item.id, { subject, body, fromEmail: fromEmail || null });
+      await CrmApi.sendReminder(item.id, { subject, body });
       pushToast('Recordatorio enviado a ' + item.clientEmail, 'ok');
       onSent();
     } catch (err) {
@@ -1637,14 +1627,6 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
             <button onClick={onClose} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
           </div>
           <div className="p-5 space-y-3">
-            {sendAccounts.length > 0 && (
-              <div>
-                <label className="block text-[11px] font-medium text-ink-500 mb-1">Desde</label>
-                <select className="inp w-full text-[13px]" value={fromEmail} onChange={e => setFromEmail(e.target.value)}>
-                  {sendAccounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
-                </select>
-              </div>
-            )}
             <div>
               <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
               <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={item.clientEmail} readOnly/>
@@ -1657,8 +1639,9 @@ function ReminderModal({ item, defaultSubject, defaultBody, onClose, onSent }) {
               <label className="block text-[11px] font-medium text-ink-500 mb-1">Mensaje</label>
               <textarea className="inp w-full text-[13px] min-h-[160px] leading-relaxed" value={body} onChange={e => setBody(e.target.value)}/>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700">
-              Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700 space-y-1">
+              <div>Se envía desde <strong>iamyselec@gmail.com</strong>. Para enviar desde tu Gmail personal usá "Abrir en Gmail".</div>
+              <div>Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.</div>
             </div>
           </div>
           <div className="px-5 py-4 border-t border-line flex items-center justify-between">

@@ -479,16 +479,6 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
   const [subject, setSubject]           = React.useState('');
   const [body, setBody]                 = React.useState('');
   const [sending, setSending] = React.useState(false);
-  const [sendAccounts, setSendAccounts] = React.useState([]);
-  const [fromEmail, setFromEmail] = React.useState('');
-
-  // Cargar cuentas de envío disponibles
-  React.useEffect(() => {
-    CrmApi.getSendAccounts().then(data => {
-      setSendAccounts(data.accounts || []);
-      setFromEmail(data.defaultAccount || '');
-    }).catch(() => {});
-  }, []);
 
   // Cargar plantillas y CC default al abrir
   React.useEffect(() => {
@@ -589,18 +579,6 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto scroll-thin px-5 py-4 space-y-3">
-          {/* Desde (selector de cuenta) */}
-          {sendAccounts.length > 0 && (
-            <div>
-              <label className="text-[11px] font-semibold text-ink-600 uppercase tracking-wide mb-1 block">Desde</label>
-              <select className="inp w-full text-sm" value={fromEmail} onChange={e => setFromEmail(e.target.value)}>
-                {sendAccounts.map(acc => (
-                  <option key={acc} value={acc}>{acc}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* Template selector */}
           {templates.length > 0 && (
             <div>
@@ -642,10 +620,10 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
           {/* Nota informativa */}
           <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[12px] text-blue-800">
             <Icon name="info" size={13} className="shrink-0 mt-0.5 text-blue-500"/>
-            <span>
-              <strong>Enviar:</strong> manda el mail directo desde el CRM con el adjunto PDF incluido (si hay).<br/>
-              <strong>Abrir en Gmail:</strong> abre un borrador en Gmail para agregar firma o personalizar. <em>El adjunto PDF hay que cargarlo a mano en Gmail.</em>
-            </span>
+            <div>
+              <div><strong>Enviar:</strong> manda el mail desde <strong>iamyselec@gmail.com</strong> con el adjunto PDF incluido automáticamente.</div>
+              <div className="mt-1"><strong>Abrir en Gmail:</strong> abre un borrador en tu Gmail personal con el asunto y cuerpo precargados. El adjunto PDF hay que cargarlo a mano.</div>
+            </div>
           </div>
         </div>
 
@@ -664,9 +642,8 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
                   to: to.trim(), cc: cc.trim(),
                   subject: subject.trim(), body: body.trim(),
                   attachmentId: pdfAtt?.id || null,
-                  fromEmail: fromEmail || null,
                 });
-                pushToast(`Enviado desde ${result.sentFrom || fromEmail}${result.stageAdvanced ? ' · Etapa → Enviado' : ''}`, 'ok');
+                pushToast(`Enviado correctamente${result.stageAdvanced ? ' · Etapa → Enviado' : ''}`, 'ok');
                 onSent && onSent(result);
                 onClose();
               } catch (err) {
@@ -1782,7 +1759,6 @@ function QuoteDetail({ code, onClose, canReassign }) {
                 <button onClick={() => setReminderOpen(false)} className="btn-ghost p-1"><Icon name="x" size={16}/></button>
               </div>
               <div className="p-5 space-y-3">
-                <ReminderFromSelector quoteId={q.id}/>
                 <div>
                   <label className="block text-[11px] font-medium text-ink-500 mb-1">Para</label>
                   <input className="inp w-full bg-surface text-ink-500 cursor-not-allowed text-[13px]" value={cli?.email || ''} readOnly/>
@@ -1798,8 +1774,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
                     value={reminderBody || defBody}
                     onChange={e => setReminderBody(e.target.value)}/>
                 </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700">
-                  Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700 space-y-1">
+                  <div>Se envía desde <strong>iamyselec@gmail.com</strong>. Para enviar desde tu Gmail personal usá "Abrir en Gmail".</div>
+                  <div>Al enviar, se registrará como actividad y se reprogramará el seguimiento automáticamente.</div>
                 </div>
               </div>
               <div className="px-5 py-4 border-t border-line flex items-center justify-between">
@@ -1809,12 +1786,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
                     onClick={async () => {
                       setReminderSending(true);
                       try {
-                        const fromEl = document.getElementById('reminder-from-' + q.id);
-                        const fromEmail = fromEl ? fromEl.value : null;
-                        await CrmApi.sendReminder(q.id, {
+                          await CrmApi.sendReminder(q.id, {
                           subject: reminderSubject || defSubject,
                           body: reminderBody || defBody,
-                          fromEmail,
                         });
                         pushToast('Recordatorio enviado a ' + (cli?.email || ''), 'ok');
                         setReminderOpen(false);
