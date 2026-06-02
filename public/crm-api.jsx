@@ -270,6 +270,7 @@ const CrmApi = {
   createFeedbackPost: (data)       => apiFetch('/feedback', { method: 'POST', body: JSON.stringify(data) }),
   respondFeedback:    (id, body)   => apiFetch(`/feedback/${id}/respond`, { method: 'POST', body: JSON.stringify({ body }) }),
   setFeedbackStatus:  (id, status) => apiFetch(`/feedback/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  voteFeedback:       (id)         => apiFetch(`/feedback/${id}/vote`, { method: 'POST' }),
 
   // Email templates
   getEmailTemplates: () => apiFetch('/quotes/email-templates'),

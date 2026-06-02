@@ -187,6 +187,30 @@ router.post('/:id/respond', async (req, res) => {
   }
 });
 
+// ── POST /:id/vote — toggle +1 ───────────────────────────────────────────────
+router.post('/:id/vote', async (req, res) => {
+  try {
+    const post = await prisma.feedbackPost.findUnique({ where: { id: req.params.id } });
+    if (!post) return res.status(404).json({ error: 'Reporte no encontrado.' });
+    // No puede votar el propio autor
+    if (post.userId === req.user.id) return res.status(400).json({ error: 'No podés votar tu propio reporte.' });
+
+    const already = post.voters.includes(req.user.id);
+    const updated = await prisma.feedbackPost.update({
+      where: { id: post.id },
+      data: {
+        voters: already
+          ? { set: post.voters.filter(v => v !== req.user.id) }
+          : { push: req.user.id },
+      },
+      select: { id: true, voters: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── PATCH /:id/status ────────────────────────────────────────────────────────
 router.patch('/:id/status', async (req, res) => {
   try {

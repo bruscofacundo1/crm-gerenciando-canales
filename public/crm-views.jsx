@@ -4318,12 +4318,8 @@ function FeedbackView() {
   };
   const STATUS_LABELS = { OPEN: 'Abierto', IN_PROGRESS: 'En progreso', RESOLVED: 'Resuelto' };
 
-  const myPosts    = posts.filter(p => p.userId === currentUserId);
-  const otherPosts = isAdmin ? posts.filter(p => p.userId !== currentUserId) : [];
-
-  const filteredAdmin = isAdmin
-    ? (filter === 'ALL' ? posts : posts.filter(p => p.status === filter))
-    : [];
+  // Todos ven todos los posts — foro público
+  const filteredPosts = filter === 'ALL' ? posts : posts.filter(p => p.status === filter);
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
@@ -4440,78 +4436,115 @@ function FeedbackView() {
         </div>
       ) : (
         <>
-          {/* Filtros admin */}
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500 font-medium">Filtrar:</span>
-              {['ALL','OPEN','IN_PROGRESS','RESOLVED'].map(f => (
-                <button key={f} onClick={() => setFilter(f)}
-                  className={cx(
-                    'px-2.5 py-1 rounded-lg text-xs font-medium border transition-all',
-                    filter === f
-                      ? 'bg-brand text-white border-brand'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  )}>
-                  {f === 'ALL' ? 'Todos' : STATUS_LABELS[f]}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Filtros — visibles para todos */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500 font-medium">Ver:</span>
+            {['ALL','OPEN','IN_PROGRESS','RESOLVED'].map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={cx(
+                  'px-2.5 py-1 rounded-lg text-xs font-medium border transition-all',
+                  filter === f
+                    ? 'bg-brand text-white border-brand'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                )}>
+                {f === 'ALL' ? `Todos (${posts.length})` : `${STATUS_LABELS[f]} (${posts.filter(p=>p.status===f).length})`}
+              </button>
+            ))}
+          </div>
 
           {/* Lista de posts */}
-          {(isAdmin ? filteredAdmin : myPosts).length === 0 ? (
+          {filteredPosts.length === 0 ? (
             <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
               <Icon name="message-circle" size={28} className="mx-auto mb-2 opacity-40"/>
-              <p className="text-sm">{isAdmin ? 'No hay reportes con este filtro.' : 'Todavía no enviaste ningún reporte.'}</p>
+              <p className="text-sm">No hay reportes con este filtro.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {(isAdmin ? filteredAdmin : myPosts).map(post => {
-                const open = expandedId === post.id;
+              {filteredPosts.map(post => {
+                const open      = expandedId === post.id;
+                const isOwn     = post.userId === currentUserId;
+                const hasVoted  = (post.voters || []).includes(currentUserId);
+                const voteCount = (post.voters || []).length;
+                const totalReporters = voteCount + 1; // autor + votantes
+
                 return (
                   <div key={post.id}
                     className={cx('bg-white rounded-xl border shadow-sm overflow-hidden transition-all',
                       open ? 'border-brand/40' : 'border-slate-200'
                     )}>
-                    {/* Header del post */}
+
+                    {/* Header clickeable */}
                     <button
-                      className="w-full text-left px-5 py-4 flex items-start gap-3 hover:bg-slate-50 transition-colors"
+                      className="w-full text-left px-4 py-3.5 flex items-start gap-3 hover:bg-slate-50 transition-colors"
                       onClick={() => setExpandedId(open ? null : post.id)}
                     >
+                      {/* Badge tipo */}
                       <span className={cx('shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold border mt-0.5', TYPE_COLORS[post.type])}>
                         {TYPE_LABELS[post.type]}
                       </span>
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm text-slate-800 leading-tight">{post.title}</span>
-                          <span className={cx('px-1.5 py-0.5 rounded text-[10px] font-semibold', STATUS_COLORS[post.status])}>
-                            {STATUS_LABELS[post.status]}
+                          {/* Estado */}
+                          <span className={cx('px-1.5 py-0.5 rounded text-[10px] font-bold', STATUS_COLORS[post.status])}>
+                            {post.status === 'RESOLVED' ? '✓ Resuelto' : STATUS_LABELS[post.status]}
                           </span>
+                          {/* Respuestas */}
                           {post.responses.length > 0 && (
-                            <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 flex items-center gap-0.5">
                               <Icon name="message-square" size={11}/>{post.responses.length}
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-                          {isAdmin && <><span className="font-medium text-slate-500">{post.user.name}</span><span>·</span></>}
-                          {fmtDate(post.createdAt)}
+                        <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-slate-500">{post.user.name}</span>
+                          <span>·</span>
+                          <span>{fmtDate(post.createdAt)}</span>
+                          {totalReporters > 1 && (
+                            <><span>·</span>
+                            <span className="text-orange-500 font-semibold">{totalReporters} personas con este problema</span></>
+                          )}
                         </div>
                       </div>
+
                       <Icon name={open ? 'chevron-up' : 'chevron-down'} size={15} className="text-slate-400 shrink-0 mt-1"/>
                     </button>
 
                     {/* Contenido expandido */}
                     {open && (
-                      <div className="border-t border-slate-100 px-5 py-4 space-y-4">
-                        {/* Cuerpo */}
+                      <div className="border-t border-slate-100 px-4 py-4 space-y-4">
+
+                        {/* Cuerpo del post */}
                         <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
                           {post.body}
                         </div>
 
-                        {/* Respuestas existentes */}
+                        {/* Botón +1 para no-autores en posts no resueltos */}
+                        {!isOwn && post.status !== 'RESOLVED' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const upd = await CrmApi.voteFeedback(post.id);
+                                setPosts(prev => prev.map(p => p.id === post.id ? { ...p, voters: upd.voters } : p));
+                              } catch (_) {}
+                            }}
+                            className={cx(
+                              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                              hasVoted
+                                ? 'bg-orange-50 border-orange-200 text-orange-700'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700'
+                            )}>
+                            <Icon name="thumbs-up" size={12}/>
+                            {hasVoted ? 'Me pasa también ✓' : 'Me pasa también'}
+                            {voteCount > 0 && <span className="ml-1 font-bold">{totalReporters}</span>}
+                          </button>
+                        )}
+
+                        {/* Respuestas del equipo */}
                         {post.responses.length > 0 && (
                           <div className="space-y-2">
+                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Respuesta del equipo</div>
                             {post.responses.map(r => (
                               <div key={r.id} className="flex gap-2.5">
                                 <div className="w-6 h-6 rounded-full bg-brand/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -4531,20 +4564,16 @@ function FeedbackView() {
                           </div>
                         )}
 
-                        {/* Formulario respuesta (solo admin) */}
+                        {/* Formulario respuesta (solo admin, no resuelto) */}
                         {isAdmin && post.status !== 'RESOLVED' && (
-                          <div className="space-y-2">
-                            {/* Plantillas */}
-                            <div className="flex gap-2 flex-wrap">
-                              <span className="text-[11px] text-slate-400 self-center">Plantillas:</span>
-                              {['BUG','QUESTION','MEETING'].map(t => (
+                          <div className="space-y-2 border-t border-slate-100 pt-3">
+                            <div className="flex gap-2 flex-wrap items-center">
+                              <span className="text-[11px] text-slate-400">Plantillas:</span>
+                              {[['BUG','🐛 Error'],['QUESTION','❓ Pregunta'],['MEETING','📅 Reunión']].map(([t, lbl]) => (
                                 <button key={t} type="button"
-                                  onClick={() => {
-                                    const tpl = meta.templates?.[t] || '';
-                                    setReplyText(prev => ({ ...prev, [post.id]: tpl }));
-                                  }}
+                                  onClick={() => setReplyText(prev => ({ ...prev, [post.id]: meta.templates?.[t] || '' }))}
                                   className="px-2 py-0.5 rounded text-[11px] border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100">
-                                  {TYPE_LABELS[t]}
+                                  {lbl}
                                 </button>
                               ))}
                             </div>
@@ -4557,21 +4586,18 @@ function FeedbackView() {
                             />
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleStatus(post.id, 'RESOLVED')}
+                                <button onClick={() => handleStatus(post.id, 'RESOLVED')}
                                   className="px-3 py-1.5 border border-green-200 text-green-700 bg-green-50 rounded-lg text-xs font-medium hover:bg-green-100 flex items-center gap-1">
                                   <Icon name="check-circle" size={12}/>Marcar resuelto
                                 </button>
                                 {post.status !== 'IN_PROGRESS' && (
-                                  <button
-                                    onClick={() => handleStatus(post.id, 'IN_PROGRESS')}
+                                  <button onClick={() => handleStatus(post.id, 'IN_PROGRESS')}
                                     className="px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 rounded-lg text-xs font-medium hover:bg-blue-100">
                                     En progreso
                                   </button>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleRespond(post.id)}
+                              <button onClick={() => handleRespond(post.id)}
                                 disabled={replyLoading === post.id || !replyText[post.id]?.trim()}
                                 className="px-4 py-1.5 bg-brand text-white rounded-lg text-xs font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-1.5">
                                 {replyLoading === post.id
@@ -4583,11 +4609,11 @@ function FeedbackView() {
                           </div>
                         )}
 
-                        {/* Si está resuelto, solo mostrar botón para reabrir */}
+                        {/* Reabrir (admin, resuelto) */}
                         {isAdmin && post.status === 'RESOLVED' && (
                           <button onClick={() => handleStatus(post.id, 'OPEN')}
                             className="text-xs text-slate-400 hover:text-slate-600 underline">
-                            Reabrir
+                            Reabrir reporte
                           </button>
                         )}
                       </div>

@@ -322,6 +322,7 @@ model FeedbackPost {
   title     String
   body      String             @db.Text
   status    String             @default("OPEN") // "OPEN" | "IN_PROGRESS" | "RESOLVED"
+  voters    String[]           @default([])     // IDs de usuarios que hicieron +1
   userId    String
   user      User               @relation("FeedbackAuthor", fields: [userId], references: [id])
   responses FeedbackResponse[]
