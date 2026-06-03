@@ -1845,6 +1845,7 @@ function OrderDetail({ code, onClose, canReassign }) {
   const [orderDetail, setOrderDetail] = useState(null); // detalle completo de la order
   const [npItems, setNpItems]         = useState([]);   // ítems de la NP (para quote-source)
   const [linkedPres, setLinkedPres]   = useState(null); // presupuesto vinculado (para quote-source)
+  const [npBreakdown, setNpBreakdown] = useState(null); // { subtotalNeto, ivaAmount, totalPercepciones, total }
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const noteInputRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
@@ -1866,6 +1867,15 @@ function OrderDetail({ code, onClose, canReassign }) {
           // NP por mail: los ítems son de la quote misma, linkedQuote es el presupuesto
           setNpItems(detail.items || []);
           setLinkedPres(detail.linkedQuote || null);
+          // Breakdown de precios del NP (parseado del PDF Flexxus)
+          if (detail.subtotalNeto != null || detail.ivaAmount != null || detail.amount != null) {
+            setNpBreakdown({
+              subtotalNeto:      detail.subtotalNeto      ?? null,
+              ivaAmount:         detail.ivaAmount         ?? null,
+              totalPercepciones: detail.totalPercepciones ?? null,
+              total:             detail.amount            ?? null,
+            });
+          }
         } else {
           setOrderDetail(detail);
           setNotaPedido(detail.notaPedido || null);
@@ -1973,7 +1983,8 @@ function OrderDetail({ code, onClose, canReassign }) {
 
   const checklistItems = [
     ['OC del cliente recibida', true],
-    ['NP cargada en Flexxus',   !!o.flexxus],
+    ['NP enviada a Flexxus',    ['np_enviada','np','stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
+    ['NP cargada en Flexxus',   !!o.flexxus || ['np','stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
     ['Stock verificado',         ['stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
     ['Factura emitida',          o.invoiceIssued || ['facturada','transito','entregada'].includes(o.stage)],
     ['Remito conformado',        o.waybillReceived || o.stage === 'entregada'],
@@ -2269,53 +2280,164 @@ function OrderDetail({ code, onClose, canReassign }) {
       )}
 
       {tab === 'resumen' && (
-        <div className="p-6 grid grid-cols-5 gap-4">
-          {/* Checklist */}
-          <div className="col-span-3 bg-white border border-line rounded-xl p-5">
-            <div className="text-sm font-semibold mb-3">Checklist de entrega</div>
-            <ul className="text-[13px] space-y-2">
-              {checklistItems.map(([label, done]) => (
-                <li key={label} className="flex items-center gap-2.5">
-                  <span className={cx('w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0',
-                    done ? 'bg-emerald-500 text-white' : 'bg-ink-200')}>
-                    {done && <Icon name="check" size={11}/>}
-                  </span>
-                  <span className={done ? 'text-ink-900' : 'text-ink-400'}>{label}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Dirección */}
-          <div className="col-span-2 bg-white border border-line rounded-xl p-4">
-            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Dirección de entrega</div>
-            {cli ? (
-              <>
-                <div className="text-[13px] text-ink-900">{cli.address || '—'}</div>
-                <div className="text-[12px] text-ink-500 mt-0.5">
-                  {[cli.city, cli.prov].filter(Boolean).join(' — ') || '—'}
+        <div className="p-6">
+          {/* ── NP por mail: mostrar ítems en formato presupuesto ── */}
+          {isQuoteSource && npItems.length > 0 ? (
+            <div className="grid grid-cols-3 gap-5">
+              {/* Tabla de ítems */}
+              <div className="col-span-2 bg-white border border-line rounded-xl p-5">
+                <div className="text-sm font-semibold mb-3 text-ink-900">Nota de Pedido Flexxus</div>
+                <table className="w-full text-[12.5px]">
+                  <thead><tr className="text-left text-ink-500">
+                    <th className="font-semibold pb-2">SKU</th>
+                    <th className="font-semibold pb-2">Descripción</th>
+                    <th className="font-semibold pb-2 text-right">Cant.</th>
+                    <th className="font-semibold pb-2 text-right">P. Unit.</th>
+                    <th className="font-semibold pb-2 text-right">Total</th>
+                  </tr></thead>
+                  <tbody>
+                    {npItems.map((it, idx) => (
+                      <tr key={it.id || idx} className="border-t border-line group">
+                        <td className="py-2 mono text-ink-700">
+                          <CatalogBadge sku={it.sku} description={it.description}/>
+                        </td>
+                        <td className="py-2">{it.description}</td>
+                        <td className="py-2 mono text-right">{it.quantity}</td>
+                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
+                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    {npBreakdown?.subtotalNeto != null && (
+                      <tr className="border-t border-line">
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Subtotal neto</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {npBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        </td>
+                      </tr>
+                    )}
+                    {npBreakdown?.ivaAmount != null && npBreakdown.ivaAmount > 0 && (
+                      <tr>
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">IVA 21%</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {npBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        </td>
+                      </tr>
+                    )}
+                    {npBreakdown?.totalPercepciones != null && npBreakdown.totalPercepciones > 0 && (
+                      <tr>
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Percepciones</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {npBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        </td>
+                      </tr>
+                    )}
+                    {npBreakdown?.total != null && (
+                      <tr className="border-t-2 border-ink-900">
+                        <td colSpan="4" className="text-right pt-3 font-bold">TOTAL</td>
+                        <td className="text-right pt-3 mono font-bold text-base">
+                          {npBreakdown.total.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        </td>
+                      </tr>
+                    )}
+                    {!npBreakdown?.total && (
+                      <tr className="border-t border-line">
+                        <td colSpan="4" className="text-right pt-2 font-semibold text-[12px] text-ink-500">Total NP</td>
+                        <td className="text-right pt-2 mono font-bold text-[13px]">
+                          {npItems.reduce((s,i) => s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        </td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              </div>
+              {/* Panel lateral */}
+              <div className="space-y-4">
+                <div className="bg-white border border-line rounded-xl p-4">
+                  <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Resumen NP</div>
+                  <ul className="text-[12.5px] space-y-1.5">
+                    <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
+                    {o.flexxus && o.flexxus !== '—' && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{o.flexxus}</span></li>}
+                    {linkedPres && <li className="flex justify-between"><span className="text-ink-500">Presupuesto</span><span className="mono">{linkedPres.code}</span></li>}
+                    {npBreakdown?.subtotalNeto != null && (
+                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">U$S {npBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                    )}
+                    {npBreakdown?.ivaAmount != null && npBreakdown.ivaAmount > 0 && (
+                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">U$S {npBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                    )}
+                    {npBreakdown?.totalPercepciones != null && npBreakdown.totalPercepciones > 0 && (
+                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">U$S {npBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                    )}
+                    <li className="flex justify-between border-t border-line pt-1.5 mt-0.5">
+                      <span className="font-semibold text-ink-800">Total</span>
+                      <span className="mono font-semibold">
+                        U$S {(npBreakdown?.total ?? npItems.reduce((s,i)=>s+(i.total||0),0)).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                      </span>
+                    </li>
+                    <li className="flex justify-between"><span className="text-ink-500">Ítems</span><span>{npItems.length} en NP</span></li>
+                  </ul>
                 </div>
-                <div className="mt-3 pt-3 border-t border-line text-[12px] space-y-1.5">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-ink-500">Teléfono</span>
-                    <span className="mono">{cli.phone || '—'}</span>
+                {/* Dirección de entrega */}
+                {cli && (
+                  <div className="bg-white border border-line rounded-xl p-4">
+                    <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Dirección de entrega</div>
+                    <div className="text-[13px] text-ink-900">{cli.address || '—'}</div>
+                    <div className="text-[12px] text-ink-500 mt-0.5">{[cli.city, cli.prov].filter(Boolean).join(' — ') || '—'}</div>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-ink-500">Email</span>
-                    <span className="truncate max-w-[140px]">{cli.email || '—'}</span>
-                  </div>
-                  {cli.zone && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-ink-500">Zona</span>
-                      <span>{cli.zone}</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* ── NP manual (Order) o NP sin ítems: vista con checklist ── */
+            <div className="grid grid-cols-5 gap-4">
+              {/* Checklist */}
+              <div className="col-span-3 bg-white border border-line rounded-xl p-5">
+                <div className="text-sm font-semibold mb-3">Checklist de entrega</div>
+                <ul className="text-[13px] space-y-2">
+                  {checklistItems.map(([label, done]) => (
+                    <li key={label} className="flex items-center gap-2.5">
+                      <span className={cx('w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0',
+                        done ? 'bg-emerald-500 text-white' : 'bg-ink-200')}>
+                        {done && <Icon name="check" size={11}/>}
+                      </span>
+                      <span className={done ? 'text-ink-900' : 'text-ink-400'}>{label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {/* Dirección */}
+              <div className="col-span-2 bg-white border border-line rounded-xl p-4">
+                <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Dirección de entrega</div>
+                {cli ? (
+                  <>
+                    <div className="text-[13px] text-ink-900">{cli.address || '—'}</div>
+                    <div className="text-[12px] text-ink-500 mt-0.5">
+                      {[cli.city, cli.prov].filter(Boolean).join(' — ') || '—'}
                     </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="text-[13px] text-ink-400">Sin datos de cliente</div>
-            )}
-          </div>
+                    <div className="mt-3 pt-3 border-t border-line text-[12px] space-y-1.5">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-ink-500">Teléfono</span>
+                        <span className="mono">{cli.phone || '—'}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-ink-500">Email</span>
+                        <span className="truncate max-w-[140px]">{cli.email || '—'}</span>
+                      </div>
+                      {cli.zone && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-ink-500">Zona</span>
+                          <span>{cli.zone}</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[13px] text-ink-400">Sin datos de cliente</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

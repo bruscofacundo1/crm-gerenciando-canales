@@ -178,7 +178,7 @@ router.post('/', authMiddleware, async (req, res) => {
         clientId:     resolvedClientId,
         sellerId:     resolvedSellerId,
         fromQuoteId:  fromQuoteId || null,
-        stage:        'oc',
+        stage:        'np_enviada',
         clientOCCode: clientOCCode || null,
         flexxusCode:  flexxusCode  || null,
         deliveryType: deliveryType || 'AMBA',

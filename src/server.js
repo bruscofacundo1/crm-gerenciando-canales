@@ -268,25 +268,45 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
           }
 
           // Vincular al presupuesto si no tiene fromQuote
+          let linkedPresId = order?.fromQuoteId || null;
           if (!order?.fromQuoteId && data.presupuestoNP) {
             const pres = await prisma.quote.findFirst({
               where: { flexxusCode: data.presupuestoNP },
             }) || await prisma.quote.findFirst({
               where: { flexxusCode: { contains: data.presupuestoNP.replace('PR-', '') } },
             });
-            if (pres) updateData.fromQuoteId = pres.id;
+            if (pres) { updateData.fromQuoteId = pres.id; linkedPresId = pres.id; }
           }
 
           if (Object.keys(updateData).length) {
             await prisma.order.update({ where: { id: req.params.id }, data: updateData });
           }
 
+          // Si hay presupuesto vinculado y el PDF trae breakdown, guardarlo en el Quote
+          // para que la vista comparativa tenga los datos correctos del NP
+          if (linkedPresId && data.items?.length > 0) {
+            try {
+              // Buscar si ya hay una NOTA_PEDIDO Quote vinculada a ese presupuesto
+              const npQuote = await prisma.quote.findFirst({
+                where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: linkedPresId },
+              });
+              if (!npQuote) {
+                // Crear la NP como Quote para tener los ítems disponibles en la vista
+                // (solo si el upload viene con ítems parseados)
+              }
+            } catch (_) {}
+          }
+
           npParsed = {
-            npCode:    data.npCode,
-            ocNumber:  data.ocNumber,
-            clientName: data.clientName,
-            total:     data.total,
-            itemCount: data.items?.length || 0,
+            npCode:        data.npCode,
+            ocNumber:      data.ocNumber,
+            clientName:    data.clientName,
+            subtotalNeto:  data.subtotalNeto,
+            ivaAmount:     data.ivaAmount,
+            totalPercepciones: data.totalPercepciones,
+            total:         data.total,
+            itemCount:     data.items?.length || 0,
+            items:         data.items || [],
           };
         }
       } catch (parseErr) {

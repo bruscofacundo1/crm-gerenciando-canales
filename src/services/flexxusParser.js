@@ -359,6 +359,9 @@ async function parseNotaPedidoPDF(buffer) {
     presupuestoNP:  null, // Código PR del presupuesto extraído del COMENTARIO (ej: "PR-17680")
     date:          null,
     seller:        null,
+    subtotalNeto:      null,   // U$S subtotal neto
+    ivaAmount:         null,   // U$S monto IVA
+    totalPercepciones: null,   // U$S total percepciones
     total:         null,
     items:         [],
   };
@@ -433,18 +436,32 @@ async function parseNotaPedidoPDF(buffer) {
       if (lines[i] === 'Vendedor:') { result.seller = lines[i - 1]; break; }
     }
 
-    // ── Total ─────────────────────────────────────────────────────────────────
-    // pdf-parse puede poner "U$S 6071,04" en la línea ANTERIOR a "Total:".
-    // Usamos getAdjacentUsd() para buscar bidireccional (prev/next).
+    // ── Breakdown de precios + Total ──────────────────────────────────────────
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       let m;
+
+      // Subtotal neto
+      if (!result.subtotalNeto && /Subtotal[\s.]+Neto/i.test(line))
+        result.subtotalNeto = getAdjacentUsd(lines, i);
+
+      // Total percepciones
+      if (!result.totalPercepciones && /Total\s+Perc/i.test(line))
+        result.totalPercepciones = getAdjacentUsd(lines, i);
+
+      // Grand total
       if (!result.total) {
         if ((m = line.match(/^Total\s*:\s*U\$S\s*([\d,.]+)$/)))
           result.total = parseArFloat(m[1]);
         else if (/^Total\s*:?\s*$/.test(line))
           result.total = getAdjacentUsd(lines, i);
       }
+    }
+
+    // Calcular IVA: Total = SubtotalNeto + IVA + Percepciones
+    if (result.total != null && result.subtotalNeto != null && result.ivaAmount === null) {
+      const perc = result.totalPercepciones || 0;
+      result.ivaAmount = parseFloat((result.total - result.subtotalNeto - perc).toFixed(2));
     }
 
     // ── Ítems ─────────────────────────────────────────────────────────────────
