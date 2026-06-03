@@ -549,10 +549,10 @@ function NewOrderModal() {
       const data = await CrmApi.parseNP(file);
       setNpResult(data);
       // Auto-completar campos
-      if (data.ocNumber)  set('ocCliente', data.ocNumber);
-      if (data.npCode)    set('flexxus',   data.npCode);
+      if (data.ocNumber)    set('ocCliente', data.ocNumber);
+      if (data.npCode)      set('flexxus',   data.npCode);
       if (data.presupuesto) set('fromQuote', quotes.find(x => x.id === data.presupuesto.id)?.code || '');
-      if (data.client && !form.fromQuote) set('clientId', data.client.id);
+      if (data.client)      set('clientId',  data.client.id);
       pushToast(`PDF parseado: ${data.npCode || '—'} · ${data.itemCount} ítem${data.itemCount !== 1 ? 's' : ''}`);
     } catch (err) {
       pushToast(err.message || 'No se pudo parsear el PDF', 'bad');
@@ -663,18 +663,55 @@ function NewOrderModal() {
         </FormGroup>
 
         {/* Si no hay presupuesto, elegir cliente directo */}
-        {!form.fromQuote && (
-          <FormGroup label="Cliente" cols={2} hint="Requerido si no seleccionás un presupuesto.">
-            <Select value={form.clientId} onChange={v=>set('clientId',v)}
-              placeholder="Seleccionar cliente"
-              options={clients.map(c => ({ value: c.id, label: `${c.name}${c.cuit ? ` · ${c.cuit}` : ''}` }))}/>
-          </FormGroup>
-        )}
+        {!form.fromQuote && (() => {
+          // Cliente detectado automáticamente por el PDF
+          const detectedClient = npResult?.client
+            ? clients.find(c => c.id === npResult.client.id) || npResult.client
+            : null;
+          const selectedClient = form.clientId
+            ? clients.find(c => c.id === form.clientId)
+            : null;
 
-        {cli && (
+          if (detectedClient && form.clientId === detectedClient.id) {
+            // Mostrar card de confirmación — cliente identificado por CUIT
+            return (
+              <div className="col-span-2">
+                <label className="block text-[11.5px] font-semibold text-ink-700 mb-1.5">Cliente</label>
+                <div className="flex items-center gap-3 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <Icon name="check-circle" size={16} className="text-emerald-600 shrink-0"/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-emerald-900 truncate">{detectedClient.name}</div>
+                    <div className="text-[11px] text-emerald-600">Identificado por CUIT desde el PDF</div>
+                  </div>
+                  <button
+                    onClick={() => { set('clientId', ''); setNpResult(r => r ? {...r, client: null} : r); }}
+                    className="text-emerald-400 hover:text-red-500 transition-colors shrink-0"
+                    title="Cambiar cliente">
+                    <Icon name="x" size={14}/>
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <FormGroup label="Cliente" cols={2} hint={
+              npResult?.clientName && !detectedClient
+                ? `PDF identifica: "${npResult.clientName}" — no está en la BD, buscalo o crealo`
+                : 'Requerido si no seleccionás un presupuesto.'
+            }>
+              <Select value={form.clientId} onChange={v=>set('clientId',v)}
+                placeholder="Seleccionar cliente"
+                options={clients.map(c => ({ value: c.id, label: `${c.name}${c.cuit ? ` · ${c.cuit}` : ''}` }))}/>
+            </FormGroup>
+          );
+        })()}
+
+        {/* Info del presupuesto vinculado */}
+        {q && (
           <div className="col-span-2 bg-surface rounded-lg px-3 py-2 border border-line text-[12px] text-ink-600 flex items-center gap-2">
             <Icon name="info" size={13} className="text-brand"/>
-            <span><b>{cli.name}</b>{q ? ` · ${fmtMoney(q.monto)} · ${q.stage}` : ''}</span>
+            <span><b>{clients.find(c=>c.code===q.client)?.name || q.clientName || '?'}</b>{` · ${fmtMoney(q.monto)} · ${q.stage}`}</span>
           </div>
         )}
 
