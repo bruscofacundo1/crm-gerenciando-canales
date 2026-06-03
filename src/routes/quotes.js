@@ -140,6 +140,12 @@ router.post('/', authMiddleware, async (req, res) => {
     // Generate next code
     const code = await nextCode(prisma.quote, 'COT-2026');
 
+    // followUpDate: hoy + follow_up_days (igual que cuando se cambia a etapa "enviado")
+    const fudSetting = await prisma.appSetting.findUnique({ where: { key: 'follow_up_days' } });
+    const fudDays    = Math.max(1, parseInt(fudSetting?.value || '4'));
+    const followUpDate = new Date();
+    followUpDate.setDate(followUpDate.getDate() + fudDays);
+
     const quote = await prisma.quote.create({
       data: {
         code,
@@ -150,6 +156,7 @@ router.post('/', authMiddleware, async (req, res) => {
         mailType: 'PRESUPUESTO',
         stage: 'enviado',
         deadline: deadline ? new Date(deadline) : null,
+        followUpDate,
       },
       include: {
         client: { select: { code: true, name: true } },
