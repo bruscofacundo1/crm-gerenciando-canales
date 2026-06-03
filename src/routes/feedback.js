@@ -218,7 +218,7 @@ router.post('/', async (req, res) => {
 // ── POST /:id/respond ─────────────────────────────────────────────────────────
 router.post('/:id/respond', async (req, res) => {
   try {
-    if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo admins pueden responder.' });
+    if (!isDeveloper(req.user)) return res.status(403).json({ error: 'Solo desarrolladores pueden responder.' });
     const { body, status } = req.body;
     if (!body?.trim()) return res.status(400).json({ error: 'La respuesta no puede estar vacía.' });
     if (status && !VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Estado inválido.' });
@@ -273,7 +273,7 @@ router.post('/:id/respond', async (req, res) => {
 // ── PATCH /:id/status ────────────────────────────────────────────────────────
 router.patch('/:id/status', async (req, res) => {
   try {
-    if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo admins.' });
+    if (!isDeveloper(req.user)) return res.status(403).json({ error: 'Solo desarrolladores pueden cambiar el estado.' });
     const { status } = req.body;
     if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Estado inválido.' });
     const post = await prisma.feedbackPost.update({ where: { id: req.params.id }, data: { status } });

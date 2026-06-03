@@ -4965,7 +4965,7 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
 // ── Contenedor principal ──────────────────────────────────────────────────────
 function FeedbackView() {
   const { roleKey, currentUserId } = useApp();
-  const isAdmin = roleKey === 'admin';
+  const isAdmin = CrmAuth.getUser()?.role === 'DEVELOPER';
 
   const [view,    setView]    = useState('list');  // 'list' | 'new' | 'detail'
   const [postId,  setPostId]  = useState(null);
