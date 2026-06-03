@@ -183,6 +183,19 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
     else pushToast('Ya está en la última etapa', 'warn');
   };
 
+  // ── Pares globales: PRESUPUESTO con SOLICITUD vinculada en cualquier columna ──
+  // La SOLICITUD desaparece de su columna y se muestra pegada al PRESUPUESTO.
+  const pairedSolIds  = new Set(); // IDs de SOLICITUDs ocultas de su columna
+  const presToSolMap  = new Map(); // presupuestoId → solicitud item
+  if (kind === 'quote') {
+    for (const it of items) {
+      if (it.mailType === 'PRESUPUESTO' && it.linkedQuoteId) {
+        const sol = items.find(q => q.id === it.linkedQuoteId && q.mailType === 'SOLICITUD');
+        if (sol) { pairedSolIds.add(sol.id); presToSolMap.set(it.id, sol); }
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-62px)]">
       <div className="px-6 pt-5 pb-4 flex items-end justify-between gap-4 border-b border-line bg-white">
@@ -195,8 +208,9 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
       <div className="flex-1 min-h-0 overflow-x-auto scroll-thin px-6 pb-6 pt-4 bg-surface">
         <div className="flex gap-3 h-full min-w-max">
           {stages.map(st => {
-            const list = items.filter(i => i.stage === st.id);
-            const total = list.reduce((a,b)=>a+(b.monto||0),0);
+            // Filtrar SOLICITUDs que tienen par → no aparecen en su propia columna
+            const list  = items.filter(i => i.stage === st.id && !pairedSolIds.has(i.id));
+            const total = list.reduce((a,b) => a + (b.monto||0), 0);
             return (
               <div key={st.id} className="w-[292px] shrink-0 flex flex-col bg-white rounded-xl border border-line">
                 <div className="px-3.5 py-3 flex items-center justify-between border-b border-line">
@@ -208,39 +222,27 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
                 </div>
                 <div className="kcol-body p-2.5 space-y-2 scroll-thin flex-1 bg-surface/50">
                   {list.length === 0 && <EmptyCol/>}
-                  {kind === 'quote' ? (() => {
-                    // Agrupar pares PRESUPUESTO+SOLICITUD en la misma columna
-                    const pairedPresIds = new Set();
-                    const pairedSolIds  = new Set();
-                    const pairs = [];
-                    for (const it of list) {
-                      if (it.mailType === 'PRESUPUESTO' && it.linkedQuoteId) {
-                        const sol = list.find(q => q.id === it.linkedQuoteId && q.mailType === 'SOLICITUD');
-                        if (sol) { pairs.push({ pres: it, sol }); pairedPresIds.add(it.id); pairedSolIds.add(sol.id); }
-                      }
-                    }
-                    const singles = list.filter(q => !pairedPresIds.has(q.id) && !pairedSolIds.has(q.id));
-                    return <>
-                      {pairs.map(({ pres, sol }) => (
-                        <PairedQuoteCard key={pres.code} pres={pres} sol={sol}
-                          onOpenPres={() => onOpen(pres.code)}
-                          onOpenSol={() => onOpen(sol.code)}/>
-                      ))}
-                      {singles.map(it => (
-                        <QuoteCard key={it.code} q={it} onOpen={() => onOpen(it.code)}/>
-                      ))}
-                    </>;
-                  })() : list.map(it => (
-                    <div key={it.code} className="space-y-1.5">
-                      <OrderCard o={it} onOpen={()=>onOpen(it.code)}/>
-                      {logisticsActions && (
-                        <button onClick={(e)=>{ e.stopPropagation(); quickAdvance(it); }}
-                          className="w-full text-[11px] bg-brandSoft text-navy-900 hover:bg-brand hover:text-white transition-colors py-1.5 rounded-md font-medium flex items-center justify-center gap-1">
-                          <Icon name="arrow-right" size={11}/> Avanzar etapa
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {kind === 'quote'
+                    ? list.map(it => {
+                        const sol = presToSolMap.get(it.id);
+                        return sol
+                          ? <PairedQuoteCard key={it.code} pres={it} sol={sol}
+                              onOpenPres={() => onOpen(it.code)}
+                              onOpenSol={() => onOpen(sol.code)}/>
+                          : <QuoteCard key={it.code} q={it} onOpen={() => onOpen(it.code)}/>;
+                      })
+                    : list.map(it => (
+                        <div key={it.code} className="space-y-1.5">
+                          <OrderCard o={it} onOpen={() => onOpen(it.code)}/>
+                          {logisticsActions && (
+                            <button onClick={(e) => { e.stopPropagation(); quickAdvance(it); }}
+                              className="w-full text-[11px] bg-brandSoft text-navy-900 hover:bg-brand hover:text-white transition-colors py-1.5 rounded-md font-medium flex items-center justify-center gap-1">
+                              <Icon name="arrow-right" size={11}/> Avanzar etapa
+                            </button>
+                          )}
+                        </div>
+                      ))
+                  }
                 </div>
                 {total > 0 && (
                   <div className="px-3.5 py-2 border-t border-line text-[11px] flex justify-between text-ink-500">
