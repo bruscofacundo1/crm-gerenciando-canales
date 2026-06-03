@@ -680,7 +680,7 @@ function Clients({ readonly=false }) {
   const [deleting, setDeleting] = useState(false);
   const [listPage, setListPage] = useState(0);
   const LIST_PAGE_SIZE = 80;
-  const isAdmin = CrmAuth.getUser()?.role === 'ADMIN';
+  const isAdmin = ['ADMIN','DEVELOPER'].includes(CrmAuth.getUser()?.role);
 
   const reloadClients = async () => {
     try {
@@ -3673,7 +3673,7 @@ function Articles() {
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [articleModal, setArticleModal] = useState(null); // null | { mode:'new' } | { mode:'edit', article }
   const [reloadKey, setReloadKey]       = useState(0);
-  const isAdmin = CrmAuth.getUser()?.role === 'ADMIN';
+  const isAdmin = ['ADMIN','DEVELOPER'].includes(CrmAuth.getUser()?.role);
 
   const reload = () => setReloadKey(k => k + 1);
 

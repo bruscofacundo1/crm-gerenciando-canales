@@ -925,7 +925,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
       width={960}
       headerExtras={
         <div className="flex items-center gap-2">
-          {CrmAuth.getUser()?.role === 'ADMIN' && (
+          {['ADMIN','DEVELOPER'].includes(CrmAuth.getUser()?.role) && (
             <button className="btn-ghost text-bad border-red-200 hover:bg-red-50" onClick={handleDelete}>
               <Icon name="trash-2" size={13}/>Eliminar
             </button>
@@ -2009,7 +2009,7 @@ function OrderDetail({ code, onClose, canReassign }) {
             onClick={() => setEmailModalOpen(true)}>
             <Icon name="send" size={13}/>Enviar mail
           </button>
-          {CrmAuth.getUser()?.role === 'ADMIN' && (
+          {['ADMIN','DEVELOPER'].includes(CrmAuth.getUser()?.role) && (
             <button className="btn-ghost text-red-500 hover:bg-red-50 border-red-200"
               onClick={handleDeleteOrder} disabled={deleting}>
               <Icon name="trash-2" size={13}/>{deleting ? 'Eliminando…' : 'Eliminar'}
