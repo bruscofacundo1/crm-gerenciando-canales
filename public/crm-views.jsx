@@ -2364,10 +2364,12 @@ function Config() {
               <Icon name="clock" size={15} className="text-orange-500"/>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-semibold text-ink-800">Alerta de seguimiento</div>
-              <div className="text-[11.5px] text-ink-400 mt-0.5">
-                Días después de enviar un presupuesto hasta que aparece el banner naranja de seguimiento pendiente.
-                Se limpia automáticamente cuando la cotización se acepta o rechaza.
+              <div className="text-[13px] font-semibold text-ink-800">⏰ Alerta de seguimiento de presupuesto</div>
+              <div className="text-[11.5px] text-ink-400 mt-0.5 space-y-1">
+                <div>Cuando un presupuesto pasa a etapa <strong>"Enviado"</strong>, el sistema espera esta cantidad de días para que el cliente responda.</div>
+                <div>Si no hay respuesta, aparece el <strong>badge ámbar ⏰ Xd</strong> en la tarjeta del kanban indicando cuántos días lleva sin respuesta.</div>
+                <div>El vendedor puede usar <strong>"Recordar"</strong> desde la campanita para enviarle un mail al cliente y reiniciar el contador.</div>
+                <div className="text-ink-300">Se limpia automáticamente cuando la cotización se acepta o rechaza.</div>
               </div>
             </div>
             <select
