@@ -999,7 +999,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
             return (
               <div className="relative">
                 <button className="btn-ghost text-[12px]" onClick={() => setLinkDropOpen(o=>!o)}>
-                  <Icon name="link" size={13}/>Vincular presupuesto
+                  <Icon name="link" size={13}/>{q.mailType === 'PRESUPUESTO' ? 'Vincular solicitud' : 'Vincular presupuesto'}
                 </button>
                 {linkDropOpen && (
                   <>
@@ -1012,7 +1012,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       <div className="max-h-48 overflow-y-auto scroll-thin">
                         {quotes.filter(x =>
                           x.id !== q.id &&
-                          x.mailType === 'PRESUPUESTO' &&
+                          x.mailType === (q.mailType === 'PRESUPUESTO' ? 'SOLICITUD' : 'PRESUPUESTO') &&
                           !x.linkedQuoteId &&
                           (!linkSearch || x.code.toLowerCase().includes(linkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(linkSearch.toLowerCase()))
                         ).slice(0,15).map(x => (
@@ -1026,7 +1026,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                             <span className="text-[11px] text-ink-500 truncate">{x.clientName||'sin cliente'}</span>
                           </button>
                         ))}
-                        {quotes.filter(x => x.id !== q.id && x.mailType === 'PRESUPUESTO' && !x.linkedQuoteId && (!linkSearch || x.code.toLowerCase().includes(linkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(linkSearch.toLowerCase()))).length === 0 && (
+                        {quotes.filter(x => x.id !== q.id && x.mailType === (q.mailType === 'PRESUPUESTO' ? 'SOLICITUD' : 'PRESUPUESTO') && !x.linkedQuoteId && (!linkSearch || x.code.toLowerCase().includes(linkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(linkSearch.toLowerCase()))).length === 0 && (
                           <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin resultados</div>
                         )}
                       </div>
