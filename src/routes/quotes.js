@@ -308,6 +308,33 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
       }
     });
 
+    // ── Movimiento en paquete: si es PRESUPUESTO → mover SOLICITUD vinculada también ──
+    if ((stage === 'aceptada' || stage === 'rechazada') && quote.mailType === 'PRESUPUESTO' && quote.linkedQuoteId) {
+      try {
+        const solicitud = await prisma.quote.findUnique({
+          where: { id: quote.linkedQuoteId },
+          select: { id: true, code: true, mailType: true, stage: true },
+        });
+        if (solicitud && solicitud.mailType === 'SOLICITUD' && solicitud.stage !== stage) {
+          await prisma.quote.update({
+            where: { id: solicitud.id },
+            data: { stage, stageChangedAt: new Date(), followUpDate: null,
+                    ...(stage === 'rechazada' && rejectReason ? { rejectReason, rejectNotes: rejectNotes || null } : {}) },
+          });
+          await prisma.activity.create({
+            data: {
+              action: 'STAGE_CHANGE',
+              detail: `Movió ${solicitud.code} a ${stage} junto con ${quote.code} (paquete)`,
+              userId: req.user.id,
+              quoteId: solicitud.id,
+            },
+          });
+        }
+      } catch (e) {
+        console.error('Package move error:', e.message);
+      }
+    }
+
     // Disparar notificaciones fuera de la transacción (no bloquea ni revierte)
     onStageChange(quote.id, oldStage, stage).catch(() => {});
 

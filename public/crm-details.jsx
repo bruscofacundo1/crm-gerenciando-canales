@@ -1036,12 +1036,14 @@ function QuoteDetail({ code, onClose, canReassign }) {
             );
           })()}
           <div className="flex-1"/>
-          <button className="btn-ghost text-bad border-red-200 hover:bg-red-50" onClick={() => setRejectPending(true)}>
-            Marcar rechazada
-          </button>
-          <button className="btn-accent" onClick={() => handleQuoteStage('enviado')}>
-            <Icon name="check" size={14}/>Marcar aceptada
-          </button>
+          {q.mailType !== 'SOLICITUD' && (<>
+            <button className="btn-ghost text-bad border-red-200 hover:bg-red-50" onClick={() => setRejectPending(true)}>
+              Marcar rechazada
+            </button>
+            <button className="btn-accent" onClick={() => handleQuoteStage('enviado')}>
+              <Icon name="check" size={14}/>Marcar aceptada
+            </button>
+          </>)}
         </>
       }
     >

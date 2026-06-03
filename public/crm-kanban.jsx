@@ -81,6 +81,64 @@ function QuoteCard({ q, onOpen, compact }) {
   );
 }
 
+// Tarjeta combinada: PRESUPUESTO (arriba, grande) + SOLICITUD vinculada (abajo, chica)
+function PairedQuoteCard({ pres, sol, onOpenPres, onOpenSol }) {
+  const { clients, users } = useApp();
+  const cli = clients.find(c => c.code === pres.client);
+  const sel = users.find(u => u.id === pres.seller);
+  const displayName = cli?.name || pres.emailSubject || 'Sin cliente asignado';
+  const displaySub  = cli ? `${cli.city || ''}${cli.city && cli.prov ? ', ' : ''}${cli.prov || ''}` : '';
+  return (
+    <div className="rounded-xl border border-brand/30 overflow-hidden shadow-sm">
+      {/* ── PRESUPUESTO (main) ── */}
+      <div onClick={onOpenPres} className="kcard bg-white p-3 cursor-pointer">
+        <div className="flex items-start justify-between gap-2">
+          <div className="mono text-[11px] font-semibold text-navy-900">{pres.code}</div>
+          <div className="flex items-center gap-1">
+            <Badge tone="blue">PRES</Badge>
+            {pres.flexxus && <Badge tone="slate">{pres.flexxus}</Badge>}
+            {pres.rejectReason && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                {pres.rejectReason}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="text-[13px] font-semibold text-ink-900 mt-1 leading-snug truncate">{displayName}</div>
+        {displaySub && <div className="text-[11px] text-ink-500 truncate">{displaySub}</div>}
+        {pres.monto != null && (
+          <div className="mt-2 mono text-[13px] font-bold text-ink-900">{fmtMoney(pres.monto)}</div>
+        )}
+        {sel && (
+          <div className="mt-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Avatar name={sel.name} size={20}/>
+              <span className="text-[11px] text-ink-600">{sel.name.split(' ')[0]}</span>
+            </div>
+            <span className="text-[11px] text-ink-400">{fmtDate(pres.ingreso)}</span>
+          </div>
+        )}
+      </div>
+      {/* ── Divisor con etiqueta ── */}
+      <div className="flex items-center gap-2 px-3 py-1 bg-brand/5 border-y border-brand/20">
+        <Icon name="link" size={10} className="text-brand/60 shrink-0"/>
+        <span className="text-[10px] text-brand/70 font-medium">Solicitud vinculada</span>
+      </div>
+      {/* ── SOLICITUD (companion, más chica) ── */}
+      <div onClick={onOpenSol} className="kcard bg-surface/60 px-3 py-2 cursor-pointer flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="mono text-[10.5px] font-semibold text-ink-600">{sol.code}</div>
+          <div className="text-[11px] text-ink-500 truncate">{sol.emailSubject || 'Solicitud de cotización'}</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Badge tone="sky">SOL</Badge>
+          <span className="text-[10px] text-ink-400">{fmtDate(sol.ingreso)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderCard({ o, onOpen, compact }) {
   const { clients, users } = useApp();
   const cli = clients.find(c=>c.code===o.client);
@@ -150,12 +208,32 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
                 </div>
                 <div className="kcol-body p-2.5 space-y-2 scroll-thin flex-1 bg-surface/50">
                   {list.length === 0 && <EmptyCol/>}
-                  {list.map(it => (
+                  {kind === 'quote' ? (() => {
+                    // Agrupar pares PRESUPUESTO+SOLICITUD en la misma columna
+                    const pairedPresIds = new Set();
+                    const pairedSolIds  = new Set();
+                    const pairs = [];
+                    for (const it of list) {
+                      if (it.mailType === 'PRESUPUESTO' && it.linkedQuoteId) {
+                        const sol = list.find(q => q.id === it.linkedQuoteId && q.mailType === 'SOLICITUD');
+                        if (sol) { pairs.push({ pres: it, sol }); pairedPresIds.add(it.id); pairedSolIds.add(sol.id); }
+                      }
+                    }
+                    const singles = list.filter(q => !pairedPresIds.has(q.id) && !pairedSolIds.has(q.id));
+                    return <>
+                      {pairs.map(({ pres, sol }) => (
+                        <PairedQuoteCard key={pres.code} pres={pres} sol={sol}
+                          onOpenPres={() => onOpen(pres.code)}
+                          onOpenSol={() => onOpen(sol.code)}/>
+                      ))}
+                      {singles.map(it => (
+                        <QuoteCard key={it.code} q={it} onOpen={() => onOpen(it.code)}/>
+                      ))}
+                    </>;
+                  })() : list.map(it => (
                     <div key={it.code} className="space-y-1.5">
-                      {kind === 'quote'
-                        ? <QuoteCard q={it} onOpen={()=>onOpen(it.code)}/>
-                        : <OrderCard o={it} onOpen={()=>onOpen(it.code)}/>}
-                      {logisticsActions && kind === 'order' && (
+                      <OrderCard o={it} onOpen={()=>onOpen(it.code)}/>
+                      {logisticsActions && (
                         <button onClick={(e)=>{ e.stopPropagation(); quickAdvance(it); }}
                           className="w-full text-[11px] bg-brandSoft text-navy-900 hover:bg-brand hover:text-white transition-colors py-1.5 rounded-md font-medium flex items-center justify-center gap-1">
                           <Icon name="arrow-right" size={11}/> Avanzar etapa
