@@ -676,28 +676,34 @@ function Login({ onLogin }) {
   const [loading,    setLoading]    = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [allowedDomains, setAllowedDomains] = useState(['myselec.com', 'myselec.com.ar', 'gmail.com']);
+  const [allowedEmails,  setAllowedEmails]  = useState([]);
 
   // Registro
-  const [reg, setReg] = useState({ name:'', lastName:'', email:'', phone:'', dni:'', cuit:'', pass:'', pass2:'' });
+  const [reg, setReg] = useState({ name:'', lastName:'', email:'', phone:'', dni:'', pass:'', pass2:'' });
   const setRegF = (k, v) => setReg(r => ({ ...r, [k]: v }));
 
-  // Cargar dominios permitidos al montar
+  // Cargar dominios y correos permitidos al montar
   React.useEffect(() => {
     fetch('/api/auth/config')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.allowedDomains?.length) setAllowedDomains(d.allowedDomains); })
+      .then(d => {
+        if (d?.allowedDomains?.length) setAllowedDomains(d.allowedDomains);
+        if (d?.allowedEmails?.length)  setAllowedEmails(d.allowedEmails.map(e => e.toLowerCase()));
+      })
       .catch(() => {});
   }, []);
 
-  const isDomainAllowed = (emailVal) => {
-    const domain = (emailVal || '').split('@')[1]?.toLowerCase();
+  const isEmailAllowed = (emailVal) => {
+    const normalized = (emailVal || '').toLowerCase().trim();
+    if (allowedEmails.includes(normalized)) return true;
+    const domain = normalized.split('@')[1];
     return domain && allowedDomains.includes(domain);
   };
 
   const domainHint = () => {
     const corp = allowedDomains.filter(d => d !== 'gmail.com');
-    const parts = corp.length ? corp.map(d => `@${d}`).join(', ') + ' o Gmail' : 'Gmail';
-    return `Solo se aceptan emails corporativos (${parts}).`;
+    const parts = corp.length ? corp.map(d => `@${d}`).join(', ') : '';
+    return `Solo se aceptan correos ${parts ? `de ${parts}, ` : ''}Gmail o correos autorizados por el administrador.`;
   };
 
   const bgStyle = {
@@ -726,10 +732,6 @@ function Login({ onLogin }) {
   const handleForgot = async (e) => {
     e.preventDefault();
     setError('');
-    if (!isDomainAllowed(email)) {
-      setError(domainHint());
-      return;
-    }
     setLoading(true);
     try {
       await CrmApi.forgotPassword(email);
@@ -763,10 +765,10 @@ function Login({ onLogin }) {
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
-    if (!reg.name.trim() || !reg.lastName.trim() || !reg.email.trim() || !reg.phone.trim() || !reg.dni.trim()) {
-      setError('Completá todos los campos obligatorios'); return;
+    if (!reg.name.trim() || !reg.lastName.trim() || !reg.email.trim()) {
+      setError('Completá nombre, apellido y email'); return;
     }
-    if (!isDomainAllowed(reg.email)) {
+    if (!isEmailAllowed(reg.email)) {
       setError(domainHint()); return;
     }
     const pwErr = validatePassword(reg.pass);
@@ -889,16 +891,14 @@ function Login({ onLogin }) {
               </div>
               <label className="block text-xs font-medium text-ink-700 mb-1">Email *</label>
               <input className="inp w-full mb-3" value={reg.email} onChange={e=>setRegF('email',e.target.value)} placeholder="tu@email.com" autoComplete="email"/>
-              <label className="block text-xs font-medium text-ink-700 mb-1">Teléfono *</label>
-              <input className="inp w-full mb-3" value={reg.phone} onChange={e=>setRegF('phone',e.target.value)} placeholder="11 1234-5678"/>
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs font-medium text-ink-700 mb-1">DNI *</label>
-                  <input className="inp w-full" value={reg.dni} onChange={e=>setRegF('dni',e.target.value)} placeholder="12345678"/>
+                  <label className="block text-xs font-medium text-ink-700 mb-1">Teléfono <span className="text-ink-400 font-normal">(opcional)</span></label>
+                  <input className="inp w-full" value={reg.phone} onChange={e=>setRegF('phone',e.target.value)} placeholder="11 1234-5678"/>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-ink-700 mb-1">CUIT <span className="text-ink-400 font-normal">(opcional)</span></label>
-                  <input className="inp w-full" value={reg.cuit} onChange={e=>setRegF('cuit',e.target.value)} placeholder="20-12345678-9"/>
+                  <label className="block text-xs font-medium text-ink-700 mb-1">DNI <span className="text-ink-400 font-normal">(opcional)</span></label>
+                  <input className="inp w-full" value={reg.dni} onChange={e=>setRegF('dni',e.target.value)} placeholder="12345678"/>
                 </div>
               </div>
               <label className="block text-xs font-medium text-ink-700 mb-1">Contraseña *</label>
