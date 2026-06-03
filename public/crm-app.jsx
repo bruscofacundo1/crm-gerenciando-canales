@@ -1162,9 +1162,8 @@ function Topbar({ user, roleKey, setRoleKey, setScreen }) {
   const _jwt = decodeJwtPayload(CrmAuth.getToken());
   const loggedUser = _authUser || _jwt; // JWT como fallback si crm_user no está guardado
   const isAdmin = ['ADMIN','DEVELOPER'].includes(loggedUser?.role);
-  // Para el badge: alertas inbox con items nuevos desde la última visita (o sin newCount = siempre nueva)
-  const inboxNew = (inboxAlerts || []).filter(a => a.newCount === undefined || a.newCount > 0).length;
-  const unreadCount = notifications.filter(n => !n.read).length + inboxNew;
+  // Badge: solo cantidad de alertas pendientes (tab "Pendiente"), sin contar actividad
+  const unreadCount = (inboxAlerts || []).length;
 
   const handleLogout = () => {
     CrmAuth.clearToken();
