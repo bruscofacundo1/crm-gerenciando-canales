@@ -652,15 +652,57 @@ function NewOrderModal() {
         )}
 
         {/* Cotización vinculada (opcional) */}
-        <FormGroup label="Presupuesto vinculado" cols={2}
-          hint="Opcional. Si subiste el PDF, se detecta automáticamente.">
-          <Select value={form.fromQuote} onChange={v=>{set('fromQuote',v);if(v)set('clientId','');}}
-            placeholder="Seleccionar presupuesto (opcional)"
-            options={presupuestos.map(a => {
-              const c = clients.find(x => x.code === a.client);
-              return { value: a.code, label: `${a.code}${a.flexxus ? ` (${a.flexxus})` : ''} — ${c?.name || a.clientName || '?'} · ${a.stage}` };
-            })}/>
-        </FormGroup>
+        {(() => {
+          const detectedPres = npResult?.presupuesto;
+          const prRef        = npResult?.presupuestoNP; // ej: "PR-18009"
+
+          // Si el PDF encontró el presupuesto en la BD → card de confirmación
+          if (detectedPres && form.fromQuote) {
+            const presQ = quotes.find(x => x.id === detectedPres.id);
+            return (
+              <div className="col-span-2">
+                <label className="block text-[11.5px] font-semibold text-ink-700 mb-1.5">Presupuesto vinculado</label>
+                <div className="flex items-center gap-3 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <Icon name="link" size={16} className="text-emerald-600 shrink-0"/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-emerald-900">
+                      {presQ?.code || detectedPres.code}
+                      {detectedPres.flexxusCode && <span className="ml-2 mono text-[11px] text-emerald-600">({detectedPres.flexxusCode})</span>}
+                    </div>
+                    <div className="text-[11px] text-emerald-600">Detectado desde el COMENTARIO del PDF ({prRef})</div>
+                  </div>
+                  <button onClick={() => { set('fromQuote', ''); }}
+                    className="text-emerald-400 hover:text-red-500 transition-colors shrink-0" title="Cambiar">
+                    <Icon name="x" size={14}/>
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // Si el PDF tiene referencia PR pero no encontró el presupuesto en BD
+          const prWarning = prRef && !detectedPres;
+
+          return (
+            <FormGroup label="Presupuesto vinculado" cols={2}
+              hint={prWarning
+                ? `PDF referencia ${prRef} — no encontrado en el CRM. Seleccionalo manualmente si ya existe.`
+                : 'Opcional. Si subiste el PDF, se detecta automáticamente.'}>
+              {prWarning && (
+                <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[12px] text-amber-800">
+                  <Icon name="alert-triangle" size={13} className="text-amber-500 shrink-0"/>
+                  Presupuesto <b className="mono">{prRef}</b> no encontrado — cargalo primero o seleccionalo abajo
+                </div>
+              )}
+              <Select value={form.fromQuote} onChange={v=>{set('fromQuote',v);if(v)set('clientId','');}}
+                placeholder="Seleccionar presupuesto (opcional)"
+                options={presupuestos.map(a => {
+                  const c = clients.find(x => x.code === a.client);
+                  return { value: a.code, label: `${a.code}${a.flexxus ? ` (${a.flexxus})` : ''} — ${c?.name || a.clientName || '?'} · ${a.stage}` };
+                })}/>
+            </FormGroup>
+          );
+        })()}
 
         {/* Si no hay presupuesto, elegir cliente directo */}
         {!form.fromQuote && (() => {
