@@ -175,6 +175,45 @@ router.get('/inbox', authMiddleware, async (req, res) => {
       }
 
     } else if (role === 'VENDEDOR') {
+      // 0. Cotizaciones nuevas asignadas por otro usuario (admin/developer)
+      {
+        const since = lastCheck || new Date(now.getTime() - 48 * 3600 * 1000);
+        const recentAssigned = await prisma.quote.findMany({
+          where: { sellerId: userId, isDraft: false, createdAt: { gte: since } },
+          select: { id: true, code: true, createdAt: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (recentAssigned.length > 0) {
+          const quoteIds = recentAssigned.map(q => q.id);
+          const createdActivities = await prisma.activity.findMany({
+            where: { quoteId: { in: quoteIds }, action: 'CREATED' },
+            select: { quoteId: true, userId: true, user: { select: { name: true } } },
+          });
+          const createdByMap = Object.fromEntries(createdActivities.map(a => [a.quoteId, a]));
+          // Solo las creadas por alguien que NO es el propio vendedor
+          const assignedByOther = recentAssigned.filter(q => {
+            const act = createdByMap[q.id];
+            return act && act.userId !== userId;
+          });
+          if (assignedByOther.length > 0) {
+            const creators = [...new Set(assignedByOther.map(q => createdByMap[q.id]?.user?.name).filter(Boolean))];
+            const creatorStr = creators.length === 1 ? creators[0] : `${creators[0]} y otros`;
+            alerts.push({
+              id: 'assigned-quotes', type: 'ASSIGNED_QUOTES', severity: 'high', icon: 'user-plus',
+              title: `${assignedByOther.length} cotización${assignedByOther.length > 1 ? 'es' : ''} nueva${assignedByOther.length > 1 ? 's' : ''} asignada${assignedByOther.length > 1 ? 's' : ''}`,
+              description: `${creatorStr} te asignó${assignedByOther.length > 1 ? ' ' : ' '}${assignedByOther.length === 1 ? 'una nueva cotización' : `${assignedByOther.length} cotizaciones`}.`,
+              action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+              count: assignedByOther.length,
+              items: assignedByOther.map(q => ({
+                id: q.id, code: q.code,
+                clientName: q.client?.name,
+                assignedBy: createdByMap[q.id]?.user?.name || 'Administrador',
+              })),
+            });
+          }
+        }
+      }
+
       // 1. Cotizaciones del vendedor con followUpDate vencido
       if (sysFollowUp && userInappPref(prefs, 'follow_up')) {
         const followUps = await prisma.quote.count({

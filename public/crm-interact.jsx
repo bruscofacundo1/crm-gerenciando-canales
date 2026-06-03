@@ -1386,6 +1386,7 @@ function NotificationsPopover({ onClose, setScreen }) {
     FOLLOW_UP_UPCOMING:    '📆',
     UNLINKED_SOLICITUDES:  '📋',
     NO_RESPONSE:           '📨',
+    ASSIGNED_QUOTES:       '🎯',
   };
 
   const handleAlertAction = (alert) => {
@@ -1476,6 +1477,9 @@ function NotificationsPopover({ onClose, setScreen }) {
                                     <span className="shrink-0 text-[10px]">· {new Date(item.followUpDate).toLocaleDateString('es-AR', { day:'2-digit', month:'short' })}</span>
                                   )}
                                   {item.stage && !item.clientName && <span className="opacity-60">· {item.stage}</span>}
+                                  {item.assignedBy && alert.type === 'ASSIGNED_QUOTES' && (
+                                    <span className="shrink-0 text-[10px] opacity-70">por {item.assignedBy}</span>
+                                  )}
                                   {item.canRemind && alert.type === 'NO_RESPONSE' && (
                                     <button onClick={(e) => { e.stopPropagation(); setReminderItem(item); }}
                                       className="shrink-0 ml-auto px-1.5 py-0.5 rounded bg-white/80 hover:bg-white text-[9px] font-semibold border border-current/20">
