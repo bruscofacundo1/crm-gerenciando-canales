@@ -212,8 +212,10 @@ router.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email requerido' });
 
-    // Para recuperar contraseña solo necesitamos que el usuario exista en el sistema
-    // (no validamos dominio — cualquier usuario registrado puede recuperar su cuenta)
+    // Solo procesar si el email está en la whitelist (dominio o correo individual)
+    // Si no está autorizado, responder OK igual para no revelar qué correos existen
+    if (!await emailAllowed(email)) return res.json({ ok: true });
+
     const user = await prisma.user.findUnique({ where: { email } });
     // Siempre responder OK para no revelar si existe el email
     if (!user || !user.active) return res.json({ ok: true });

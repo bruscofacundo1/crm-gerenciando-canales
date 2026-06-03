@@ -702,8 +702,8 @@ function Login({ onLogin }) {
 
   const domainHint = () => {
     const corp = allowedDomains.filter(d => d !== 'gmail.com');
-    const parts = corp.length ? corp.map(d => `@${d}`).join(', ') : '';
-    return `Solo se aceptan correos ${parts ? `de ${parts}, ` : ''}Gmail o correos autorizados por el administrador.`;
+    const parts = corp.map(d => `@${d}`).join(', ');
+    return `Solo se aceptan correos de ${parts ? parts + ', ' : ''}Gmail (únicamente autorizados por el administrador).`;
   };
 
   const bgStyle = {
