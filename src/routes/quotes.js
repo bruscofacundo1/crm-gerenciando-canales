@@ -612,6 +612,104 @@ router.patch('/:id/client', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/quotes/:id/duplicate — duplicar cotización para otro cliente
+router.post('/:id/duplicate', authMiddleware, async (req, res) => {
+  try {
+    const { clientId, sellerId } = req.body;
+    if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
+
+    // Cargar original con ítems
+    const original = await prisma.quote.findUnique({
+      where: { id: req.params.id },
+      include: { items: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!original) return res.status(404).json({ error: 'Cotización no encontrada' });
+
+    // Verificar que el cliente destino existe
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, name: true, defaultSellerId: true },
+    });
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+    const resolvedSellerId = sellerId || client.defaultSellerId || original.sellerId || null;
+    const code = await nextCode(prisma.quote, 'COT-2026');
+
+    // Crear la copia
+    const duplicate = await prisma.quote.create({
+      data: {
+        code,
+        clientId,
+        sellerId: resolvedSellerId,
+        stage: resolvedSellerId ? 'asignada' : 'recibida',
+        source: original.source,
+        mailType: original.mailType,
+        emailSubject: original.emailSubject ? `[Dup] ${original.emailSubject}` : null,
+        emailFrom: original.emailFrom,
+        amount: original.amount,
+        subtotalNeto: original.subtotalNeto,
+        ivaAmount: original.ivaAmount,
+        totalPercepciones: original.totalPercepciones,
+      },
+      include: {
+        client: { select: { code: true, name: true } },
+        seller: { select: { name: true } },
+      },
+    });
+
+    // Copiar ítems
+    if (original.items.length > 0) {
+      await prisma.quoteItem.createMany({
+        data: original.items.map((it, i) => ({
+          quoteId: duplicate.id,
+          sku: it.sku,
+          description: it.description,
+          quantity: it.quantity,
+          unit: it.unit,
+          unitPrice: it.unitPrice,
+          total: it.total,
+          accepted: it.accepted,
+          checked: true,
+          sortOrder: i,
+        })),
+      });
+    }
+
+    // Activity en la copia
+    await prisma.activity.create({
+      data: {
+        action: 'CREATED',
+        detail: `Duplicada desde ${original.code} para ${client.name}`,
+        userId: req.user.id,
+        quoteId: duplicate.id,
+      },
+    });
+
+    // Activity en la original
+    await prisma.activity.create({
+      data: {
+        action: 'NOTE',
+        detail: `Cotización duplicada como ${code} para ${client.name}`,
+        userId: req.user.id,
+        quoteId: original.id,
+      },
+    });
+
+    res.json({
+      id: duplicate.id,
+      code: duplicate.code,
+      client: duplicate.client?.code || '',
+      clientName: duplicate.client?.name || '',
+      sellerName: duplicate.seller?.name || '',
+      stage: duplicate.stage,
+      monto: duplicate.amount,
+    });
+  } catch (err) {
+    console.error('Error duplicating quote:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Helper: copia ítems aceptados de PRESUPUESTO a OC (si la OC no tiene ítems aún)
 async function copyPresupuestoItemsToOC(presupuestoId, ocId) {
   const existing = await prisma.quoteItem.count({ where: { quoteId: ocId } });

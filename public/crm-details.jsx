@@ -714,6 +714,31 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [reminderSubject, setReminderSubject] = useState('');
   const [reminderBody, setReminderBody] = useState('');
   const [reminderSending, setReminderSending] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
+  const [dupClientId, setDupClientId] = useState('');
+  const [dupClientSearch, setDupClientSearch] = useState('');
+  const [dupSaving, setDupSaving] = useState(false);
+
+  const handleDuplicate = async () => {
+    if (!dupClientId) return;
+    setDupSaving(true);
+    try {
+      const result = await CrmApi.duplicateQuote(q.id, { clientId: dupClientId });
+      pushToast(`✅ Cotización duplicada como ${result.code} para ${result.clientName}`);
+      setDupOpen(false);
+      setDupClientId('');
+      setDupClientSearch('');
+      // Refrescar lista de cotizaciones
+      if (setQuotes) {
+        const fresh = await CrmApi.getQuotes();
+        if (fresh) setQuotes(fresh);
+      }
+    } catch (err) {
+      pushToast(err.message || 'Error al duplicar', 'bad');
+    } finally {
+      setDupSaving(false);
+    }
+  };
 
   const handleUploadFiles = async (files) => {
     if (!files || files.length === 0) return;
@@ -943,6 +968,52 @@ function QuoteDetail({ code, onClose, canReassign }) {
             onClick={() => setEmailModalOpen(true)}>
             <Icon name="send" size={13}/>Enviar mail
           </button>
+          <div className="relative">
+            <button className="btn-ghost text-ink-600 border-line hover:bg-surface"
+              onClick={() => setDupOpen(o => !o)}>
+              <Icon name="copy" size={13}/>Duplicar
+            </button>
+            {dupOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => { setDupOpen(false); setDupClientSearch(''); setDupClientId(''); }}/>
+                <div className="absolute right-0 top-full mt-1 w-80 bg-white rounded-xl shadow-pop border border-line z-20 p-3 space-y-2">
+                  <div className="text-[12px] font-semibold text-ink-700">Duplicar para otro cliente</div>
+                  <div className="text-[11px] text-ink-400">Se copian todos los ítems a una nueva cotización</div>
+                  <input value={dupClientSearch} onChange={e => { setDupClientSearch(e.target.value); setDupClientId(''); }}
+                    placeholder="Buscar cliente por nombre o código…"
+                    className="inp w-full text-[13px]" autoFocus/>
+                  {dupClientSearch.length >= 2 && !dupClientId && (
+                    <div className="max-h-[140px] overflow-y-auto border border-line rounded-lg">
+                      {clients.filter(c => {
+                        const s = dupClientSearch.toLowerCase();
+                        return (c.name?.toLowerCase().includes(s) || c.code?.toLowerCase().includes(s))
+                          && c.code !== q.client;
+                      }).slice(0, 6).map(c => (
+                        <button key={c.id} onClick={() => { setDupClientId(c.id); setDupClientSearch(c.name); }}
+                          className="w-full text-left px-3 py-2 text-[13px] hover:bg-surface flex items-center gap-2 border-b border-line last:border-0">
+                          <Icon name="building-2" size={13} className="text-ink-400"/>
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{c.name}</div>
+                            <div className="text-[11px] text-ink-400">{c.code}{c.city ? ` · ${c.city}` : ''}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {dupClientId && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-green-50 rounded-lg border border-green-200 text-[12px] text-green-800">
+                      <Icon name="check-circle" size={14}/> {dupClientSearch}
+                    </div>
+                  )}
+                  <button onClick={handleDuplicate} disabled={!dupClientId || dupSaving}
+                    className="btn-primary w-full justify-center text-[13px]"
+                    style={!dupClientId || dupSaving ? {opacity:.45, cursor:'not-allowed'} : {}}>
+                    {dupSaving ? 'Duplicando…' : 'Duplicar cotización'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {q.mailType === 'PRESUPUESTO' && q.stage === 'enviado' && cli?.email && (
             <button className="btn-ghost text-orange-600 border-orange-300 hover:bg-orange-50"
               onClick={() => setReminderOpen(true)}>

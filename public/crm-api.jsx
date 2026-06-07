@@ -113,6 +113,9 @@ const CrmApi = {
   getQuoteDetail: (id) => apiFetch(`/quotes/${id}/detail`),
   resyncQuoteEmail: (id) => apiFetch(`/quotes/${id}/resync-email`, { method: 'POST' }),
   reparseItems: (id) => apiFetch(`/quotes/${id}/reparse-items`, { method: 'POST' }),
+  duplicateQuote: (id, data) => apiFetch(`/quotes/${id}/duplicate`, {
+    method: 'POST', body: JSON.stringify(data)
+  }),
   deleteQuote: (id) => apiFetch(`/quotes/${id}`, { method: 'DELETE' }),
   addQuoteNote: (id, text) => apiFetch(`/quotes/${id}/notes`, {
     method: 'POST', body: JSON.stringify({ text })
