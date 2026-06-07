@@ -965,7 +965,6 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
     { id:'orders',    label:'Órdenes de Compra',     icon:'package',        sub:'Fase 2' },
     { id:'clients',   label:'Clientes',              icon:'building-2' },
     { id:'comparativa', label:'Comparativa',           icon:'git-compare', sub:'Pres. vs NP' },
-    { id:'rechazos',    label:'Rechazos',              icon:'x-circle',   sub:'Análisis de pérdidas' },
     { id:'team',        label:'Equipo',                icon:'users' },
     { id:'config',      label:'Configuración',         icon:'settings' },
     { id:'feedback',    label:'Foro',                  icon:'message-circle', sub:'Soporte interno' },
