@@ -214,7 +214,7 @@ function AppProvider({ children }) {
         code,
         client: partial.client,
         seller: partial.seller,
-        stage: 'oc',
+        stage: STAGES_F2[0]?.id || 'oc',
         fromQuote: partial.fromQuote,
         flexxus: partial.flexxus || '—',
         fecha: partial.fecha || new Date().toISOString().slice(0,10),
@@ -287,10 +287,7 @@ function AppProvider({ children }) {
     pushToast('Nota agregada');
   }, [currentUserId, pushToast]);
 
-  const inviteUser = useCallback((partial) => {
-    setUsers(us => [...us, { id: `u-${Date.now().toString(36)}`, ...partial }]);
-    pushToast(`Invitación enviada a ${partial.email}`);
-  }, [pushToast]);
+  // inviteUser eliminado — InviteUserModal ahora llama directo a CrmApi.createUser
 
   const markNotificationRead = useCallback((id) => {
     setNotifications(ns => ns.map(n => n.id === id ? { ...n, read:true } : n));
@@ -310,12 +307,12 @@ function AppProvider({ children }) {
   const closeAllModals = useCallback(() => setModals([]), []);
 
   const value = {
-    quotes, setQuotes, orders, setOrders, clients, setClients, users, activity, comments, notifications,
+    quotes, setQuotes, orders, setOrders, clients, setClients, users, setUsers, activity, comments, notifications,
     inboxAlerts, snoozeAlert, markInboxSeen, ackAssigned,
     quoteFilters, setQuoteFilters, orderFilters, setOrderFilters,
     currentUserId, setCurrentUserId, roleKey, setRoleKey,
     addQuote, addOrder, addClient, updateQuote, updateOrder,
-    moveQuoteStage, moveOrderStage, addComment, inviteUser,
+    moveQuoteStage, moveOrderStage, addComment,
     markNotificationRead, markAllNotificationsRead,
     pushToast, toasts,
     openModal, closeModal, closeAllModals, modals,
@@ -1045,26 +1042,42 @@ function EditClientModal({ clientId }) {
 
 // --- 5. Invitar Usuario ---
 function InviteUserModal() {
-  const { closeModal, inviteUser } = useApp();
-  const [form, setForm] = useS({ name:'', email:'', role:'Vendedor', zone:'AMBA Norte' });
+  const { closeModal, pushToast, setUsers } = useApp();
+  const [form, setForm] = useS({ name:'', email:'', role:'VENDEDOR', zone:'' });
+  const [loading, setLoading] = useS(false);
+  const [error, setError] = useS('');
   const set = (k,v) => setForm(f => ({...f,[k]:v}));
-  const canSubmit = form.name && form.email;
+  const canSubmit = form.name && form.email && !loading;
 
-  const submit = () => {
-    inviteUser({
-      name: form.name, email: form.email, role: form.role,
-      zone: form.role === 'Vendedor' ? form.zone : '—',
-    });
-    closeModal();
+  const roleOptions = [
+    { value:'VENDEDOR',  label:'Vendedor',      icon:'briefcase',    desc:'Gestiona cotizaciones y clientes' },
+    { value:'LOGISTICA', label:'Logística',      icon:'truck',        desc:'Seguimiento de órdenes de compra' },
+    { value:'ADMIN',     label:'Administrador',  icon:'shield',       desc:'Acceso completo al sistema' },
+  ];
+
+  const submit = async () => {
+    setLoading(true); setError('');
+    try {
+      const payload = { name: form.name.trim(), email: form.email.trim().toLowerCase(), role: form.role };
+      if (form.role === 'VENDEDOR' && form.zone) payload.zone = form.zone;
+      const created = await CrmApi.createUser(payload);
+      // Actualizar lista de users en context
+      setUsers(us => [...us, { id: created.id, name: created.name, email: created.email, role: created.role, zone: created.zone }]);
+      pushToast(`Usuario creado. Se envió mail a ${created.email}`);
+      closeModal();
+    } catch (err) {
+      setError(err.message || 'Error al crear usuario');
+      setLoading(false);
+    }
   };
 
   return (
-    <Modal onClose={closeModal} subtitle="Equipo comercial" title="Invitar usuario" width={520}
+    <Modal onClose={closeModal} subtitle="Equipo" title="Invitar usuario" width={520}
       footer={
         <>
           <button className="btn-ghost" onClick={closeModal}>Cancelar</button>
           <button className="btn-primary" disabled={!canSubmit} onClick={submit} style={!canSubmit?{opacity:.45, cursor:'not-allowed'}:{}}>
-            <Icon name="send" size={13}/>Enviar invitación
+            <Icon name="send" size={13}/>{loading ? 'Enviando...' : 'Crear e invitar'}
           </button>
         </>
       }
@@ -1077,24 +1090,33 @@ function InviteUserModal() {
           <input type="email" className="inp w-full" placeholder="nombre@myselec.com.ar" value={form.email} onChange={e=>set('email',e.target.value)}/>
         </FormGroup>
         <FormGroup label="Rol">
-          <div className="grid grid-cols-3 gap-2">
-            {['Administrador','Vendedor','Logística'].map(r => (
-              <label key={r} className={cx('flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer',
-                form.role===r ? 'border-brand bg-brandSoft/40' : 'border-line bg-white hover:bg-surface')}>
-                <input type="radio" checked={form.role===r} onChange={()=>set('role',r)} className="accent-brand"/>
-                <span className="text-[12.5px] font-medium">{r}</span>
+          <div className="flex flex-col gap-2">
+            {roleOptions.map(r => (
+              <label key={r.value} className={cx('flex items-center gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors',
+                form.role===r.value ? 'border-brand bg-blue-50' : 'border-line bg-white hover:bg-surface')}>
+                <input type="radio" checked={form.role===r.value} onChange={()=>set('role',r.value)} className="accent-brand"/>
+                <Icon name={r.icon} size={16} className={form.role===r.value ? 'text-brand' : 'text-ink-400'}/>
+                <div>
+                  <div className="text-[13px] font-medium">{r.label}</div>
+                  <div className="text-[11px] text-ink-500">{r.desc}</div>
+                </div>
               </label>
             ))}
           </div>
         </FormGroup>
-        {form.role === 'Vendedor' && (
-          <FormGroup label="Zona comercial asignada">
-            <Select value={form.zone} onChange={v=>set('zone',v)} options={ZONES}/>
+        {form.role === 'VENDEDOR' && (
+          <FormGroup label="Zona comercial (opcional)">
+            <Select value={form.zone} onChange={v=>set('zone',v)} options={ZONES} placeholder="Sin asignar"/>
           </FormGroup>
+        )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-[12px] text-red-700">
+            <Icon name="alert-circle" size={12} className="inline mr-1.5"/>{error}
+          </div>
         )}
         <div className="bg-brandSoft/40 border border-brand/20 rounded-lg px-3 py-2.5 text-[12px] text-navy-900">
           <Icon name="info" size={12} className="inline mr-1.5"/>
-          Se enviará un mail a <b>{form.email || 'destinatario'}</b> con un enlace de activación válido por 48 hs.
+          Se enviará un mail a <b>{form.email || 'destinatario'}</b> con un enlace para configurar su contraseña (válido por 48 hs).
         </div>
       </div>
     </Modal>

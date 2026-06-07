@@ -1933,9 +1933,10 @@ function OrderDetail({ code, onClose, canReassign }) {
   };
 
   // ── Confirm delivery ──
+  const LAST_OC_STAGE = STAGES_F2[STAGES_F2.length - 1];
   const handleConfirmDelivery = () => {
-    if (!window.confirm('¿Confirmar la entrega de esta orden? Se moverá a "Entregada".')) return;
-    moveOrderStage(o.code, 'entregada');
+    if (!window.confirm(`¿Confirmar la entrega de esta orden? Se moverá a "${LAST_OC_STAGE?.label || 'última etapa'}".`)) return;
+    moveOrderStage(o.code, LAST_OC_STAGE?.id);
     onClose();
   };
 
@@ -1981,14 +1982,13 @@ function OrderDetail({ code, onClose, canReassign }) {
     return 'bg-slate-500';
   };
 
-  const checklistItems = [
-    ['OC del cliente recibida', true],
-    ['NP enviada a Flexxus',    ['np_enviada','np','stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
-    ['NP cargada en Flexxus',   !!o.flexxus || ['np','stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
-    ['Stock verificado',         ['stock','proveedor','armado','facturada','transito','entregada'].includes(o.stage)],
-    ['Factura emitida',          o.invoiceIssued || ['facturada','transito','entregada'].includes(o.stage)],
-    ['Remito conformado',        o.waybillReceived || o.stage === 'entregada'],
-  ];
+  // Checklist dinámico basado en posición de la etapa actual en STAGES_F2
+  const currentStageIdx = STAGES_F2.findIndex(s => s.id === o.stage);
+  const passedStage = (minIdx) => currentStageIdx >= minIdx;
+  const checklistItems = STAGES_F2.map((stg, idx) => {
+    if (idx === 0) return [stg.label, true]; // Primera etapa siempre completada
+    return [stg.label, passedStage(idx)];
+  });
 
   return (
     <>
@@ -2042,14 +2042,14 @@ function OrderDetail({ code, onClose, canReassign }) {
           <input ref={fileInputRef} type="file" multiple className="hidden"
             onChange={e => handleUploadFiles(e.target.files)}/>
           <div className="flex-1"/>
-          {o.stage !== 'entregada' && (
+          {o.stage !== LAST_OC_STAGE?.id && (
             <button className="btn-accent" onClick={handleConfirmDelivery}>
               <Icon name="check" size={14}/>Confirmar entrega
             </button>
           )}
-          {o.stage === 'entregada' && (
+          {o.stage === LAST_OC_STAGE?.id && (
             <span className="flex items-center gap-1.5 text-[13px] text-emerald-700 font-medium">
-              <Icon name="check-circle" size={15} className="text-emerald-500"/>Entregada
+              <Icon name="check-circle" size={15} className="text-emerald-500"/>{LAST_OC_STAGE?.label || 'Completada'}
             </span>
           )}
         </>

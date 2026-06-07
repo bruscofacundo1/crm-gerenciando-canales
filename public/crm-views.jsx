@@ -201,44 +201,164 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
 
 // ---------- Logística view ----------
 function LogisticsView({ onOpen }) {
-  const { orders: ORDERS, clients: CLIENTS, users: USERS } = useApp();
-  // KPIs
-  const byStage = (id) => ORDERS.filter(o => o.stage === id).length;
-  const enTransito = byStage('transito');
-  const enArmado   = byStage('armado') + byStage('facturada');
-  const pendStock  = byStage('stock') + byStage('proveedor');
-  const entregadas = byStage('entregada');
+  const { orders: ORDERS, clients: CLIENTS, users: USERS, moveOrderStage, pushToast } = useApp();
 
-  const groups = [
-    { id:'stock',     label:'Verificando stock',    tone:'amber' },
-    { id:'proveedor', label:'Esperando proveedor',  tone:'orange'},
-    { id:'armado',    label:'Armado de pedido',     tone:'navy'  },
-    { id:'facturada', label:'Facturadas',           tone:'purple'},
-    { id:'transito',  label:'En tránsito',          tone:'sky'   },
-  ];
+  // --- State ---
+  const [activeTab, setActiveTab] = useState('all');
+  const [search, setSearch]       = useState('');
+  const [filterEntrega, setFilterEntrega] = useState('all');
+  const [filterSeller, setFilterSeller]   = useState('all');
+  const [sortCol, setSortCol]     = useState('fecha');
+  const [sortDir, setSortDir]     = useState('desc');
+
+  // --- Etapas dinámicas desde Config ---
+  // Primera etapa = "entrada" (ej: OC Recibida), última = "final" (ej: Entregada)
+  const FIRST_STAGE = STAGES_F2[0]?.id;
+  const LAST_STAGE  = STAGES_F2[STAGES_F2.length - 1]?.id;
+  // Etapas operativas = todas menos la primera (entrada) y la última (completada)
+  const OPS_STAGES = STAGES_F2.filter(s => s.id !== FIRST_STAGE && s.id !== LAST_STAGE);
+
+  // --- Helpers ---
+  const findCli = (o) => CLIENTS.find(c => c.code === o.client);
+  const findSel = (o) => USERS.find(u => u.id === o.seller);
+  const stgOf   = (o) => STAGES_F2.find(s => s.id === o.stage);
+  const isLastStage = (o) => o.stage === LAST_STAGE;
+
+  const daysInStage = (o) => {
+    const ref = o.stageChangedAt || o.fecha || o.createdAt;
+    if (!ref) return 0;
+    return Math.floor((Date.now() - new Date(ref).getTime()) / 86400000);
+  };
+
+  const isOverdue = (o) => {
+    if (!o.estimatedDate) return false;
+    return new Date(o.estimatedDate) < new Date() && !isLastStage(o);
+  };
+
+  // --- Filtrado ---
+  const filtered = ORDERS.filter(o => {
+    // Tab filter
+    if (activeTab === 'all') {
+      // "Todas activas" = excluir última etapa (completadas)
+      if (o.stage === LAST_STAGE) return false;
+    } else if (activeTab === '_completed') {
+      if (o.stage !== LAST_STAGE) return false;
+    } else {
+      if (o.stage !== activeTab) return false;
+    }
+    // Search
+    if (search) {
+      const q = search.toLowerCase();
+      const cli = findCli(o);
+      const match = (o.code||'').toLowerCase().includes(q)
+        || (cli?.name||'').toLowerCase().includes(q)
+        || (o.flexxus||'').toLowerCase().includes(q)
+        || (o.clientOCCode||'').toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    // Delivery type
+    if (filterEntrega !== 'all' && o.entrega !== filterEntrega) return false;
+    // Seller
+    if (filterSeller !== 'all' && o.seller !== filterSeller) return false;
+    return true;
+  });
+
+  // --- Sort ---
+  const handleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortCol) {
+      case 'code':    return dir * (a.code||'').localeCompare(b.code||'');
+      case 'client':  return dir * ((findCli(a)?.name||'').localeCompare(findCli(b)?.name||''));
+      case 'stage': {
+        const ia = STAGES_F2.findIndex(s=>s.id===a.stage);
+        const ib = STAGES_F2.findIndex(s=>s.id===b.stage);
+        return dir * (ia - ib);
+      }
+      case 'days':    return dir * (daysInStage(a) - daysInStage(b));
+      case 'entrega': return dir * (a.entrega||'').localeCompare(b.entrega||'');
+      case 'fecha':
+      default:        return dir * (new Date(b.fecha||b.createdAt||0) - new Date(a.fecha||a.createdAt||0));
+    }
+  });
+
+  // --- Avanzar etapa ---
+  const advanceOrder = (o, e) => {
+    e.stopPropagation();
+    const idx = STAGES_F2.findIndex(s => s.id === o.stage);
+    const next = STAGES_F2[idx + 1];
+    if (next) moveOrderStage(o.code, next.id);
+    else pushToast('Ya está en la última etapa', 'warn');
+  };
+
+  // --- KPIs ---
+  // Penúltima etapa = la anterior a la última (típicamente "En Tránsito" o similar)
+  const SECOND_LAST = STAGES_F2.length >= 2 ? STAGES_F2[STAGES_F2.length - 2]?.id : null;
+  const activeOrders = ORDERS.filter(o => o.stage !== LAST_STAGE);
+  const kpiOverdue = activeOrders.filter(isOverdue).length;
+  const kpiNoTracking = SECOND_LAST ? ORDERS.filter(o => o.stage === SECOND_LAST && !o.guia && !o.trackingNumber).length : 0;
+  const kpiInTransit = SECOND_LAST ? ORDERS.filter(o => o.stage === SECOND_LAST).length : 0;
+  const kpiToday = ORDERS.filter(o => {
+    if (!o.estimatedDate) return false;
+    const d = new Date(o.estimatedDate).toDateString();
+    return d === new Date().toDateString() && o.stage !== LAST_STAGE;
+  }).length;
+
+  // --- Tab counts ---
+  const countForTab = (tabId) => {
+    if (tabId === 'all') return ORDERS.filter(o => o.stage !== LAST_STAGE).length;
+    if (tabId === '_completed') return ORDERS.filter(o => o.stage === LAST_STAGE).length;
+    return ORDERS.filter(o => o.stage === tabId).length;
+  };
+
+  // Sellers que tienen OCs asignadas
+  const sellersInOrders = [...new Set(ORDERS.map(o => o.seller).filter(Boolean))];
+
+  // Sort header helper
+  const SortTh = ({ col, children, className = '' }) => (
+    <th className={cx('cursor-pointer select-none group', className)} onClick={() => handleSort(col)}>
+      <div className="flex items-center gap-1">
+        {children}
+        <span className={cx('text-[9px]', sortCol === col ? 'text-navy-900' : 'text-ink-300 opacity-0 group-hover:opacity-100')}>
+          {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}
+        </span>
+      </div>
+    </th>
+  );
 
   return (
     <div>
       <PageHead
-        subtitle="Operaciones · Fase 2"
-        title="Tablero de Logística"
-        description="Seguimiento de órdenes de compra en curso. Actualizá el estado cuando confirmes facturación, despacho o entrega."
+        subtitle="Operaciones"
+        title="Centro de Logística"
+        description="Seguimiento de órdenes de compra. Filtrá, buscá y avanzá etapas."
         actions={null}
       />
 
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-4">
+        {/* ── KPI Cards ── */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { k:'OCs en armado',      v:enArmado,   d:'en depósito', tone:'navy',   icon:'boxes' },
-            { k:'Pendiente stock',    v:pendStock,  d:'o proveedor', tone:'orange', icon:'alert-triangle' },
-            { k:'En tránsito',        v:enTransito, d:'con transportista', tone:'sky', icon:'truck' },
-            { k:`Entregadas (${new Date().toLocaleString('es-AR',{month:'long'})})`, v:entregadas, d:'mes corriente', tone:'green', icon:'check-circle' },
-          ].map((k,i) => (
-            <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card flex items-start gap-3">
+            { k:'Activas',       v: activeOrders.length, d:'OCs en proceso',         tone:'navy',   icon:'package' },
+            { k: SECOND_LAST ? (STAGES_F2.find(s=>s.id===SECOND_LAST)?.label || 'Penúltima etapa') : 'Pre-entrega', v: kpiInTransit, d:'penúltima etapa', tone:'sky', icon:'truck' },
+            { k:'Entrega hoy',   v: kpiToday,            d:'fecha estimada = hoy',    tone:'green',  icon:'calendar' },
+            { k:'Requieren atención', v: kpiOverdue + kpiNoTracking,
+              d: `${kpiOverdue} vencidas · ${kpiNoTracking} sin guía`, tone:'red', icon:'alert-triangle' },
+          ].map((k, i) => (
+            <div key={i} className={cx(
+              'bg-white rounded-xl border p-4 shadow-card flex items-start gap-3',
+              k.tone === 'red' && (kpiOverdue + kpiNoTracking) > 0 ? 'border-red-200 bg-red-50/30' : 'border-line'
+            )}>
               <div className={cx('w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
-                k.tone==='navy'?'bg-navy-900 text-white':
-                k.tone==='orange'?'bg-orange-100 text-orange-700':
-                k.tone==='sky'?'bg-sky-100 text-sky-700':'bg-emerald-100 text-emerald-700')}>
+                k.tone==='navy'  ? 'bg-navy-900 text-white' :
+                k.tone==='sky'   ? 'bg-sky-100 text-sky-700' :
+                k.tone==='green' ? 'bg-emerald-100 text-emerald-700' :
+                'bg-red-100 text-red-700'
+              )}>
                 <Icon name={k.icon} size={18}/>
               </div>
               <div>
@@ -250,58 +370,169 @@ function LogisticsView({ onOpen }) {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {groups.map(g => {
-            const list = ORDERS.filter(o => o.stage === g.id);
+        {/* ── Tabs de etapa ── */}
+        <div className="flex items-center gap-1 border-b border-line overflow-x-auto pb-px">
+          {[
+            { id: 'all', label: 'Activas' },
+            ...OPS_STAGES.map(s => ({ id: s.id, label: s.label, tone: s.tone })),
+            { id: '_completed', label: STAGES_F2[STAGES_F2.length-1]?.label || 'Completadas', tone: STAGES_F2[STAGES_F2.length-1]?.tone || 'green' },
+          ].map(tab => {
+            const count = countForTab(tab.id);
+            const isActive = activeTab === tab.id;
             return (
-              <div key={g.id} className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
-                <div className="px-5 py-3 border-b border-line flex items-center gap-2">
-                  <StageDot tone={g.tone}/>
-                  <div className="text-[13.5px] font-semibold text-ink-900">{g.label}</div>
-                  <span className="text-[11px] text-ink-500 font-semibold bg-surface border border-line rounded-md px-1.5 py-0.5">{list.length}</span>
-                  <div className="flex-1"/>
-                  <button className="btn-ghost text-xs py-1.5"><Icon name="arrow-right" size={12}/>Avanzar todas</button>
-                </div>
-                {list.length === 0 ? (
-                  <div className="p-6 text-center text-ink-400 text-[12px]">Sin OCs en esta etapa</div>
-                ) : (
-                  <table className="w-full tbl">
-                    <thead><tr>
-                      <th>OC</th><th>Cliente</th><th>Destino</th><th>Transporte</th>
-                      <th>NP Flexxus</th><th>Vendedor</th><th>Fecha</th><th className="!text-right">Acción</th>
-                    </tr></thead>
-                    <tbody>
-                      {list.map(o => {
-                        const cli = CLIENTS.find(c=>c.code===o.client);
-                        const sel = USERS.find(u=>u.id===o.seller);
-                        return (
-                          <tr key={o.code} className="cursor-pointer" onClick={()=>onOpen(o.code)}>
-                            <td className="mono text-[12px] font-semibold text-navy-900">{o.code}</td>
-                            <td className="font-medium">{cli?.name||'—'}</td>
-                            <td>
-                              <div className="flex items-center gap-1.5">
-                                {o.entrega && <Badge tone={o.entrega==='AMBA'?'blue':'purple'}>{o.entrega}</Badge>}
-                                <span className="text-[11.5px] text-ink-500 truncate">{cli?.city}</span>
-                              </div>
-                            </td>
-                            <td className="text-[12px]">{o.transp}{o.guia && <span className="ml-1 mono text-[11px] text-ink-500">· {o.guia}</span>}</td>
-                            <td className="mono text-[11px]">{o.flexxus}</td>
-                            <td><div className="flex items-center gap-2">{sel && <Avatar name={sel.name} size={20}/>}{sel?.name?.split(' ')?.[0]||'—'}</div></td>
-                            <td className="mono text-[12px]">{fmtDate(o.fecha)}</td>
-                            <td className="text-right">
-                              <button onClick={(e)=>{e.stopPropagation();}} className="btn-ghost text-xs py-1 px-2">
-                                <Icon name="arrow-right" size={11}/> Avanzar
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={cx(
+                  'px-3 py-2 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5',
+                  isActive
+                    ? 'border-navy-900 text-navy-900'
+                    : 'border-transparent text-ink-500 hover:text-ink-700 hover:border-ink-200'
+                )}>
+                {tab.tone && <StageDot tone={tab.tone}/>}
+                {tab.label}
+                <span className={cx(
+                  'text-[11px] font-semibold rounded-md px-1.5 py-0.5',
+                  isActive ? 'bg-navy-900 text-white' : 'bg-surface text-ink-500'
+                )}>{count}</span>
+              </button>
             );
           })}
+        </div>
+
+        {/* ── Barra de búsqueda y filtros ── */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"/>
+            <input
+              type="text" placeholder="Buscar OC, cliente, NP Flexxus..."
+              value={search} onChange={e => setSearch(e.target.value)}
+              className="input pl-9 w-full text-[13px]"
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700">
+                <Icon name="x" size={14}/>
+              </button>
+            )}
+          </div>
+          <select value={filterEntrega} onChange={e => setFilterEntrega(e.target.value)}
+            className="input text-[13px] w-auto min-w-[130px]">
+            <option value="all">Entrega: Todas</option>
+            <option value="AMBA">AMBA</option>
+            <option value="Interior">Interior</option>
+          </select>
+          <select value={filterSeller} onChange={e => setFilterSeller(e.target.value)}
+            className="input text-[13px] w-auto min-w-[150px]">
+            <option value="all">Vendedor: Todos</option>
+            {sellersInOrders.map(sid => {
+              const u = USERS.find(u => u.id === sid);
+              return <option key={sid} value={sid}>{u?.name || sid}</option>;
+            })}
+          </select>
+          <div className="text-[12px] text-ink-500">
+            {sorted.length} {sorted.length === 1 ? 'orden' : 'órdenes'}
+          </div>
+        </div>
+
+        {/* ── Tabla principal ── */}
+        <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
+          {sorted.length === 0 ? (
+            <div className="p-12 text-center">
+              <Icon name="inbox" size={32} className="text-ink-300 mx-auto mb-2"/>
+              <div className="text-[13px] text-ink-500">No hay órdenes con estos filtros</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full tbl">
+                <thead>
+                  <tr>
+                    <SortTh col="code">OC</SortTh>
+                    <SortTh col="client">Cliente</SortTh>
+                    {activeTab === 'all' && <SortTh col="stage">Etapa</SortTh>}
+                    <SortTh col="entrega">Destino</SortTh>
+                    <th>Transporte</th>
+                    <th>NP Flexxus</th>
+                    <th>Vendedor</th>
+                    <SortTh col="fecha">Fecha</SortTh>
+                    <SortTh col="days">Días</SortTh>
+                    <th className="!text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map(o => {
+                    const cli = findCli(o);
+                    const sel = findSel(o);
+                    const stg = stgOf(o);
+                    const days = daysInStage(o);
+                    const overdue = isOverdue(o);
+                    const noTrack = SECOND_LAST && o.stage === SECOND_LAST && !o.guia && !o.trackingNumber;
+                    const isLast = isLastStage(o);
+                    return (
+                      <tr key={o.code}
+                        className={cx('cursor-pointer transition-colors',
+                          overdue ? 'bg-red-50/50 hover:bg-red-50' :
+                          noTrack ? 'bg-amber-50/40 hover:bg-amber-50/70' :
+                          'hover:bg-surface'
+                        )}
+                        onClick={() => onOpen(o.code)}>
+                        <td className="mono text-[12px] font-semibold text-navy-900">{o.code}</td>
+                        <td>
+                          <div className="font-medium text-[13px]">{cli?.name || '—'}</div>
+                          {o.clientOCCode && <div className="text-[11px] text-ink-400 mono">OC cliente: {o.clientOCCode}</div>}
+                        </td>
+                        {activeTab === 'all' && (
+                          <td>
+                            <Badge tone={stg?.tone || 'gray'} dot>{stg?.label || o.stage}</Badge>
+                          </td>
+                        )}
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            {o.entrega && <Badge tone={o.entrega==='AMBA' ? 'blue' : 'purple'}>{o.entrega}</Badge>}
+                            {cli?.city && <span className="text-[11px] text-ink-500 truncate max-w-[100px]">{cli.city}</span>}
+                          </div>
+                        </td>
+                        <td className="text-[12px]">
+                          {o.transp || o.carrier || '—'}
+                          {(o.guia || o.trackingNumber) && (
+                            <span className="ml-1 mono text-[11px] text-ink-500">· {o.guia || o.trackingNumber}</span>
+                          )}
+                          {noTrack && <span className="ml-1 text-[10px] text-amber-600 font-semibold">⚠ sin guía</span>}
+                        </td>
+                        <td className="mono text-[11px]">{o.flexxus || o.flexxusCode || '—'}</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            {sel && <Avatar name={sel.name} size={20}/>}
+                            <span className="text-[12px]">{sel?.name?.split(' ')?.[0] || '—'}</span>
+                          </div>
+                        </td>
+                        <td className="mono text-[12px]">{fmtDate(o.fecha || o.createdAt)}</td>
+                        <td>
+                          <span className={cx('text-[12px] font-semibold',
+                            days > 7 ? 'text-red-600' : days > 3 ? 'text-amber-600' : 'text-ink-500'
+                          )}>
+                            {days}d
+                          </span>
+                          {overdue && <span className="ml-1 text-[10px] text-red-500 font-semibold">vencida</span>}
+                        </td>
+                        <td className="text-right">
+                          {!isLast ? (
+                            <button onClick={(e) => advanceOrder(o, e)}
+                              className="btn-ghost text-xs py-1 px-2 hover:bg-navy-900 hover:text-white transition-colors"
+                              title={`Avanzar a ${STAGES_F2[STAGES_F2.findIndex(s=>s.id===o.stage)+1]?.label || '—'}`}>
+                              <Icon name="arrow-right" size={11}/> Avanzar
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-emerald-600 font-medium flex items-center justify-end gap-1">
+                              <Icon name="check-circle" size={12}/> Entregada
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -983,15 +1214,15 @@ function Clients({ readonly=false }) {
               },
               {
                 k: 'OCs activas',
-                v: cliOrders.filter(o=>o.stage!=='entregada').length,
+                v: cliOrders.filter(o=>o.stage!==STAGES_F2[STAGES_F2.length-1]?.id).length,
                 sub: `${cliOrders.length} órdenes en total`,
                 tone: 'orange', icon: 'truck',
               },
               {
-                k: 'OCs entregadas',
-                v: cliOrders.filter(o=>o.stage==='entregada').length,
+                k: STAGES_F2[STAGES_F2.length-1]?.label || 'Completadas',
+                v: cliOrders.filter(o=>o.stage===STAGES_F2[STAGES_F2.length-1]?.id).length,
                 sub: 'historial completo',
-                tone: 'green', icon: 'check-circle',
+                tone: STAGES_F2[STAGES_F2.length-1]?.tone || 'green', icon: 'check-circle',
               },
               {
                 k: 'Monto ganado',
@@ -1266,7 +1497,12 @@ function ApproveUserModal({ user, onClose, onApprove }) {
     setLoading(false);
   };
 
-  const roleLabel = { DEVELOPER:'Desarrollador', ADMIN:'Administrador', VENDEDOR:'Vendedor', LOGISTICA:'Logística' };
+  const roleOptions = [
+    { value:'VENDEDOR',  label:'Vendedor',      icon:'briefcase', desc:'Gestiona cotizaciones y clientes' },
+    { value:'LOGISTICA', label:'Logística',      icon:'truck',     desc:'Seguimiento de órdenes de compra' },
+    { value:'ADMIN',     label:'Administrador',  icon:'shield',    desc:'Acceso completo al sistema' },
+    ...(CrmAuth.getUser()?.role === 'DEVELOPER' ? [{ value:'DEVELOPER', label:'Desarrollador', icon:'code', desc:'Acceso total + herramientas dev' }] : []),
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -1286,11 +1522,15 @@ function ApproveUserModal({ user, onClose, onApprove }) {
           <div>
             <label className="text-[12px] font-medium text-ink-600 mb-1.5 block">Asignar rol</label>
             <div className="flex flex-col gap-2">
-              {['VENDEDOR','LOGISTICA','ADMIN', ...(CrmAuth.getUser()?.role === 'DEVELOPER' ? ['DEVELOPER'] : [])].map(r => (
-                <label key={r} className={cx('flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                  role === r ? 'border-brand bg-blue-50' : 'border-line hover:bg-surface')}>
-                  <input type="radio" name="role" value={r} checked={role === r} onChange={() => setRole(r)} className="accent-brand"/>
-                  <span className="text-[13px] font-medium">{roleLabel[r]}</span>
+              {roleOptions.map(r => (
+                <label key={r.value} className={cx('flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                  role === r.value ? 'border-brand bg-blue-50' : 'border-line hover:bg-surface')}>
+                  <input type="radio" name="role" value={r.value} checked={role === r.value} onChange={() => setRole(r.value)} className="accent-brand"/>
+                  <Icon name={r.icon} size={16} className={role === r.value ? 'text-brand' : 'text-ink-400'}/>
+                  <div>
+                    <div className="text-[13px] font-medium">{r.label}</div>
+                    <div className="text-[11px] text-ink-500">{r.desc}</div>
+                  </div>
                 </label>
               ))}
             </div>

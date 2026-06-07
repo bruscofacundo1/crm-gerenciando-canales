@@ -511,6 +511,8 @@ function ProfileModal({ user, onClose, onUpdated }) {
                 </div>
               );
 
+              const isLogistics = role === 'LOGISTICA';
+
               return (
                 <div className="p-6 space-y-5">
                   <p className="text-[12px] text-ink-400">Elegí qué notificaciones querés recibir. Los administradores pueden activar o desactivar tipos globalmente desde Configuración.</p>
@@ -524,9 +526,11 @@ function ProfileModal({ user, onClose, onUpdated }) {
                     <div className="px-4">
                       {isAdmin && <PrefRow section="email" k="new_register" label="Nuevo registro pendiente" desc="Cuando alguien solicita acceso al CRM."/>}
                       {isAdmin && <PrefRow section="email" k="weekly_report" label="Resumen semanal" desc="Estadísticas semanales del pipeline."/>}
-                      <PrefRow section="email" k="unassigned_mail" label="Mail sin cliente asignado" desc="Cuando llega un email que no matchea ningún cliente."/>
+                      {!isLogistics && <PrefRow section="email" k="unassigned_mail" label="Mail sin cliente asignado" desc="Cuando llega un email que no matchea ningún cliente."/>}
                       {isSeller && <PrefRow section="email" k="stage_alert" label="Tiempo de etapa excedido" desc="Recordatorio cuando tu cotización supera el plazo de una etapa."/>}
                       {isSeller && <PrefRow section="email" k="idle_reminder" label="Recordatorio de inactividad" desc="Aviso cuando tus cotizaciones llevan varios días sin movimiento."/>}
+                      {isLogistics && <PrefRow section="email" k="order_new" label="Nueva OC asignada" desc="Cuando se crea una nueva orden de compra para gestionar."/>}
+                      {isLogistics && <PrefRow section="email" k="order_overdue" label="Entrega vencida" desc="Cuando una OC supera su fecha estimada de entrega."/>}
                     </div>
                   </div>
 
@@ -540,12 +544,16 @@ function ProfileModal({ user, onClose, onUpdated }) {
                       {isAdmin && <PrefRow section="inapp" k="unassigned_quotes" label="Solicitudes sin asignar" desc="Cotizaciones sin vendedor."/>}
                       {isAdmin && <PrefRow section="inapp" k="unlinked_presupuestos" label="Presupuestos sin vincular" desc="Presupuestos de mail sin solicitud asociada."/>}
                       {isAdmin && <PrefRow section="inapp" k="pending_users" label="Usuarios pendientes" desc="Solicitudes de acceso esperando aprobación."/>}
-                      <PrefRow section="inapp" k="unlinked_solicitudes" label="Solicitudes sin presupuesto" desc="Solicitudes sin presupuesto vinculado después de X días."/>
-                      <PrefRow section="inapp" k="overdue_stages" label="Tiempo de etapa excedido" desc="Ítems que superaron el plazo en su etapa actual."/>
-                      <PrefRow section="inapp" k="idle_quotes" label="Cotizaciones sin actividad" desc="Sin movimiento en más de X días."/>
+                      {!isLogistics && <PrefRow section="inapp" k="unlinked_solicitudes" label="Solicitudes sin presupuesto" desc="Solicitudes sin presupuesto vinculado después de X días."/>}
+                      {!isLogistics && <PrefRow section="inapp" k="overdue_stages" label="Tiempo de etapa excedido" desc="Cotizaciones que superaron el plazo en su etapa actual."/>}
+                      {!isLogistics && <PrefRow section="inapp" k="idle_quotes" label="Cotizaciones sin actividad" desc="Sin movimiento en más de X días."/>}
                       {isSeller && <PrefRow section="inapp" k="follow_up" label="Seguimientos vencidos" desc="Cotizaciones con fecha de seguimiento vencida."/>}
                       {isSeller && <PrefRow section="inapp" k="follow_up_upcoming" label="Seguimientos próximos" desc="Aviso anticipado antes de que venza un seguimiento."/>}
                       {isSeller && <PrefRow section="inapp" k="no_response" label="Presupuestos sin respuesta" desc="Presupuestos enviados sin respuesta del cliente, con botón para enviar recordatorio."/>}
+                      {isLogistics && <PrefRow section="inapp" k="order_new_pending" label="Nuevas OCs por procesar" desc="Órdenes recién creadas esperando gestión logística."/>}
+                      {isLogistics && <PrefRow section="inapp" k="order_stuck" label="OCs estancadas" desc="Órdenes con muchos días en la misma etapa sin avanzar."/>}
+                      {isLogistics && <PrefRow section="inapp" k="order_delivery_today" label="Entregas del día" desc="Órdenes con fecha estimada de entrega = hoy."/>}
+                      {isLogistics && <PrefRow section="inapp" k="order_overdue" label="Entregas vencidas" desc="Órdenes que superaron su fecha estimada sin ser entregadas."/>}
                     </div>
                   </div>
                 </div>
@@ -970,7 +978,8 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
     { id:'feedback',    label:'Foro',                  icon:'message-circle', sub:'Soporte interno' },
   ];
   const navLog = [
-    { id:'ops',      label:'Operaciones', icon:'truck', sub:'Fase 2' },
+    { id:'ops',      label:'Operaciones', icon:'truck',        sub:'Centro de logística' },
+    { id:'clients',  label:'Clientes',    icon:'building-2',   sub:'Direcciones y datos' },
     { id:'feedback', label:'Foro',        icon:'message-circle', sub:'Soporte interno' },
   ];
   const nav = role === 'admin' ? navAdmin : role === 'seller' ? navSeller : navLog;
