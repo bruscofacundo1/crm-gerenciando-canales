@@ -199,6 +199,235 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
   );
 }
 
+// ---------- Análisis de Rechazos ----------
+function RejectionAnalysis() {
+  const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } = window.Recharts;
+  const { openModal, users, clients } = useApp();
+  const [data, setData]       = useS(null);
+  const [loading, setLoading] = useS(true);
+  const [search, setSearch]   = useS('');
+  const [filterReason, setFilterReason] = useS('');
+  const [filterSeller, setFilterSeller] = useS('');
+  const [sortBy, setSortBy]   = useS('fechaRechazo');
+  const [sortDir, setSortDir] = useS('desc');
+
+  useEffect(() => {
+    setLoading(true);
+    CrmApi.getRejectionsDetail().then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-2 border-brand border-t-transparent"/>
+    </div>
+  );
+
+  const items = data || [];
+  const norm = s => (s||'').toLowerCase();
+
+  // Filtros
+  const filtered = items.filter(r => {
+    if (filterReason && r.rejectReason !== filterReason) return false;
+    if (filterSeller && r.sellerId !== filterSeller) return false;
+    if (search) {
+      const q = norm(search);
+      if (!norm(r.code).includes(q) && !norm(r.clientName).includes(q) && !norm(r.sellerName).includes(q)
+        && !norm(r.rejectNotes).includes(q) && !norm(r.flexxus).includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  const sorted = [...filtered].sort((a,b) => {
+    let va = a[sortBy], vb = b[sortBy];
+    if (sortBy === 'monto') { va = va||0; vb = vb||0; }
+    if (typeof va === 'string') return sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortDir==='asc' ? (va||0)-(vb||0) : (vb||0)-(va||0);
+  });
+
+  // KPIs
+  const totalRechazos = items.length;
+  const montoTotal = items.reduce((s,r) => s + (r.monto||0), 0);
+  const avgDias = items.length ? Math.round(items.reduce((s,r) => s + r.diasHastaRechazo, 0) / items.length) : 0;
+
+  // Motivos agrupados (para chart)
+  const reasonCounts = {};
+  for (const r of items) {
+    reasonCounts[r.rejectReason] = (reasonCounts[r.rejectReason]||0) + 1;
+  }
+  const reasonChart = Object.entries(reasonCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a,b) => b.value - a.value);
+
+  // Vendedores agrupados
+  const sellerCounts = {};
+  for (const r of items) {
+    const key = r.sellerName || '—';
+    sellerCounts[key] = (sellerCounts[key]||0) + 1;
+  }
+  const sellerChart = Object.entries(sellerCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a,b) => b.value - a.value).slice(0,6);
+
+  const COLORS = ['#EF4444','#F97316','#EAB308','#6366F1','#8B5CF6','#EC4899','#14B8A6','#64748B'];
+  const uniqueReasons = [...new Set(items.map(r => r.rejectReason))].sort();
+  const uniqueSellers = [...new Map(items.filter(r=>r.sellerId).map(r => [r.sellerId, r.sellerName])).entries()];
+
+  const fmtMoney = v => v != null ? `$ ${Number(v).toLocaleString('es-AR', { minimumFractionDigits: 0 })}` : '—';
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
+
+  const toggleSort = (col) => {
+    if (sortBy === col) setSortDir(d => d==='asc'?'desc':'asc');
+    else { setSortBy(col); setSortDir('desc'); }
+  };
+  const SortIcon = ({ col }) => sortBy === col
+    ? <Icon name={sortDir==='asc'?'chevron-up':'chevron-down'} size={12} className="inline ml-0.5"/>
+    : null;
+
+  return (
+    <div className="flex-1 overflow-y-auto scroll-thin bg-surface">
+      <PageHead subtitle="Análisis" title="Cotizaciones rechazadas"
+        description={`${totalRechazos} rechazos registrados · $${(montoTotal/1000).toFixed(0)}k en oportunidades perdidas`}/>
+
+      <div className="p-6 space-y-5">
+        {/* KPIs */}
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            { label:'Total rechazos',    value: totalRechazos, icon:'x-circle',     tone:'bg-red-50 text-red-700' },
+            { label:'Monto perdido',     value: fmtMoney(montoTotal), icon:'dollar-sign', tone:'bg-orange-50 text-orange-700' },
+            { label:'Promedio días',     value: `${avgDias}d`, icon:'clock',         tone:'bg-blue-50 text-blue-700', sub:'hasta rechazo' },
+            { label:'Principal motivo',  value: reasonChart[0]?.name || '—', icon:'alert-triangle', tone:'bg-amber-50 text-amber-700',
+              sub: reasonChart[0] ? `${reasonChart[0].value} casos (${Math.round(reasonChart[0].value/totalRechazos*100)}%)` : '' },
+          ].map((k,i) => (
+            <div key={i} className="bg-white rounded-xl border border-line shadow-card p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={cx('w-8 h-8 rounded-lg flex items-center justify-center', k.tone)}>
+                  <Icon name={k.icon} size={16}/>
+                </div>
+                <span className="text-xs text-ink-500">{k.label}</span>
+              </div>
+              <div className="text-lg font-bold text-ink-900 truncate">{k.value}</div>
+              {k.sub && <div className="text-[11px] text-ink-400 mt-0.5">{k.sub}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Charts: Motivos + Vendedores */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="text-sm font-semibold text-ink-900 mb-3">Motivos de rechazo</div>
+            {reasonChart.length === 0 ? (
+              <div className="h-[180px] flex items-center justify-center text-xs text-ink-400">Sin datos</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={reasonChart} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
+                  <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#64748B'}} axisLine={false} tickLine={false} width={120}/>
+                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={v => [v, 'Cotizaciones']}/>
+                  <Bar dataKey="value" fill="#EF4444" radius={[0,4,4,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-line shadow-card p-4">
+            <div className="text-sm font-semibold text-ink-900 mb-3">Rechazos por vendedor</div>
+            {sellerChart.length === 0 ? (
+              <div className="h-[200px] flex items-center justify-center text-xs text-ink-400">Sin datos</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={sellerChart} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                    outerRadius={75} innerRadius={40} paddingAngle={2} label={({name,percent})=>`${name.split(' ')[0]} ${(percent*100).toFixed(0)}%`}
+                    labelLine={false} style={{fontSize:11}}>
+                    {sellerChart.map((e,i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
+                  </Pie>
+                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Filtros + Tabla */}
+        <div className="bg-white rounded-xl border border-line shadow-card overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-line flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"/>
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por código, cliente, vendedor, observación…"
+                className="inp pl-9 w-full text-[13px]"/>
+            </div>
+            <select value={filterReason} onChange={e => setFilterReason(e.target.value)}
+              className="inp text-[13px] min-w-[160px]">
+              <option value="">Todos los motivos</option>
+              {uniqueReasons.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select value={filterSeller} onChange={e => setFilterSeller(e.target.value)}
+              className="inp text-[13px] min-w-[140px]">
+              <option value="">Todos los vendedores</option>
+              {uniqueSellers.map(([id,name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+            <span className="text-xs text-ink-400 ml-auto">{sorted.length} resultado{sorted.length!==1?'s':''}</span>
+          </div>
+
+          <table className="w-full tbl">
+            <thead>
+              <tr>
+                <th className="cursor-pointer" onClick={()=>toggleSort('code')}>Código <SortIcon col="code"/></th>
+                <th className="cursor-pointer" onClick={()=>toggleSort('clientName')}>Cliente <SortIcon col="clientName"/></th>
+                <th className="cursor-pointer" onClick={()=>toggleSort('sellerName')}>Vendedor <SortIcon col="sellerName"/></th>
+                <th className="cursor-pointer" onClick={()=>toggleSort('monto')}>Monto <SortIcon col="monto"/></th>
+                <th className="cursor-pointer" onClick={()=>toggleSort('rejectReason')}>Motivo <SortIcon col="rejectReason"/></th>
+                <th>Observación</th>
+                <th className="cursor-pointer !text-right" onClick={()=>toggleSort('fechaRechazo')}>Fecha <SortIcon col="fechaRechazo"/></th>
+                <th className="!text-right cursor-pointer" onClick={()=>toggleSort('diasHastaRechazo')}>Días <SortIcon col="diasHastaRechazo"/></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0 ? (
+                <tr><td colSpan="8" className="text-center text-ink-400 py-8">
+                  {search || filterReason || filterSeller ? 'Sin resultados con esos filtros' : 'No hay cotizaciones rechazadas'}
+                </td></tr>
+              ) : sorted.map(r => (
+                <tr key={r.id} className="cursor-pointer hover:bg-surface/50"
+                  onClick={() => openModal('quoteDetail', { code: r.code })}>
+                  <td className="mono text-[12px] font-semibold text-navy-900">{r.code}</td>
+                  <td>
+                    <div className="font-medium text-[13px]">{r.clientName}</div>
+                    {r.clientCity && <div className="text-[11px] text-ink-400">{r.clientCity}</div>}
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <Avatar name={r.sellerName} size={22}/>
+                      <span className="text-[13px]">{r.sellerName.split(' ')[0]}</span>
+                    </div>
+                  </td>
+                  <td className="mono text-[12px] font-semibold">{fmtMoney(r.monto)}</td>
+                  <td>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700">
+                      <Icon name="x-circle" size={11}/> {r.rejectReason}
+                    </span>
+                  </td>
+                  <td className="max-w-[200px]">
+                    <div className="text-[12px] text-ink-500 truncate" title={r.rejectNotes}>{r.rejectNotes || '—'}</div>
+                  </td>
+                  <td className="text-right text-[12px] text-ink-600">{fmtDate(r.fechaRechazo)}</td>
+                  <td className="text-right">
+                    <span className="mono text-[12px] text-ink-500">{r.diasHastaRechazo}d</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Logística view ----------
 function LogisticsView({ onOpen }) {
   const { orders: ORDERS, clients: CLIENTS, users: USERS, moveOrderStage, pushToast } = useApp();

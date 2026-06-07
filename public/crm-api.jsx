@@ -221,6 +221,8 @@ const CrmApi = {
   getChartMonthly:    (p) => apiFetch(`/data/charts/monthly${toQS(p)}`),
   getChartFunnel:     (p) => apiFetch(`/data/charts/funnel${toQS(p)}`),
   getChartRejections: (p) => apiFetch(`/data/charts/rejections${toQS(p)}`),
+  getRejectionsDetail:(p) => apiFetch(`/data/rejections-detail${toQS(p)}`),
+  searchProducts:     (q) => apiFetch(`/data/search/products?q=${encodeURIComponent(q)}`),
   getAlerts:          (p) => apiFetch(`/data/alerts${toQS(p)}`),
   getComparativa:     (p) => apiFetch(`/data/comparativa${toQS(p)}`),
 

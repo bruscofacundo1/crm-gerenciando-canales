@@ -1176,8 +1176,21 @@ function PermissionsModal() {
 function SearchPaletteModal() {
   const { closeModal, quotes, orders, clients, openModal } = useApp();
   const [q, setQ] = useS('');
+  const [productResults, setProductResults] = useS([]);
+  const [productLoading, setProductLoading] = useS(false);
   const norm = (s='') => s.toLowerCase();
   const query = norm(q);
+
+  // Búsqueda de productos (debounced via backend)
+  useEff(() => {
+    if (q.trim().length < 2) { setProductResults([]); return; }
+    const timer = setTimeout(() => {
+      setProductLoading(true);
+      CrmApi.searchProducts(q.trim()).then(r => { setProductResults(r || []); setProductLoading(false); })
+        .catch(() => { setProductResults([]); setProductLoading(false); });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   const matchedQuotes = !query ? [] :
     quotes.filter(x => norm(x.code).includes(query)
@@ -1194,7 +1207,7 @@ function SearchPaletteModal() {
       || norm(o.flexxus||'').includes(query)
     ).slice(0,5);
 
-  const hasResults = matchedQuotes.length + matchedClients.length + matchedOrders.length > 0;
+  const hasResults = matchedQuotes.length + matchedClients.length + matchedOrders.length + productResults.length > 0;
 
   const go = (ref) => {
     closeModal();
@@ -1206,6 +1219,8 @@ function SearchPaletteModal() {
     setTimeout(() => openModal('editClient', { clientId: c.id }), 50);
   };
 
+  const typeLabel = (mt) => mt === 'NOTA_PEDIDO' ? 'NP' : mt === 'PRESUPUESTO' ? 'Pres.' : 'Cot.';
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 p-6">
       <div className="absolute inset-0 bg-ink-900/50 backdrop-blur-[2px]" onClick={closeModal}/>
@@ -1213,7 +1228,7 @@ function SearchPaletteModal() {
         <div className="flex items-center gap-3 px-5 py-4 border-b border-line">
           <Icon name="search" size={18} className="text-ink-400"/>
           <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-            placeholder="Buscar cotizaciones, clientes, órdenes…"
+            placeholder="Buscar cotizaciones, clientes, órdenes, productos…"
             className="flex-1 outline-none bg-transparent text-[15px] placeholder:text-ink-400"/>
           <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-line text-ink-500 bg-surface">ESC</kbd>
         </div>
@@ -1274,14 +1289,49 @@ function SearchPaletteModal() {
               })}
             </div>
           )}
+          {/* Productos (búsqueda backend) */}
+          {productResults.length > 0 && (
+            <div className="p-2 border-t border-line">
+              <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-ink-500 flex items-center gap-2">
+                Productos <span className="text-ink-300 font-normal">({productResults.length} cotización{productResults.length!==1?'es':''})</span>
+              </div>
+              {productResults.slice(0,8).map(p => {
+                const stg = STAGES_F1.find(s=>s.id===p.stage) || STAGES_F2.find(s=>s.id===p.stage);
+                return (
+                  <button key={p.quoteId} onClick={()=>go({kind:'quote', code:p.quoteCode})}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface text-left">
+                    <Icon name="box" size={15} className="text-amber-600"/>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold truncate">
+                        {p.matchedSku && <span className="mono text-amber-700">{p.matchedSku}</span>}
+                        {p.matchedSku && ' — '}
+                        <span className="text-ink-700">{p.matchedDesc}</span>
+                      </div>
+                      <div className="text-[11px] text-ink-500">
+                        {typeLabel(p.mailType)} <span className="mono">{p.quoteCode}</span> · {p.clientName}
+                        {p.matchedQty > 1 ? ` · ×${p.matchedQty}` : ''}
+                      </div>
+                    </div>
+                    {stg && <Badge tone={stg.tone} dot>{stg.label}</Badge>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {productLoading && query && (
+            <div className="px-5 py-2 text-[11px] text-ink-400 flex items-center gap-2">
+              <div className="animate-spin rounded-full h-3 w-3 border border-brand border-t-transparent"/>
+              Buscando productos…
+            </div>
+          )}
           {!query && (
             <div className="py-10 text-center space-y-1">
               <Icon name="search" size={22} className="text-ink-300 mx-auto"/>
-              <div className="text-[13px] text-ink-400 mt-2">Buscá por código, cliente, NP o asunto</div>
-              <div className="text-[11px] text-ink-300">Cotizaciones · Órdenes · Clientes</div>
+              <div className="text-[13px] text-ink-400 mt-2">Buscá por código, cliente, NP, asunto o producto</div>
+              <div className="text-[11px] text-ink-300">Cotizaciones · Órdenes · Clientes · Productos</div>
             </div>
           )}
-          {query && !hasResults && (
+          {query && !hasResults && !productLoading && (
             <div className="py-12 text-center text-ink-500 text-[13px]">
               Sin resultados para "<b>{q}</b>"
             </div>

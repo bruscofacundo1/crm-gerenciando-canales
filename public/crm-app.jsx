@@ -185,7 +185,7 @@ function App() {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar user={displayUser} roleKey={roleKey} setRoleKey={setRoleKey} setScreen={setScreen}/>
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-          {screen === 'dashboard'  && <Dashboard/>}
+          {screen === 'dashboard'  && <Dashboard setScreen={setScreen}/>}
           {screen === 'quotes'     && <KanbanQuotes onOpen={(c)=>openDetail(c,'quote')}/>}
           {screen === 'orders'     && <KanbanOrders onOpen={(c,k)=>openDetail(c,k||'order')}/>}
           {screen === 'my-quotes'  && <MySalesView user={user} initialTab="quotes" onOpen={openDetail}/>}
@@ -194,6 +194,7 @@ function App() {
           {screen === 'clients'    && <Clients readonly={roleKey!=='admin'}/>}
           {screen === 'articles'    && <Articles/>}
           {screen === 'comparativa' && <Comparativa/>}
+          {screen === 'rechazos'   && <RejectionAnalysis/>}
           {screen === 'team'        && <Team/>}
           {screen === 'config'      && <Config/>}
           {screen === 'feedback'    && <FeedbackView/>}
@@ -964,6 +965,7 @@ function Sidebar({ role, screen, setScreen, user, onProfileOpen, collapsed, onTo
     { id:'orders',    label:'Órdenes de Compra',     icon:'package',        sub:'Fase 2' },
     { id:'clients',   label:'Clientes',              icon:'building-2' },
     { id:'comparativa', label:'Comparativa',           icon:'git-compare', sub:'Pres. vs NP' },
+    { id:'rechazos',    label:'Rechazos',              icon:'x-circle',   sub:'Análisis de pérdidas' },
     { id:'team',        label:'Equipo',                icon:'users' },
     { id:'config',      label:'Configuración',         icon:'settings' },
     { id:'feedback',    label:'Foro',                  icon:'message-circle', sub:'Soporte interno' },
@@ -1227,7 +1229,7 @@ function Topbar({ user, roleKey, setRoleKey, setScreen }) {
 }
 
 // ---------- Dashboard ----------
-function Dashboard() {
+function Dashboard({ setScreen }) {
   const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
           PieChart, Pie, Cell, AreaChart, Area } = window.Recharts;
   const { quotes, users, clients, activity, openModal } = useApp();
@@ -1551,12 +1553,18 @@ function Dashboard() {
           </div>
 
           <div className="col-span-6 bg-white rounded-xl border border-line shadow-card p-4">
-            <div className="mb-3">
-              <div className="text-sm font-semibold text-ink-900">Motivos de rechazo</div>
-              <div className="text-xs text-ink-500">
-                Por qué se perdieron cotizaciones en el período
-                {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="text-sm font-semibold text-ink-900">Motivos de rechazo</div>
+                <div className="text-xs text-ink-500">
+                  Por qué se perdieron cotizaciones en el período
+                  {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+                </div>
               </div>
+              <button onClick={() => setScreen('rechazos')}
+                className="text-xs text-brand hover:underline whitespace-nowrap flex items-center gap-1">
+                Ver detalle <Icon name="arrow-right" size={12}/>
+              </button>
             </div>
             {chartsLoading ? (
               <div className="h-[180px] flex items-center justify-center text-xs text-ink-400">Cargando...</div>

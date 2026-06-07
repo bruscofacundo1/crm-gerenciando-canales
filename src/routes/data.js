@@ -392,6 +392,95 @@ router.get('/charts/rejections', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /data/rejections-detail — lista completa de cotizaciones rechazadas
+// Acepta: ?sellerId=&from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/rejections-detail', authMiddleware, async (req, res) => {
+  try {
+    const base = buildBaseFilter(req.query);
+    const rejected = await prisma.quote.findMany({
+      where: { ...base, stage: 'rechazada' },
+      include: {
+        client: { select: { name: true, code: true, city: true, prov: true } },
+        seller: { select: { name: true, id: true } },
+        items: { select: { sku: true, description: true, quantity: true, unitPrice: true, total: true }, orderBy: { sortOrder: 'asc' } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    res.json(rejected.map(q => ({
+      id:           q.id,
+      code:         q.code,
+      clientName:   q.client?.name || '—',
+      clientCode:   q.client?.code || null,
+      clientCity:   q.client?.city || null,
+      sellerName:   q.seller?.name || '—',
+      sellerId:     q.seller?.id || null,
+      monto:        q.amount,
+      moneda:       q.currency || 'USD',
+      rejectReason: q.rejectReason || 'Sin especificar',
+      rejectNotes:  q.rejectNotes || '',
+      flexxus:      q.flexxusCode || '',
+      fechaRechazo: q.updatedAt.toISOString(),
+      fechaIngreso: q.createdAt.toISOString(),
+      diasHastaRechazo: Math.floor((q.updatedAt.getTime() - q.createdAt.getTime()) / (1000*60*60*24)),
+      items:        q.items.map(i => ({ sku: i.sku, desc: i.description, qty: i.quantity, price: i.unitPrice, total: i.total })),
+      itemCount:    q.items.length,
+    })));
+  } catch (err) {
+    console.error('rejections-detail error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /data/search/products — buscar por SKU o descripción de producto
+// Retorna cotizaciones y órdenes que contienen el producto
+router.get('/search/products', authMiddleware, async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    const items = await prisma.quoteItem.findMany({
+      where: {
+        OR: [
+          { sku: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        quote: {
+          select: { id: true, code: true, stage: true, mailType: true, amount: true, flexxusCode: true,
+                    client: { select: { name: true, code: true } },
+                    seller: { select: { name: true } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    // Agrupar por quote para no repetir
+    const seen = new Set();
+    const results = [];
+    for (const it of items) {
+      if (seen.has(it.quote.id)) continue;
+      seen.add(it.quote.id);
+      results.push({
+        quoteId:    it.quote.id,
+        quoteCode:  it.quote.code,
+        stage:      it.quote.stage,
+        mailType:   it.quote.mailType,
+        monto:      it.quote.amount,
+        flexxus:    it.quote.flexxusCode,
+        clientName: it.quote.client?.name || '—',
+        sellerName: it.quote.seller?.name || '—',
+        matchedSku:  it.sku,
+        matchedDesc: it.description,
+        matchedQty:  it.quantity,
+      });
+    }
+    res.json(results);
+  } catch (err) {
+    console.error('search/products error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── GET /api/data/comparativa ───────────────────────────────────────────────
 // Compara ítems de un PRESUPUESTO vs su NOTA_DE_PEDIDO vinculada.
 // Filtros: clientId, sellerId, quoteId (presupuesto), npCode, from, to
