@@ -415,8 +415,10 @@ async function parseNotaPedidoPDF(buffer) {
         if (ocM) result.ocNumber = ocM[1];
       }
       if (!result.presupuestoNP) {
-        // "PRESUPUESTO18009" o "PRESUPUESTO 18009" o "PR-18009"
-        const prM = line.match(/PRESUPUESTO\s*(\d+)/i)
+        // "Presupuesto: 18111" (header) o "PRESUPUESTO18009" (comentario viejo)
+        // "PR Nº: 000000018111" (comentario nuevo) o "PR-18009"
+        const prM = line.match(/PRESUPUESTO\s*:?\s*(\d+)/i)
+          || line.match(/\bPR\s*N[°º]?\s*:?\s*0*(\d+)/i)
           || line.match(/\bPR[-\s](\d+)\b/i);
         if (prM) {
           result.presupuestoRef = line;
