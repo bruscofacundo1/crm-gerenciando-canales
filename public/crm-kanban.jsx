@@ -397,4 +397,4 @@ function KanbanOrders({ onOpen, logisticsMode }) {
   );
 }
 
-Object.assign(window, { KanbanQuotes, KanbanOrders, QuoteCard, OrderCard, StageDot, STAGE_DOT });
+Object.assign(window, { KanbanQuotes, KanbanOrders, StageDot, STAGE_DOT });

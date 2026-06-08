@@ -145,7 +145,7 @@ const CH_MONTHLY    = [];
 
 // Expose to other scripts
 Object.assign(window, {
-  cx, fmtMoney, fmtDate, fmtDateTime, initialsOf,
+  cx, fmtMoney, fmtDate, fmtDateTime,
   Icon, Logo, Avatar, Badge,
   USERS, CLIENTS, QUOTES, ORDERS,
   STAGES_F1, STAGES_F2, ACTIVITY, COMMENTS,

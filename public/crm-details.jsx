@@ -2725,4 +2725,4 @@ function OrderDetail({ code, onClose, canReassign }) {
   );
 }
 
-Object.assign(window, { QuoteDetail, OrderDetail, Drawer, Field, StagePipeline, TabBar });
+Object.assign(window, { QuoteDetail, OrderDetail, Field, TabBar });

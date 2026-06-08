@@ -111,8 +111,6 @@ const CrmApi = {
     method: 'PATCH', body: JSON.stringify(data)
   }),
   getQuoteDetail: (id) => apiFetch(`/quotes/${id}/detail`),
-  resyncQuoteEmail: (id) => apiFetch(`/quotes/${id}/resync-email`, { method: 'POST' }),
-  reparseItems: (id) => apiFetch(`/quotes/${id}/reparse-items`, { method: 'POST' }),
   duplicateQuote: (id, data) => apiFetch(`/quotes/${id}/duplicate`, {
     method: 'POST', body: JSON.stringify(data)
   }),
@@ -218,7 +216,6 @@ const CrmApi = {
   }),
   getActivity: (limit = 20) => apiFetch(`/data/activity?limit=${limit}`),
   getDashboard:    (p) => apiFetch(`/data/dashboard${toQS(p)}`),
-  getRejectionReasons: () => apiFetch('/data/rejection-reasons'),
   getChartSellers:    (p) => apiFetch(`/data/charts/sellers${toQS(p)}`),
   getChartStages:     (p) => apiFetch(`/data/charts/stages${toQS(p)}`),
   getChartMonthly:    (p) => apiFetch(`/data/charts/monthly${toQS(p)}`),
@@ -234,16 +231,11 @@ const CrmApi = {
   sendExportMail: (data) => apiFetch('/exports/send', { method: 'POST', body: JSON.stringify(data) }),
 
   // Mail
-  syncMail: () => apiFetch('/mail/sync', { method: 'POST' }),
-  getInbox: (limit = 20) => apiFetch(`/mail/inbox?limit=${limit}`),
   addMailAccount:    (user, password) => apiFetch('/mail/accounts', { method: 'POST', body: JSON.stringify({ user, password }) }),
   deleteMailAccount: (email) => apiFetch(`/mail/accounts/${encodeURIComponent(email)}`, { method: 'DELETE' }),
 
   // Notifications
   getNotificationRules: () => apiFetch('/notifications/rules'),
-  createNotificationRule: (data) => apiFetch('/notifications/rules', { method: 'POST', body: JSON.stringify(data) }),
-  updateNotificationRule: (id, data) => apiFetch(`/notifications/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteNotificationRule: (id) => apiFetch(`/notifications/rules/${id}`, { method: 'DELETE' }),
   getNotificationsInbox:  ()    => apiFetch('/notifications/inbox'),
   ackAssignedQuote: (quoteId)   => apiFetch('/notifications/ack-assigned', { method: 'POST', body: JSON.stringify({ quoteId }) }),
 
@@ -251,7 +243,6 @@ const CrmApi = {
   getArticles:       (p) => apiFetch(`/articles${toQS(p)}`),
   searchArticles:    (q) => apiFetch(`/articles/search${toQS({ q })}`),
   getArticleByCode:  (code) => apiFetch(`/articles/${encodeURIComponent(code)}`),
-  getArticleCategories: () => apiFetch('/articles/categories'),
   getArticleMeta:    () => apiFetch('/articles/meta'),
   createArticle:     (data) => apiFetch('/articles', { method: 'POST', body: JSON.stringify(data) }),
   updateArticle:     (code, data) => apiFetch(`/articles/${encodeURIComponent(code)}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -285,7 +276,6 @@ const CrmApi = {
   // ── Developer settings ────────────────────────────────────────────────────
   getFeedbackNotifyUsers: ()      => apiFetch('/settings/feedback-notify-users'),
   saveFeedbackNotifyUsers: (ids)  => apiFetch('/settings/feedback-notify-users', { method: 'PUT', body: JSON.stringify({ ids }) }),
-  setUserRole: (id, role)         => apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ role }) }),
   getFeedbackPost:    (id)         => apiFetch(`/feedback/${id}`),
 
   uploadFeedbackImage: (file) => {

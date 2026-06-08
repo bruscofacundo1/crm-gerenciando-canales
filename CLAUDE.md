@@ -36,9 +36,33 @@ No tests, linter, or build step. Frontend JSX is compiled in-browser via Babel S
 | `routes/notifications.js` | `/api/notifications` | Inbox alerts, mark-seen, dismiss, counts, cron triggers |
 | `routes/settings.js` | `/api/settings` | AppSetting key-value store (ADMIN only) |
 | `routes/articles.js` | `/api/articles` | Product catalog, XLSX import |
+| `routes/exports.js` | `/api/exports` | PDF reports (cotizaciones, rechazos, ordenes) download + email |
 | `routes/logs.js` | `/api/logs` | Login logs (ADMIN only) |
 
 File upload endpoints for attachments live in `server.js` (multer). Flexxus PDF uploads auto-parse via `flexxusParser.js`.
+
+### Bi-monetario (USD / ARS)
+
+Each quote has a `currency` field (`"USD"` | `"ARS"`, default `"USD"`). Flexxus-imported quotes are always USD. Manual quotes allow selecting currency.
+
+- **Backend**: `Quote.currency` column. Dashboard KPIs split into USD/ARS aggregates (`montoTotalUSD`, `montoTotalARS`, etc.). All endpoints that return amounts also return `currency`.
+- **Frontend**: `fmtMoney(n, cur, dec)` renders `U$S` or `AR$` prefix — no hardcoded currency strings anywhere. Kanban stage totals, client detail, seller KPIs, performance view, rejection analysis all display both currencies when present.
+- **NewQuoteModal**: currency selector defaults to `'USD'`, sent to API on create.
+
+### PDF Export System
+
+`src/services/pdfExporter.js` generates 3 A4 landscape PDF reports using pdfkit:
+- **Cotizaciones** — quote listing with KPI cards, paginated table, currency-separated totals
+- **Rechazos** — rejection analysis report
+- **Órdenes** — orders/logistics report
+
+`routes/exports.js` exposes:
+- `GET /api/exports/cotizaciones` — download PDF
+- `GET /api/exports/rechazos` — download PDF
+- `GET /api/exports/ordenes` — download PDF
+- `POST /api/exports/send` — email any report (body: `{ type, to, cc?, subject?, body?, filters? }`)
+
+Frontend: `ExportModal` component registered as `exportPdf` in modal registry. Supports download and email-send modes with date/seller filters.
 
 ### Two-table "F2" pattern
 
@@ -139,9 +163,15 @@ Key settings used across the app:
 6. `crm-views.jsx` — `Clients`, `Team`, `Config` (tabs: Etapas/Mail/Notificaciones/Artículos/Acceso/Registros), `MySalesView`, `Comparativa`, `LoginLogs`
 7. `crm-app.jsx` — `AppRoot`, login/register, sidebar, topbar, dashboard, user profile modal
 
-**No ES modules** — files communicate via `Object.assign(window, {...})`. Import/export syntax breaks the app.
+**No ES modules** — files communicate via `Object.assign(window, {...})`. Import/export syntax breaks the app. Only export symbols that are used by other files — internal-only components stay local.
 
-**Modal registry** in `crm-interact.jsx`: `newQuote`, `newOrder`, `newClient`, `editClient`, `clientDetail`, `inviteUser`, `permissions`, `search`, `quoteDetail`, `orderDetail`.
+**Modal registry** in `crm-interact.jsx`: `newQuote`, `newOrder`, `newClient`, `editClient`, `clientDetail`, `inviteUser`, `permissions`, `search`, `quoteDetail`, `orderDetail`, `exportPdf`.
+
+### Scripts
+
+Only two utility scripts remain in `scripts/`:
+- `seedAdmin.js` — create initial admin user (setup)
+- `import-articles.js` — import article catalog from XLSX (recurrent use)
 
 ### Database (Neon PostgreSQL)
 
@@ -153,6 +183,24 @@ Schema pushed with `prisma db push` — no migration files. Key models:
 - `LoginLog` — login audit trail
 - `PasswordResetToken` — used for both forgot-password and welcome-email flows
 - `notificationPrefs Json?` on User — stores `lastInboxCheck`, `dismissed{}`, `inapp{}`, `email{}` per-user prefs
+
+### Email system (dual provider)
+
+Two email services coexist:
+
+1. **`mailer.js`** — System emails (welcome, password reset, notifications). Uses Gmail OAuth2 API as primary method. Falls back to **Resend API** (HTTP-based, works on Railway which blocks SMTP) if Gmail fails. Throws error if both methods fail.
+   - Env vars: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` (Gmail API) + `RESEND_API_KEY` (fallback)
+   - Gmail OAuth tokens expire every 7 days if the Google Cloud app is in "Testing" mode. Publishing the app makes tokens permanent.
+   - `verifySmtp()` tests both providers and reports status.
+
+2. **`mailSender.js`** — Quote/presupuesto emails. Uses Nodemailer SMTP with auto-detect by domain. Supports multiple accounts (`MAIL_ACCOUNTS` env JSON array or `mail_accounts` AppSetting). Template system with `{cliente}`, `{codigo}`, `{vendedor}`, etc. On send: logs activity, advances stage to `enviado`, sets `followUpDate` +4 days.
+
+### Build & Deploy (Railway)
+
+- Build script: `npx prisma generate && npx prisma db push --accept-data-loss`
+- `prisma db push` must run on deploy to apply schema changes to production Neon DB
+- Railway blocks outbound SMTP — use API-based email providers only (Gmail API, Resend)
+- `.claude/launch.json` is untracked — do NOT commit
 
 ### Known issues / audit backlog
 

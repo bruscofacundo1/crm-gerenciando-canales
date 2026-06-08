@@ -2140,8 +2140,8 @@ function PopoverButton({ icon, label, value, onClear, options, onChange, active 
 }
 
 Object.assign(window, {
-  AppProvider, useApp, Modal, FormGroup, Select, Label,
-  ZONES, ACTIVITIES, PROVINCES, ORIGINS, REJECT_REASONS,
+  AppProvider, useApp, Modal,
+  REJECT_REASONS,
   NotificationsPopover, MoreFiltersPopover, PopoverButton,
   applyQuoteFilters, applyOrderFilters, countActiveFilters,
 });
