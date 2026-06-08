@@ -2567,7 +2567,7 @@ function OrderDetail({ code, onClose, canReassign }) {
             <div className="space-y-3">
               {history.map((h, i) => {
                 const st = STAGES_F2.find(s=>s.id===h.detail?.match(/→\s*(\S+)/)?.[1]) || null;
-                const dotColor = st ? (STAGE_DOT[st.tone] || '#94A3B8') : '#94A3B8';
+                const dotColor = st ? (STAGE_DOT[st.tone] || '#939598') : '#939598';
                 return (
                   <div key={h.id || i} className="relative pl-8 stepline">
                     <span className="absolute left-1 top-1 w-4 h-4 rounded-full border-2 bg-white"
@@ -2691,7 +2691,7 @@ function OrderDetail({ code, onClose, canReassign }) {
     {/* ── PDF Preview modal ── */}
     {pdfPreview && (
       <div className="fixed inset-0 z-50 flex flex-col" style={{background:'rgba(0,0,0,0.85)'}}>
-        <div className="flex items-center gap-3 px-4 py-3" style={{background:'#1B2A4A'}}>
+        <div className="flex items-center gap-3 px-4 py-3" style={{background:'#004669'}}>
           <button onClick={() => setPdfPreview(null)} className="text-white/70 hover:text-white">
             <Icon name="x" size={18}/>
           </button>

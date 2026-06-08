@@ -38,7 +38,7 @@ function Logo({ size=28, tone='light' }) {
     return (
       <div style={{
         width: size, height: size,
-        background: '#1B2A4A',
+        background: '#004669',
         borderRadius: Math.round(size * 0.22),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden',
@@ -57,7 +57,7 @@ function Logo({ size=28, tone='light' }) {
 
 // ---------- Avatar ----------
 function Avatar({ name, size=24, tone, src }) {
-  const palette = ['#1B2A4A','#2D4A6F','#3B82F6','#0EA5E9','#8B5CF6','#10B981','#F59E0B'];
+  const palette = ['#004669','#156D98','#20759E','#16A76E','#7C5AC7','#E5930A','#0A5A82'];
   const idx = (name || '?').split('').reduce((a,c)=>a+c.charCodeAt(0),0) % palette.length;
   const bg = tone || palette[idx];
   if (src) {
@@ -94,8 +94,8 @@ function Badge({ tone='gray', children, dot=false }) {
     slate:  'bg-slate-200 text-slate-700',
   };
   const dotColor = {
-    gray:'#94A3B8', blue:'#3B82F6', navy:'#1B2A4A', green:'#10B981',
-    amber:'#F59E0B', red:'#EF4444', purple:'#8B5CF6', sky:'#0EA5E9', orange:'#F97316', slate:'#64748B'
+    gray:'#939598', blue:'#20759E', navy:'#004669', green:'#16A76E',
+    amber:'#E5930A', red:'#D93636', purple:'#7C5AC7', sky:'#20759E', orange:'#E5760A', slate:'#939598'
   }[tone];
   return (
     <span className={cx('chip', tones[tone])}>

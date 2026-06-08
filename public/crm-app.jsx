@@ -258,7 +258,7 @@ function ImageCropper({ src, onConfirm, onCancel }) {
 
         {/* Área de crop */}
         <div className="flex justify-center mb-4">
-          <div style={{ width: SIZE, height: SIZE, borderRadius: '50%', overflow: 'hidden', cursor: drag ? 'grabbing' : 'grab', border: '3px solid #3B82F6', background: '#f1f5f9' }}
+          <div style={{ width: SIZE, height: SIZE, borderRadius: '50%', overflow: 'hidden', cursor: drag ? 'grabbing' : 'grab', border: '3px solid #20759E', background: '#F4F5F6' }}
             onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
             onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onMouseUp}>
             <img ref={imgRef} src={src} alt="crop" draggable={false}
@@ -716,9 +716,9 @@ function Login({ onLogin }) {
   };
 
   const bgStyle = {
-    background: '#0F1B2D',
-    backgroundImage: 'radial-gradient(circle at 20% 30%, #3B82F620 0, transparent 40%), radial-gradient(circle at 80% 70%, #3B82F610 0, transparent 35%), linear-gradient(#ffffff09 1px, transparent 1px), linear-gradient(90deg, #ffffff09 1px, transparent 1px)',
-    backgroundSize: 'auto, auto, 40px 40px, 40px 40px',
+    background: '#00304D',
+    backgroundImage: 'radial-gradient(circle at 20% 30%, #20759E18 0, transparent 40%), radial-gradient(circle at 80% 70%, #20759E10 0, transparent 35%), linear-gradient(#ffffff06 1px, transparent 1px), linear-gradient(90deg, #ffffff06 1px, transparent 1px)',
+    backgroundSize: 'auto, auto, 48px 48px, 48px 48px',
   };
 
   const goTo = (s) => { setScreen(s); setError(''); setInfo(''); };
@@ -800,13 +800,13 @@ function Login({ onLogin }) {
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] p-8 border border-line">
           <div className="flex flex-col items-center mb-8">
             <div style={{
-              background: 'linear-gradient(135deg, #1B2A4A 0%, #2D4A6F 100%)',
+              background: 'linear-gradient(135deg, #004669 0%, #0A5A82 100%)',
               borderRadius: 20,
               padding: '18px 28px',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 8px 24px rgba(27,42,74,0.35)',
+              boxShadow: '0 8px 24px rgba(0,70,105,0.30)',
               marginBottom: 0,
             }}>
               <img src="/Logo.png" alt="MySelec" style={{ height: 48, width: 'auto', objectFit: 'contain', display: 'block' }}/>
@@ -1518,13 +1518,13 @@ function Dashboard({ setScreen }) {
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartSellers ?? CH_SELLERS} barCategoryGap={18}>
-                <CartesianGrid stroke="#F1F5F9" vertical={false}/>
-                <XAxis dataKey="name" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
-                <Tooltip cursor={{fill:'#F1F5F9'}} contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                <CartesianGrid stroke="#ECF0F3" vertical={false}/>
+                <XAxis dataKey="name" tick={{fontSize:12, fill:'#939598'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11, fill:'#BCBEC0'}} axisLine={false} tickLine={false}/>
+                <Tooltip cursor={{fill:'#F4F5F6'}} contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}}/>
                 <Legend iconType="circle" wrapperStyle={{fontSize:12, paddingTop:4}}/>
-                <Bar dataKey="cotiz"   name="Cotizadas" fill="#1B2A4A" radius={[4,4,0,0]}/>
-                <Bar dataKey="ganadas" name="Ganadas"   fill="#3B82F6" radius={[4,4,0,0]}/>
+                <Bar dataKey="cotiz"   name="Cotizadas" fill="#004669" radius={[4,4,0,0]}/>
+                <Bar dataKey="ganadas" name="Ganadas"   fill="#20759E" radius={[4,4,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1543,7 +1543,7 @@ function Dashboard({ setScreen }) {
                      innerRadius={48} outerRadius={78} paddingAngle={2} stroke="#fff" strokeWidth={2}>
                   {(chartStages?.stages ?? CH_STAGE_DIST).map((e,i)=><Cell key={i} fill={e.color}/>)}
                 </Pie>
-                <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}}/>
               </PieChart>
             </ResponsiveContainer>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
@@ -1569,21 +1569,21 @@ function Dashboard({ setScreen }) {
               <AreaChart data={chartMonthly ?? CH_MONTHLY}>
                 <defs>
                   <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.35}/>
-                    <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.0}/>
+                    <stop offset="0%" stopColor="#20759E" stopOpacity={0.30}/>
+                    <stop offset="100%" stopColor="#20759E" stopOpacity={0.0}/>
                   </linearGradient>
                   <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10B981" stopOpacity={0.35}/>
-                    <stop offset="100%" stopColor="#10B981" stopOpacity={0.0}/>
+                    <stop offset="0%" stopColor="#16A76E" stopOpacity={0.30}/>
+                    <stop offset="100%" stopColor="#16A76E" stopOpacity={0.0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#F1F5F9" vertical={false}/>
-                <XAxis dataKey="month" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
-                <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                <CartesianGrid stroke="#ECF0F3" vertical={false}/>
+                <XAxis dataKey="month" tick={{fontSize:12, fill:'#939598'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11, fill:'#BCBEC0'}} axisLine={false} tickLine={false}/>
+                <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}}/>
                 <Legend iconType="circle" wrapperStyle={{fontSize:12, paddingTop:4}}/>
-                <Area type="monotone" dataKey="recibidas" name="Recibidas" stroke="#3B82F6" strokeWidth={2} fill="url(#g1)"/>
-                <Area type="monotone" dataKey="ganadas"   name="Ganadas"   stroke="#10B981" strokeWidth={2} fill="url(#g2)"/>
+                <Area type="monotone" dataKey="recibidas" name="Recibidas" stroke="#20759E" strokeWidth={2} fill="url(#g1)"/>
+                <Area type="monotone" dataKey="ganadas"   name="Ganadas"   stroke="#16A76E" strokeWidth={2} fill="url(#g2)"/>
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1604,10 +1604,10 @@ function Dashboard({ setScreen }) {
             ) : (
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartFunnel ?? []} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
-                  <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
-                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="label" tick={{fontSize:12, fill:'#64748B'}} axisLine={false} tickLine={false} width={80}/>
-                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
+                  <CartesianGrid stroke="#ECF0F3" horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#BCBEC0'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="label" tick={{fontSize:12, fill:'#939598'}} axisLine={false} tickLine={false} width={80}/>
+                  <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
                   <Bar dataKey="value" radius={[0,4,4,0]}>
                     {(chartFunnel ?? []).map((e,i) => <Cell key={i} fill={e.color}/>)}
                   </Bar>
@@ -1634,16 +1634,16 @@ function Dashboard({ setScreen }) {
               <div className="h-[180px] flex items-center justify-center text-xs text-ink-400">Cargando...</div>
             ) : !chartRejections?.length ? (
               <div className="h-[180px] flex items-center justify-center flex-col gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#939598" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                 <span className="text-xs text-ink-400">Sin rechazos en el período</span>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartRejections} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
-                  <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
-                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#64748B'}} axisLine={false} tickLine={false} width={100}/>
-                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
+                  <CartesianGrid stroke="#ECF0F3" horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#BCBEC0'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#939598'}} axisLine={false} tickLine={false} width={100}/>
+                  <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}} formatter={(v) => [v, 'Cotizaciones']}/>
                   <Bar dataKey="value" fill="#EF4444" radius={[0,4,4,0]}/>
                 </BarChart>
               </ResponsiveContainer>

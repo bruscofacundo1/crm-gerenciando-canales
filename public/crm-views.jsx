@@ -272,7 +272,7 @@ function RejectionAnalysis() {
     .map(([name, value]) => ({ name, value }))
     .sort((a,b) => b.value - a.value).slice(0,6);
 
-  const COLORS = ['#EF4444','#F97316','#EAB308','#6366F1','#8B5CF6','#EC4899','#14B8A6','#64748B'];
+  const COLORS = ['#D93636','#E5760A','#E5930A','#004669','#7C5AC7','#20759E','#16A76E','#939598'];
   const uniqueReasons = [...new Set(items.map(r => r.rejectReason))].sort();
   const uniqueSellers = [...new Map(items.filter(r=>r.sellerId).map(r => [r.sellerId, r.sellerName])).entries()];
 
@@ -325,9 +325,9 @@ function RejectionAnalysis() {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={reasonChart} layout="vertical" margin={{ left: 10, right: 40, top: 4, bottom: 4 }}>
                   <CartesianGrid stroke="#F1F5F9" horizontal={false}/>
-                  <XAxis type="number" tick={{fontSize:11, fill:'#94A3B8'}} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#64748B'}} axisLine={false} tickLine={false} width={120}/>
-                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}} formatter={v => [v, 'Cotizaciones']}/>
+                  <XAxis type="number" tick={{fontSize:11, fill:'#BCBEC0'}} axisLine={false} tickLine={false}/>
+                  <YAxis type="category" dataKey="name" tick={{fontSize:11, fill:'#939598'}} axisLine={false} tickLine={false} width={120}/>
+                  <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}} formatter={v => [v, 'Cotizaciones']}/>
                   <Bar dataKey="value" fill="#EF4444" radius={[0,4,4,0]}/>
                 </BarChart>
               </ResponsiveContainer>
@@ -346,7 +346,7 @@ function RejectionAnalysis() {
                     labelLine={false} style={{fontSize:11}}>
                     {sellerChart.map((e,i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
                   </Pie>
-                  <Tooltip contentStyle={{border:'1px solid #E2E8F0', borderRadius:8, fontSize:12}}/>
+                  <Tooltip contentStyle={{border:'1px solid #E0E2E4', borderRadius:8, fontSize:12}}/>
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -2560,7 +2560,7 @@ function Config() {
         <button key={t} onClick={() => onChange(t)}
           className={cx('w-5 h-5 rounded-full border-2 transition-all',
             value === t ? 'border-ink-900 scale-125' : 'border-transparent')}
-          style={{ background: STAGE_DOT[t] || '#94A3B8' }}
+          style={{ background: STAGE_DOT[t] || '#939598' }}
         />
       ))}
     </div>

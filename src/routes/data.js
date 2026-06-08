@@ -199,9 +199,9 @@ router.get('/charts/stages', authMiddleware, async (req, res) => {
       orderBy: { order: 'asc' },
     });
     const COLORS = {
-      gray:'#94A3B8', blue:'#3B82F6', navy:'#1B2A4A', amber:'#F59E0B',
-      sky:'#0EA5E9', orange:'#F97316', green:'#10B981', red:'#EF4444',
-      purple:'#8B5CF6',
+      gray:'#939598', blue:'#20759E', navy:'#004669', amber:'#E5930A',
+      sky:'#20759E', orange:'#E5760A', green:'#16A76E', red:'#D93636',
+      purple:'#7C5AC7',
     };
     const result = await Promise.all(stages.map(async (s) => {
       const value = await prisma.quote.count({ where: { ...base, stage: s.stageKey } });
@@ -398,10 +398,10 @@ router.get('/charts/funnel', authMiddleware, async (req, res) => {
       prisma.quote.count({ where: { ...base, stage: 'rechazada' } }),
     ]);
     res.json([
-      { label: 'Recibidas',  value: total,     color: '#1B2A4A' },
-      { label: 'Enviadas',   value: enviado,   color: '#3B82F6' },
-      { label: 'Aceptadas',  value: aceptada,  color: '#10B981' },
-      { label: 'Rechazadas', value: rechazada, color: '#EF4444' },
+      { label: 'Recibidas',  value: total,     color: '#004669' },
+      { label: 'Enviadas',   value: enviado,   color: '#20759E' },
+      { label: 'Aceptadas',  value: aceptada,  color: '#16A76E' },
+      { label: 'Rechazadas', value: rechazada, color: '#D93636' },
     ]);
   } catch (err) {
     res.status(500).json({ error: err.message });

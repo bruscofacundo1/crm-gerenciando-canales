@@ -3,11 +3,11 @@
 const { useState: useS } = React;
 
 const STAGE_DOT = {
-  gray:'#94A3B8', blue:'#3B82F6', navy:'#1B2A4A', amber:'#F59E0B',
-  sky:'#0EA5E9', orange:'#F97316', green:'#10B981', red:'#EF4444', purple:'#8B5CF6'
+  gray:'#939598', blue:'#20759E', navy:'#004669', amber:'#E5930A',
+  sky:'#20759E', orange:'#E5760A', green:'#16A76E', red:'#D93636', purple:'#7C5AC7'
 };
 function StageDot({ tone }) {
-  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: STAGE_DOT[tone] || '#94A3B8' }}/>;
+  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: STAGE_DOT[tone] || '#939598' }}/>;
 }
 
 function EmptyCol() {
