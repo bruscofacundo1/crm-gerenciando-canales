@@ -64,6 +64,40 @@ Each quote has a `currency` field (`"USD"` | `"ARS"`, default `"USD"`). Flexxus-
 
 Frontend: `ExportModal` component registered as `exportPdf` in modal registry. Supports download and email-send modes with date/seller filters.
 
+### Branded Email Template System
+
+**All** outgoing emails use a shared branded HTML wrapper from `src/services/emailTemplate.js`. Based on the Myselec 2022 brand identity manual.
+
+**Brand colors** (from `BRAND_COLORS` / `C` constant):
+- `#004669` (brandDark) — header background, headings
+- `#20759E` (brand) — accent line, CTA buttons, links
+- `#231F20` (black) — body text
+- `#939598` (grayDark) — secondary text
+- `#BCBEC0` (grayMid) — tertiary text
+- `#E8E9EA` (grayLight) — borders
+- `#F5F6F7` (bg) — background fills, info boxes
+
+**Exported helpers:**
+- `brandedEmail({ title, preheader, content, showLogo })` — full HTML email with dark header (#004669) + Logo-M.png, accent line (#20759E, 3px), white body, gray footer with "Ir al CRM" button
+- `emailButton(href, label)` — centered CTA button in brand blue
+- `emailInfoBox(lines[])` — gray rounded box with data rows
+- `emailWarning(title, text)` — amber warning box
+- `emailParagraph(text)` — styled paragraph
+- `quoteBodyToHtml(body)` — converts plain text to HTML paragraphs (escapes HTML, splits on newlines)
+
+**Email sends using branded template** (16+ locations):
+- `mailer.js` — password reset, generic notification
+- `mailSender.js` — quote/presupuesto send
+- `users.js` — welcome, admin confirmation, resend welcome, password changed, approve, reject
+- `auth.js` — new registration admin notification
+- `quotes.js` — send-email, send-reminder
+- `feedback.js` — new post notification, response notification
+- `notifier.js` — stage alert digest, weekly report
+- `notifications.js` — weekly report test endpoint
+- `mailReader.js` — unassigned mail digest
+
+**Preview page:** `public/email-preview.html` — static HTML page with 7 tabs showing how each email type renders. Uses Logo-M.png, client-side JS to replicate `brandedEmail` layout.
+
 ### Two-table "F2" pattern
 
 The order board merges:

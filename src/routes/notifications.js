@@ -530,6 +530,7 @@ router.post('/cron/weekly-report', authMiddleware, adminOnly, async (req, res) =
   const diag = {};
   try {
     const { sendMail } = require('../services/mailer');
+    const { brandedEmail, emailButton, emailParagraph, BRAND_COLORS: C } = require('../services/emailTemplate');
 
     // Paso 1: obtener admins
     const admins = await prisma.user.findMany({
@@ -561,50 +562,40 @@ router.post('/cron/weekly-report', authMiddleware, adminOnly, async (req, res) =
     const totalMonto  = allQuotes.reduce((s, q) => s + (q.amount || 0), 0);
     const APP_URL = process.env.APP_URL || 'https://crm-gerenciando-canales-production-c7d6.up.railway.app';
 
-    // Paso 3: enviar mail de prueba con HTML simplificado
+    // Paso 3: enviar mail de prueba con branded template
     diag.step = 'sendMail';
     const subject = `📊 Resumen semanal MySelec CRM — ${reportDate}`;
-    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:620px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:32px 36px 28px">
-    <div style="color:#fff;font-size:20px;font-weight:700">📊 Resumen Semanal</div>
-    <div style="color:#94A3B8;font-size:13px;margin-top:4px">MySelec CRM · ${reportDate}</div>
-  </div>
-  <div style="padding:28px 36px">
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
-      <div style="background:#F8FAFC;border-radius:10px;padding:16px">
-        <div style="font-size:11px;color:#64748B;margin-bottom:4px">Nuevas cotizaciones</div>
-        <div style="font-size:28px;font-weight:700;color:#1B2A4A">${quotesThisWeek}</div>
-        <div style="font-size:11px;color:#94A3B8">últimos 7 días</div>
-      </div>
-      <div style="background:#F8FAFC;border-radius:10px;padding:16px">
-        <div style="font-size:11px;color:#64748B;margin-bottom:4px">Ganadas esta semana</div>
-        <div style="font-size:28px;font-weight:700;color:#22C55E">${wonThisWeek}</div>
-        <div style="font-size:11px;color:#94A3B8">${totalActive} activas en total</div>
-      </div>
-      <div style="background:#F8FAFC;border-radius:10px;padding:16px">
-        <div style="font-size:11px;color:#64748B;margin-bottom:4px">Monto total pipeline</div>
-        <div style="font-size:22px;font-weight:700;color:#1B2A4A">U$S ${Math.round(totalMonto).toLocaleString('es-AR')}</div>
-        <div style="font-size:11px;color:#94A3B8">cotizaciones activas</div>
-      </div>
-      <div style="background:#F8FAFC;border-radius:10px;padding:16px">
-        <div style="font-size:11px;color:#64748B;margin-bottom:4px">Cotizaciones activas</div>
-        <div style="font-size:28px;font-weight:700;color:#1B2A4A">${totalActive}</div>
-        <div style="font-size:11px;color:#94A3B8">en pipeline</div>
-      </div>
-    </div>
-    <div style="text-align:center;margin-top:28px">
-      <a href="${APP_URL}" style="display:inline-block;padding:12px 28px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600">
-        Abrir el CRM →
-      </a>
-    </div>
-    <div style="font-size:11px;color:#CBD5E1;margin-top:20px;text-align:center">
-      Generado automáticamente por MySelec CRM
-    </div>
-  </div>
-</div>
-</body></html>`;
+
+    const kpiGrid =
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">' +
+      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
+        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Nuevas cotizaciones</div>' +
+        '<div style="font-size:28px;font-weight:700;color:' + C.brandDark + '">' + quotesThisWeek + '</div>' +
+        '<div style="font-size:11px;color:' + C.grayDark + '">últimos 7 días</div>' +
+      '</div>' +
+      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
+        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Ganadas esta semana</div>' +
+        '<div style="font-size:28px;font-weight:700;color:#22C55E">' + wonThisWeek + '</div>' +
+        '<div style="font-size:11px;color:' + C.grayDark + '">' + totalActive + ' activas en total</div>' +
+      '</div>' +
+      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
+        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Monto total pipeline</div>' +
+        '<div style="font-size:22px;font-weight:700;color:' + C.brandDark + '">U$S ' + Math.round(totalMonto).toLocaleString('es-AR') + '</div>' +
+        '<div style="font-size:11px;color:' + C.grayDark + '">cotizaciones activas</div>' +
+      '</div>' +
+      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
+        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Cotizaciones activas</div>' +
+        '<div style="font-size:28px;font-weight:700;color:' + C.brandDark + '">' + totalActive + '</div>' +
+        '<div style="font-size:11px;color:' + C.grayDark + '">en pipeline</div>' +
+      '</div>' +
+      '</div>';
+
+    const html = brandedEmail({
+      title: 'Resumen Semanal',
+      preheader: 'Resumen semanal MySelec CRM · ' + reportDate,
+      content: kpiGrid + emailButton(APP_URL, 'Abrir el CRM →') +
+        '<div style="font-size:11px;color:' + C.grayMid + ';margin-top:16px;text-align:center">Generado automáticamente por MySelec CRM</div>',
+    });
 
     await sendMail({ to: admins.map(a => a.email), subject, html });
     diag.step = 'done';

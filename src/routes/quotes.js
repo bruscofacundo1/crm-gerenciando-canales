@@ -995,7 +995,8 @@ router.post('/:id/send-email', authMiddleware, async (req, res) => {
 
     // Enviar via Gmail API (funciona en Railway — usa HTTPS, no SMTP)
     const { sendMail } = require('../services/mailer');
-    const htmlBody = `<pre style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">${body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+    const { brandedEmail, quoteBodyToHtml } = require('../services/emailTemplate');
+    const htmlBody = brandedEmail({ title: 'MySelec', content: quoteBodyToHtml(body) });
 
     const attachments = [];
     if (attachmentPath) {
@@ -1072,21 +1073,8 @@ router.post('/:id/send-reminder', authMiddleware, async (req, res) => {
 
     // Enviar via Gmail API (funciona en Railway — usa HTTPS, no SMTP)
     const { sendMail: sendMailGmailApi } = require('../services/mailer');
-    const htmlBody = body.replace(/\n/g, '<br/>');
-    const htmlContent = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:24px 32px 20px">
-    <div style="color:#fff;font-size:16px;font-weight:700">MySelec</div>
-  </div>
-  <div style="padding:24px 32px">
-    <div style="color:#334155;font-size:14px;line-height:1.7">${htmlBody}</div>
-  </div>
-  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
-    <div style="font-size:11px;color:#94A3B8">MySelec · Este es un seguimiento del presupuesto enviado</div>
-  </div>
-</div>
-</body></html>`;
+    const { brandedEmail: brandEmail, quoteBodyToHtml: bodyToHtml } = require('../services/emailTemplate');
+    const htmlContent = brandEmail({ title: 'MySelec', content: bodyToHtml(body) });
 
     await sendMailGmailApi({
       to: quote.client.email,

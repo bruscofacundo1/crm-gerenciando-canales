@@ -171,32 +171,28 @@ async function sendMail({ to, cc, subject, html, text, replyTo, attachments }) {
 }
 
 async function sendPasswordReset(toEmail, resetUrl) {
+  const { brandedEmail, emailParagraph, emailButton, emailWarning } = require('./emailTemplate');
+  const content = [
+    emailParagraph('Recibimos una solicitud para restablecer la contraseña de tu cuenta en MySelec CRM.'),
+    emailButton(resetUrl, 'Restablecer contraseña'),
+    emailWarning('Este link expira en 1 hora', 'Si no solicitaste esto, podés ignorar este mail con tranquilidad.'),
+  ].join('');
   await sendMail({
     to: toEmail,
     subject: 'Recuperar contraseña · MySelec CRM',
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
-        <h2 style="color:#1B2A4A">Recuperar contraseña</h2>
-        <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en MySelec CRM.</p>
-        <p>
-          <a href="${resetUrl}"
-             style="display:inline-block;padding:12px 24px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">
-            Restablecer contraseña
-          </a>
-        </p>
-        <p style="color:#64748B;font-size:13px">Este link expira en 1 hora. Si no solicitaste esto, ignorá este mail.</p>
-      </div>
-    `,
+    html: brandedEmail({ title: 'Recuperar contraseña', preheader: 'Restablecé tu contraseña de MySelec CRM', content }),
   });
 }
 
 async function sendNotification({ toEmails, subject, body, ctx }) {
+  const { brandedEmail, quoteBodyToHtml } = require('./emailTemplate');
   const renderedSubject = renderTemplate(subject, ctx);
   const renderedBody    = renderTemplate(body,    ctx);
+  const content = quoteBodyToHtml(renderedBody);
   await sendMail({
     to: toEmails,
     subject: renderedSubject,
-    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;white-space:pre-wrap">${renderedBody}</div>`,
+    html: brandedEmail({ title: 'Notificación', preheader: renderedSubject, content }),
     text: renderedBody,
   });
 }

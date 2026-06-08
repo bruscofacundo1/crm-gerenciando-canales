@@ -297,6 +297,7 @@ async function syncAccount(account) {
                 const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
 
                 // Función auxiliar: construye HTML de tabla para el digest
+                const { brandedEmail: bEmail, emailParagraph: eP, BRAND_COLORS: BC } = require('./emailTemplate');
                 const buildDigestHtml = (items, title) => {
                   const rows = items.map(r =>
                     `<tr>
@@ -306,24 +307,23 @@ async function syncAccount(account) {
                       <td style="padding:5px 8px;font-size:12px">${r.unassignedSubject}</td>
                     </tr>`
                   ).join('');
-                  return `
-                    <div style="font-family:sans-serif;max-width:620px;margin:0 auto">
-                      <h2 style="color:#1B2A4A">Mails sin cliente — ${title}</h2>
-                      <p>${items.length} mail${items.length > 1 ? 's' : ''} llegaron al CRM sin poder asignarse a un cliente registrado.</p>
-                      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid #e2e8f0">
-                        <thead>
-                          <tr style="background:#F8FAFC">
-                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Código</th>
-                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Tipo</th>
-                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">De</th>
-                            <th style="padding:6px 8px;text-align:left;color:#64748B;font-weight:600">Asunto</th>
-                          </tr>
-                        </thead>
+                  return bEmail({
+                    title: `Mails sin cliente — ${title}`,
+                    preheader: `${items.length} mail(s) sin asignar`,
+                    content: [
+                      eP(`${items.length} mail${items.length > 1 ? 's' : ''} llegaron al CRM sin poder asignarse a un cliente registrado.`),
+                      `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid ${BC.grayLight}">
+                        <thead><tr style="background:${BC.bg}">
+                          <th style="padding:6px 8px;text-align:left;color:${BC.grayDark};font-weight:600">Código</th>
+                          <th style="padding:6px 8px;text-align:left;color:${BC.grayDark};font-weight:600">Tipo</th>
+                          <th style="padding:6px 8px;text-align:left;color:${BC.grayDark};font-weight:600">De</th>
+                          <th style="padding:6px 8px;text-align:left;color:${BC.grayDark};font-weight:600">Asunto</th>
+                        </tr></thead>
                         <tbody>${rows}</tbody>
-                      </table>
-                      <p style="color:#64748B;font-size:13px">Ingresá al CRM para asignarlos manualmente.</p>
-                      <a href="${baseUrl}" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">Ir al CRM</a>
-                    </div>`;
+                      </table>`,
+                      eP('Ingresá al CRM para asignarlos manualmente.'),
+                    ].join(''),
+                  });
                 };
 
                 if (frequency === 'immediate') {

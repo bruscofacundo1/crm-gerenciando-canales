@@ -185,23 +185,20 @@ router.post('/', async (req, res) => {
         await sendMail({
           to: adminEmails,
           subject: `[MySelec CRM] ${code} — ${typeLabel}: ${title.trim()}`,
-          html: `
-            <div style="font-family:sans-serif;max-width:540px;margin:0 auto">
-              <h2 style="color:#1B2A4A;margin-bottom:4px">Nuevo reporte en el foro · ${code}</h2>
-              <p style="color:#64748B;margin-top:0">De <strong>${req.user.name}</strong> (${req.user.email})</p>
-              <table style="width:100%;border-collapse:collapse;margin:16px 0">
-                <tr><td style="padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:600;width:120px">Tipo</td>
-                    <td style="padding:8px 12px;border:1px solid #E2E8F0">${typeLabel}</td></tr>
-                ${mod ? `<tr><td style="padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:600">Módulo</td>
-                    <td style="padding:8px 12px;border:1px solid #E2E8F0">${mod}</td></tr>` : ''}
-                <tr><td style="padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:600">Título</td>
-                    <td style="padding:8px 12px;border:1px solid #E2E8F0">${title.trim()}</td></tr>
-                <tr><td style="padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:600;vertical-align:top">Descripción</td>
-                    <td style="padding:8px 12px;border:1px solid #E2E8F0;white-space:pre-wrap">${body.trim()}</td></tr>
-              </table>
-              <p style="color:#64748B;font-size:13px">Ingresá al CRM → sección <strong>Foro</strong> para responder.</p>
-            </div>
-          `,
+          html: require('../services/emailTemplate').brandedEmail({
+            title: `Foro · ${code}`,
+            preheader: `${typeLabel}: ${title.trim()}`,
+            content: [
+              require('../services/emailTemplate').emailParagraph(`De <strong>${req.user.name}</strong> (${req.user.email})`),
+              require('../services/emailTemplate').emailInfoBox([
+                `<strong>Tipo:</strong> ${typeLabel}`,
+                ...(mod ? [`<strong>Módulo:</strong> ${mod}`] : []),
+                `<strong>Título:</strong> ${title.trim()}`,
+              ]),
+              `<div style="background:#F5F6F7;border-radius:8px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${body.trim()}</div>`,
+              require('../services/emailTemplate').emailParagraph('Ingresá al CRM → sección <strong>Foro</strong> para responder.'),
+            ].join(''),
+          }),
           text: `${code} · ${req.user.name}\nTipo: ${typeLabel}${mod ? `\nMódulo: ${mod}` : ''}\n\n${title.trim()}\n\n${body.trim()}`,
         });
       }
@@ -249,14 +246,15 @@ router.post('/:id/respond', async (req, res) => {
           to: post.user.email,
           replyTo: req.user.email,
           subject: `[MySelec CRM] Respuesta a tu reporte ${post.code}`,
-          html: `
-            <div style="font-family:sans-serif;max-width:540px;margin:0 auto">
-              <h2 style="color:#1B2A4A;margin-bottom:4px">Respuesta a tu reporte ${post.code}</h2>
-              <p style="color:#64748B;margin-top:0"><strong>${req.user.name}</strong> respondió: <em>${post.title}</em></p>
-              <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;padding:16px;margin:16px 0;white-space:pre-wrap">${body.trim()}</div>
-              <p style="color:#64748B;font-size:13px">Podés ver el hilo completo en la sección <strong>Foro</strong> del CRM.</p>
-            </div>
-          `,
+          html: require('../services/emailTemplate').brandedEmail({
+            title: `Respuesta · ${post.code}`,
+            preheader: `${req.user.name} respondió a tu reporte`,
+            content: [
+              require('../services/emailTemplate').emailParagraph(`<strong>${req.user.name}</strong> respondió a: <em>${post.title}</em>`),
+              `<div style="background:#F5F6F7;border-left:3px solid #20759E;border-radius:4px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${body.trim()}</div>`,
+              require('../services/emailTemplate').emailParagraph('Podés ver el hilo completo en la sección <strong>Foro</strong> del CRM.'),
+            ].join(''),
+          }),
           text: `${req.user.name} respondió tu reporte ${post.code}:\n\n${body.trim()}`,
         });
       }

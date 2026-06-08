@@ -222,13 +222,13 @@ async function sendEmail({ to, cc, subject, body, attachmentPath, attachmentName
     fromName  = requestedName || 'Myselec CRM';
   }
 
+  const { brandedEmail, quoteBodyToHtml } = require('./emailTemplate');
   const mailOptions = {
     from:    `"${fromName}" <${fromEmail}>`,
     to,
     subject,
     text:    body,
-    // También enviamos versión HTML básica (saltos de línea → <br>)
-    html:    `<pre style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">${body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`,
+    html:    brandedEmail({ title: 'MySelec', content: quoteBodyToHtml(body) }),
   };
 
   if (cc && cc.trim()) mailOptions.cc = cc.trim();

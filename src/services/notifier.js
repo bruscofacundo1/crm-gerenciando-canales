@@ -1,5 +1,6 @@
 const { sendNotification } = require('./mailer');
 const prisma = require('../db');
+const { brandedEmail, emailButton, emailWarning, emailParagraph, BRAND_COLORS: C } = require('./emailTemplate');
 
 // Construye el contexto para templates a partir de una quote enriquecida
 function buildCtx(quote, client, seller) {
@@ -196,31 +197,36 @@ async function runStageAlerts() {
       // Construir tabla HTML
       const buildRows = (items, kind) => items.map(i =>
         '<tr>' +
-        '<td style="padding:6px 10px;font-family:monospace;font-size:12px;color:#1B2A4A">' + i.code + '</td>' +
-        '<td style="padding:6px 10px;font-size:12px;color:#64748B">' + kind + '</td>' +
-        '<td style="padding:6px 10px;font-size:12px;color:#475569">' + i.clientName + '</td>' +
-        '<td style="padding:6px 10px;font-size:12px;color:#475569">' + i.stageLabel + '</td>' +
-        '<td style="padding:6px 10px;font-size:12px;color:#EF4444;font-weight:600">' + i.hoursElapsed + 'h</td>' +
+        '<td style="padding:8px 10px;font-family:monospace;font-size:12px;color:' + C.brandDark + '">' + i.code + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px;color:' + C.grayDark + '">' + kind + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px;color:' + C.black + '">' + i.clientName + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px;color:' + C.black + '">' + i.stageLabel + '</td>' +
+        '<td style="padding:8px 10px;font-size:12px;color:#EF4444;font-weight:600">' + i.hoursElapsed + 'h</td>' +
         '</tr>'
       ).join('');
 
-      const html =
-        '<div style="font-family:sans-serif;max-width:600px;margin:0 auto">' +
-        '<h2 style="color:#1B2A4A">⏰ Alerta de seguimiento · ' + total + ' ítem' + (total !== 1 ? 's' : '') + '</h2>' +
-        '<p>Hola ' + seller.name + ', los siguientes ítems superaron el tiempo de etapa configurado:</p>' +
-        '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;border:1px solid #e2e8f0">' +
-        '<thead><tr style="background:#F8FAFC">' +
-        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Código</th>' +
-        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Tipo</th>' +
-        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Cliente</th>' +
-        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Etapa</th>' +
-        '<th style="padding:8px 10px;text-align:left;color:#64748B;font-size:11px">Tiempo</th>' +
+      const tableHtml =
+        '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;border:1px solid ' + C.grayLight + '">' +
+        '<thead><tr style="background:' + C.bg + '">' +
+        '<th style="padding:8px 10px;text-align:left;color:' + C.grayDark + ';font-size:11px">Código</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:' + C.grayDark + ';font-size:11px">Tipo</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:' + C.grayDark + ';font-size:11px">Cliente</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:' + C.grayDark + ';font-size:11px">Etapa</th>' +
+        '<th style="padding:8px 10px;text-align:left;color:' + C.grayDark + ';font-size:11px">Tiempo</th>' +
         '</tr></thead><tbody>' +
         buildRows(quotes, 'Cotización') + buildRows(orders, 'Orden') +
-        '</tbody></table>' +
-        '<p style="color:#64748B;font-size:13px">Próximo recordatorio en ' + cooldownDays + ' día' + (cooldownDays !== 1 ? 's' : '') + ' si no hay cambios.</p>' +
-        '<a href="' + APP_URL + '" style="display:inline-block;padding:10px 22px;background:#3B82F6;color:white;text-decoration:none;border-radius:8px;font-weight:600">Ver en el CRM →</a>' +
-        '</div>';
+        '</tbody></table>';
+
+      const html = brandedEmail({
+        title: 'Alerta de seguimiento',
+        preheader: total + ' ítem' + (total !== 1 ? 's' : '') + ' con tiempo excedido',
+        content: [
+          emailParagraph('Hola <strong>' + seller.name + '</strong>, los siguientes ítems superaron el tiempo de etapa configurado:'),
+          tableHtml,
+          emailParagraph('Próximo recordatorio en ' + cooldownDays + ' día' + (cooldownDays !== 1 ? 's' : '') + ' si no hay cambios.'),
+          emailButton(APP_URL, 'Ver en el CRM →'),
+        ].join(''),
+      });
 
       await sendMail({
         to: seller.email,
@@ -364,109 +370,101 @@ async function runWeeklyReport() {
         : '<span style="color:#EF4444">↓ ' + d + '</span>';
     };
 
-    // Construir HTML por concatenación para evitar problemas con template literals anidados
-    let html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>';
-    html += '<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">';
-    html += '<div style="max-width:620px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">';
-
-    // Header
-    html += '<div style="background:#1B2A4A;padding:32px 36px 28px">';
-    html += '<div style="color:#fff;font-size:20px;font-weight:700">📊 Resumen Semanal</div>';
-    html += '<div style="color:#94A3B8;font-size:13px;margin-top:4px">MySelec CRM · ' + reportDate + '</div>';
-    html += '</div>';
+    // Construir contenido interior del email
+    let body = '';
 
     // KPIs
-    html += '<div style="padding:28px 36px 0">';
-    html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94A3B8;margin-bottom:14px">Esta semana vs semana anterior</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">';
-    html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
-    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Nuevas cotizaciones</div>';
-    html +=   '<div style="font-size:26px;font-weight:700;color:#1B2A4A">' + quotesThisWeek + '</div>';
-    html +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(quotesThisWeek, quotesPrevWeek) + ' vs sem. ant.</div>';
-    html += '</div>';
-    html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
-    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Cerradas esta semana</div>';
-    html +=   '<div style="display:flex;align-items:baseline;gap:10px">';
-    html +=     '<div style="font-size:22px;font-weight:700;color:#22C55E">' + wonThisWeek + ' ✅</div>';
-    html +=     '<div style="font-size:22px;font-weight:700;color:#EF4444">' + lostThisWeek + ' ❌</div>';
-    html +=   '</div>';
-    html +=   '<div style="font-size:11px;color:#94A3B8;margin-top:2px">ganadas / perdidas</div>';
-    html +=   '<div style="font-size:12px;margin-top:4px">' + deltaHtml(wonThisWeek, wonPrevWeek) + ' ganadas vs sem. ant.</div>';
-    html += '</div>';
-    html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
-    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Órdenes de compra</div>';
-    html +=   '<div style="font-size:26px;font-weight:700;color:#1B2A4A">' + ordersThisWeek + '</div>';
-    html +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(ordersThisWeek, ordersPrevWeek) + ' vs sem. ant.</div>';
-    html += '</div>';
-    html += '<div style="background:#F8FAFC;border-radius:10px;padding:16px">';
-    html +=   '<div style="font-size:11px;color:#64748B;margin-bottom:4px">Monto total pipeline</div>';
-    html +=   '<div style="font-size:22px;font-weight:700;color:#1B2A4A">U$S ' + fmtNum(Math.round(totalMonto)) + '</div>';
-    html +=   '<div style="font-size:12px;margin-top:2px;color:#64748B">' + totalActive + ' activa' + (totalActive !== 1 ? 's' : '') + '</div>';
-    html += '</div>';
-    html += '</div></div>'; // cierra grid y section KPIs
+    body += '<div style="margin-bottom:20px">';
+    body += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + C.grayDark + ';margin-bottom:14px">Esta semana vs semana anterior</div>';
+    body += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">';
+    body += '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">';
+    body +=   '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Nuevas cotizaciones</div>';
+    body +=   '<div style="font-size:26px;font-weight:700;color:' + C.brandDark + '">' + quotesThisWeek + '</div>';
+    body +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(quotesThisWeek, quotesPrevWeek) + ' vs sem. ant.</div>';
+    body += '</div>';
+    body += '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">';
+    body +=   '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Cerradas esta semana</div>';
+    body +=   '<div style="display:flex;align-items:baseline;gap:10px">';
+    body +=     '<div style="font-size:22px;font-weight:700;color:#22C55E">' + wonThisWeek + ' ✅</div>';
+    body +=     '<div style="font-size:22px;font-weight:700;color:#EF4444">' + lostThisWeek + ' ❌</div>';
+    body +=   '</div>';
+    body +=   '<div style="font-size:11px;color:' + C.grayDark + ';margin-top:2px">ganadas / perdidas</div>';
+    body +=   '<div style="font-size:12px;margin-top:4px">' + deltaHtml(wonThisWeek, wonPrevWeek) + ' ganadas vs sem. ant.</div>';
+    body += '</div>';
+    body += '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">';
+    body +=   '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Órdenes de compra</div>';
+    body +=   '<div style="font-size:26px;font-weight:700;color:' + C.brandDark + '">' + ordersThisWeek + '</div>';
+    body +=   '<div style="font-size:12px;margin-top:2px">' + deltaHtml(ordersThisWeek, ordersPrevWeek) + ' vs sem. ant.</div>';
+    body += '</div>';
+    body += '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">';
+    body +=   '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Monto total pipeline</div>';
+    body +=   '<div style="font-size:22px;font-weight:700;color:' + C.brandDark + '">U$S ' + fmtNum(Math.round(totalMonto)) + '</div>';
+    body +=   '<div style="font-size:12px;margin-top:2px;color:' + C.grayDark + '">' + totalActive + ' activa' + (totalActive !== 1 ? 's' : '') + '</div>';
+    body += '</div>';
+    body += '</div></div>'; // cierra grid y section KPIs
 
     // Ranking de vendedores
     if (vendRanking.length) {
       const medals = ['🥇','🥈','🥉'];
-      html += '<div style="padding:24px 36px 0">';
-      html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94A3B8;margin-bottom:14px">Ranking de vendedores</div>';
-      html += '<table style="width:100%;border-collapse:collapse">';
-      html += '<thead><tr>';
-      html += '<th style="text-align:left;font-size:11px;color:#94A3B8;font-weight:600;padding:0 0 8px;border-bottom:1px solid #E2E8F0">Vendedor</th>';
-      html += '<th style="text-align:center;font-size:11px;color:#94A3B8;font-weight:600;padding:0 0 8px;border-bottom:1px solid #E2E8F0">Activas</th>';
-      html += '<th style="text-align:center;font-size:11px;color:#94A3B8;font-weight:600;padding:0 0 8px;border-bottom:1px solid #E2E8F0">Ganadas</th>';
-      html += '<th style="text-align:right;font-size:11px;color:#94A3B8;font-weight:600;padding:0 0 8px;border-bottom:1px solid #E2E8F0">Monto</th>';
-      html += '</tr></thead><tbody>';
+      body += '<div style="margin-top:24px">';
+      body += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + C.grayDark + ';margin-bottom:14px">Ranking de vendedores</div>';
+      body += '<table style="width:100%;border-collapse:collapse">';
+      body += '<thead><tr>';
+      body += '<th style="text-align:left;font-size:11px;color:' + C.grayDark + ';font-weight:600;padding:0 0 8px;border-bottom:1px solid ' + C.grayLight + '">Vendedor</th>';
+      body += '<th style="text-align:center;font-size:11px;color:' + C.grayDark + ';font-weight:600;padding:0 0 8px;border-bottom:1px solid ' + C.grayLight + '">Activas</th>';
+      body += '<th style="text-align:center;font-size:11px;color:' + C.grayDark + ';font-weight:600;padding:0 0 8px;border-bottom:1px solid ' + C.grayLight + '">Ganadas</th>';
+      body += '<th style="text-align:right;font-size:11px;color:' + C.grayDark + ';font-weight:600;padding:0 0 8px;border-bottom:1px solid ' + C.grayLight + '">Monto</th>';
+      body += '</tr></thead><tbody>';
       vendRanking.forEach(function(v, i) {
         const fw = i === 0 ? '700' : '400';
-        html += '<tr>';
-        html += '<td style="padding:10px 0;border-bottom:1px solid #F1F5F9;font-size:13px;color:#1B2A4A;font-weight:' + fw + '">' + (medals[i] || '  ') + ' ' + v.name + '</td>';
-        html += '<td style="text-align:center;padding:10px 0;border-bottom:1px solid #F1F5F9;font-size:13px;color:#64748B">' + v.activas + '</td>';
-        html += '<td style="text-align:center;padding:10px 0;border-bottom:1px solid #F1F5F9;font-size:13px;color:#22C55E;font-weight:600">' + v.ganadas + '</td>';
-        html += '<td style="text-align:right;padding:10px 0;border-bottom:1px solid #F1F5F9;font-size:13px;color:#1B2A4A">U$S ' + fmtNum(Math.round(v.monto)) + '</td>';
-        html += '</tr>';
+        body += '<tr>';
+        body += '<td style="padding:10px 0;border-bottom:1px solid ' + C.bg + ';font-size:13px;color:' + C.brandDark + ';font-weight:' + fw + '">' + (medals[i] || '  ') + ' ' + v.name + '</td>';
+        body += '<td style="text-align:center;padding:10px 0;border-bottom:1px solid ' + C.bg + ';font-size:13px;color:' + C.grayDark + '">' + v.activas + '</td>';
+        body += '<td style="text-align:center;padding:10px 0;border-bottom:1px solid ' + C.bg + ';font-size:13px;color:#22C55E;font-weight:600">' + v.ganadas + '</td>';
+        body += '<td style="text-align:right;padding:10px 0;border-bottom:1px solid ' + C.bg + ';font-size:13px;color:' + C.brandDark + '">U$S ' + fmtNum(Math.round(v.monto)) + '</td>';
+        body += '</tr>';
       });
-      html += '</tbody></table></div>';
+      body += '</tbody></table></div>';
     }
 
     // Pipeline por etapa
     const stageEntries = Object.entries(byStage);
     if (stageEntries.length && totalActive > 0) {
-      html += '<div style="padding:24px 36px 0">';
-      html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94A3B8;margin-bottom:14px">Pipeline activo por etapa</div>';
-      html += '<div style="display:flex;flex-direction:column;gap:8px">';
+      body += '<div style="margin-top:24px">';
+      body += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + C.grayDark + ';margin-bottom:14px">Pipeline activo por etapa</div>';
+      body += '<div style="display:flex;flex-direction:column;gap:8px">';
       stageEntries.forEach(function(entry) {
         const stageName = entry[0];
         const cnt = entry[1];
         const pct = Math.min(100, Math.round(cnt / totalActive * 100));
-        html += '<div style="display:flex;align-items:center;gap:10px">';
-        html += '<div style="font-size:12px;color:#64748B;width:180px;flex-shrink:0">' + stageName + '</div>';
-        html += '<div style="flex:1;background:#F1F5F9;border-radius:4px;height:8px;overflow:hidden">';
-        html += '<div style="height:8px;background:#3B82F6;width:' + pct + '%;border-radius:4px"></div>';
-        html += '</div>';
-        html += '<div style="font-size:12px;font-weight:600;color:#1B2A4A;width:28px;text-align:right">' + cnt + '</div>';
-        html += '</div>';
+        body += '<div style="display:flex;align-items:center;gap:10px">';
+        body += '<div style="font-size:12px;color:' + C.grayDark + ';width:180px;flex-shrink:0">' + stageName + '</div>';
+        body += '<div style="flex:1;background:' + C.bg + ';border-radius:4px;height:8px;overflow:hidden">';
+        body += '<div style="height:8px;background:' + C.brand + ';width:' + pct + '%;border-radius:4px"></div>';
+        body += '</div>';
+        body += '<div style="font-size:12px;font-weight:600;color:' + C.brandDark + ';width:28px;text-align:right">' + cnt + '</div>';
+        body += '</div>';
       });
-      html += '</div></div>';
+      body += '</div></div>';
     }
 
     // Alerta de ítems vencidos
     if (overdueCount > 0) {
-      html += '<div style="padding:24px 36px 0">';
-      html += '<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:12px">';
-      html += '<div style="font-size:20px">⚠️</div>';
-      html += '<div>';
-      html += '<div style="font-size:13px;font-weight:600;color:#92400E">' + overdueCount + ' ítem' + (overdueCount !== 1 ? 's' : '') + ' con tiempo de etapa excedido</div>';
-      html += '<div style="font-size:12px;color:#B45309;margin-top:2px">Algunos clientes están esperando respuesta fuera del plazo configurado.</div>';
-      html += '</div></div></div>';
+      body += emailWarning(
+        overdueCount + ' ítem' + (overdueCount !== 1 ? 's' : '') + ' con tiempo de etapa excedido',
+        'Algunos clientes están esperando respuesta fuera del plazo configurado.'
+      );
     }
 
     // CTA
-    html += '<div style="padding:28px 36px 32px;text-align:center">';
-    html += '<a href="' + APP_URL + '" style="display:inline-block;padding:12px 28px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600">Abrir el CRM →</a>';
-    html += '<div style="font-size:11px;color:#CBD5E1;margin-top:20px">Generado automáticamente por MySelec CRM · ' + dayLabels[targetDay] + ' a las ' + String(targetHour).padStart(2,'0') + ':00 hs</div>';
-    html += '</div>';
-    html += '</div></body></html>';
+    body += emailButton(APP_URL, 'Abrir el CRM →');
+    body += '<div style="font-size:11px;color:' + C.grayMid + ';margin-top:16px;text-align:center">Generado automáticamente · ' + dayLabels[targetDay] + ' a las ' + String(targetHour).padStart(2,'0') + ':00 hs</div>';
+
+    const html = brandedEmail({
+      title: 'Resumen Semanal',
+      preheader: 'Resumen semanal MySelec CRM · ' + reportDate,
+      content: body,
+    });
 
     const { sendMail } = require('./mailer');
     const subject  = '📊 Resumen semanal MySelec CRM — ' + reportDate;

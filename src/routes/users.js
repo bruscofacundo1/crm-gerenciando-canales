@@ -6,6 +6,7 @@ const multer  = require('multer');
 const crypto  = require('crypto');
 const { authMiddleware, isAdmin, isDeveloper } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
+const { brandedEmail, emailButton, emailInfoBox, emailWarning, emailParagraph } = require('../services/emailTemplate');
 const { emailAllowed, getAllowedDomains } = require('./auth');
 const prisma = require('../db');
 
@@ -64,35 +65,16 @@ router.post('/:id/approve', authMiddleware, adminOnly, async (req, res) => {
     await sendMail({
       to: user.email,
       subject: '🎉 Tu cuenta fue aprobada · MySelec CRM',
-      html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:28px 32px 24px">
-    <div style="color:#fff;font-size:20px;font-weight:700">🎉 ¡Bienvenido a MySelec CRM!</div>
-  </div>
-  <div style="padding:28px 32px">
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Hola <strong>${user.name}</strong>,
-    </p>
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Tu solicitud de acceso fue aprobada. Ya podés ingresar al sistema con el email y contraseña que usaste al registrarte.
-    </p>
-    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 20px">
-      <div style="font-size:12px;color:#64748B;margin-bottom:4px">Tu cuenta</div>
-      <div style="font-size:14px;color:#1B2A4A"><strong>Email:</strong> ${user.email}</div>
-      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
-    </div>
-    <div style="text-align:center;margin:24px 0">
-      <a href="${APP_URL}" style="display:inline-block;padding:14px 32px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700">
-        Ingresar al CRM →
-      </a>
-    </div>
-  </div>
-  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
-    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
-  </div>
-</div>
-</body></html>`,
+      html: brandedEmail({
+        title: 'Bienvenido a MySelec CRM',
+        preheader: 'Tu cuenta fue aprobada',
+        content: [
+          emailParagraph(`Hola <strong>${user.name}</strong>,`),
+          emailParagraph('Tu solicitud de acceso fue aprobada. Ya podés ingresar al sistema con el email y contraseña que usaste al registrarte.'),
+          emailInfoBox([`<strong>Email:</strong> ${user.email}`, `<strong>Rol:</strong> ${roleLabel}`]),
+          emailButton(APP_URL, 'Ingresar al CRM'),
+        ].join(''),
+      }),
     });
 
     res.json(updated);
@@ -112,13 +94,14 @@ router.post('/:id/reject', authMiddleware, adminOnly, async (req, res) => {
     await sendMail({
       to: user.email,
       subject: 'Tu solicitud de acceso · MySelec CRM',
-      html: `
-        <div style="font-family:sans-serif;max-width:500px;margin:0 auto">
-          <h2 style="color:#1B2A4A">Solicitud de acceso</h2>
-          <p>Hola ${user.name}, lamentablemente tu solicitud de acceso a MySelec CRM no fue aprobada.</p>
-          <p>Si creés que es un error, contactá al administrador del sistema.</p>
-        </div>
-      `,
+      html: brandedEmail({
+        title: 'Solicitud de acceso',
+        content: [
+          emailParagraph(`Hola <strong>${user.name}</strong>,`),
+          emailParagraph('Lamentablemente tu solicitud de acceso a MySelec CRM no fue aprobada.'),
+          emailParagraph('Si creés que es un error, contactá al administrador del sistema.'),
+        ].join(''),
+      }),
     });
 
     res.json({ ok: true });
@@ -208,67 +191,29 @@ router.post('/', authMiddleware, adminOnly, async (req, res) => {
     const adminName = req.user.name || 'Un administrador';
 
     // 1. Mail al nuevo usuario
-    const welcomeHtml = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:28px 32px 24px">
-    <div style="color:#fff;font-size:20px;font-weight:700">🎉 Bienvenido a MySelec CRM</div>
-  </div>
-  <div style="padding:28px 32px">
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Hola <strong>${user.name}</strong>,
-    </p>
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      ${adminName} te creó una cuenta en el CRM de MySelec.
-    </p>
-    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 20px">
-      <div style="font-size:12px;color:#64748B;margin-bottom:4px">Tu cuenta</div>
-      <div style="font-size:14px;color:#1B2A4A"><strong>Email:</strong> ${user.email}</div>
-      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
-    </div>
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 20px">
-      Para empezar, configurá tu contraseña haciendo click en el botón:
-    </p>
-    <div style="text-align:center;margin:24px 0">
-      <a href="${resetLink}" style="display:inline-block;padding:14px 32px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700">
-        Configurar mi contraseña →
-      </a>
-    </div>
-    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px 16px;margin:20px 0 0">
-      <div style="font-size:12px;color:#9A3412;font-weight:600">⚠️ Este enlace expira en 48 horas</div>
-      <div style="font-size:12px;color:#9A3412;margin-top:4px">
-        Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login para generar uno nuevo.
-      </div>
-    </div>
-  </div>
-  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
-    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
-  </div>
-</div>
-</body></html>`;
+    const welcomeHtml = brandedEmail({
+      title: 'Bienvenido a MySelec CRM',
+      preheader: 'Configurá tu contraseña para comenzar',
+      content: [
+        emailParagraph(`Hola <strong>${user.name}</strong>,`),
+        emailParagraph(`${adminName} te creó una cuenta en el CRM de MySelec.`),
+        emailInfoBox([`<strong>Email:</strong> ${user.email}`, `<strong>Rol:</strong> ${roleLabel}`]),
+        emailParagraph('Para empezar, configurá tu contraseña haciendo click en el botón:'),
+        emailButton(resetLink, 'Configurar mi contraseña'),
+        emailWarning('Este enlace expira en 48 horas', 'Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login para generar uno nuevo.'),
+      ].join(''),
+    });
 
     // 2. Mail al admin que lo creó
-    const adminHtml = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:24px 32px 20px">
-    <div style="color:#fff;font-size:16px;font-weight:700">✅ Usuario creado</div>
-  </div>
-  <div style="padding:24px 32px">
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 12px">
-      Creaste un nuevo usuario en MySelec CRM:
-    </p>
-    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 16px">
-      <div style="font-size:14px;color:#1B2A4A"><strong>Nombre:</strong> ${user.name}</div>
-      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Email:</strong> ${user.email}</div>
-      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
-    </div>
-    <p style="color:#64748B;font-size:13px;margin:0">
-      Se envió un mail de bienvenida con el link para configurar la contraseña.
-    </p>
-  </div>
-</div>
-</body></html>`;
+    const adminHtml = brandedEmail({
+      title: 'Usuario creado',
+      preheader: `Nuevo usuario: ${user.name}`,
+      content: [
+        emailParagraph('Creaste un nuevo usuario en MySelec CRM:'),
+        emailInfoBox([`<strong>Nombre:</strong> ${user.name}`, `<strong>Email:</strong> ${user.email}`, `<strong>Rol:</strong> ${roleLabel}`]),
+        emailParagraph('<span style="color:#939598;font-size:13px">Se envió un mail de bienvenida con el link para configurar la contraseña.</span>'),
+      ].join(''),
+    });
 
     // Enviar ambos en paralelo (no bloquean la respuesta)
     Promise.all([
@@ -298,41 +243,17 @@ router.post('/:id/resend-welcome', authMiddleware, adminOnly, async (req, res) =
     const resetLink = `${APP_URL}?reset=${resetToken}`;
     const roleLabel = user.role === 'DEVELOPER' ? 'Desarrollador' : user.role === 'ADMIN' ? 'Administrador' : user.role === 'VENDEDOR' ? 'Vendedor' : 'Logística';
 
-    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:28px 32px 24px">
-    <div style="color:#fff;font-size:20px;font-weight:700">🎉 Bienvenido a MySelec CRM</div>
-  </div>
-  <div style="padding:28px 32px">
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Hola <strong>${user.name}</strong>,
-    </p>
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Te reenviamos el link para configurar tu contraseña en MySelec CRM.
-    </p>
-    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 20px">
-      <div style="font-size:12px;color:#64748B;margin-bottom:4px">Tu cuenta</div>
-      <div style="font-size:14px;color:#1B2A4A"><strong>Email:</strong> ${user.email}</div>
-      <div style="font-size:14px;color:#1B2A4A;margin-top:2px"><strong>Rol:</strong> ${roleLabel}</div>
-    </div>
-    <div style="text-align:center;margin:24px 0">
-      <a href="${resetLink}" style="display:inline-block;padding:14px 32px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700">
-        Configurar mi contraseña →
-      </a>
-    </div>
-    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px 16px;margin:20px 0 0">
-      <div style="font-size:12px;color:#9A3412;font-weight:600">⚠️ Este enlace expira en 48 horas</div>
-      <div style="font-size:12px;color:#9A3412;margin-top:4px">
-        Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login.
-      </div>
-    </div>
-  </div>
-  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
-    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
-  </div>
-</div>
-</body></html>`;
+    const html = brandedEmail({
+      title: 'Bienvenido a MySelec CRM',
+      preheader: 'Configurá tu contraseña para comenzar',
+      content: [
+        emailParagraph(`Hola <strong>${user.name}</strong>,`),
+        emailParagraph('Te reenviamos el link para configurar tu contraseña en MySelec CRM.'),
+        emailInfoBox([`<strong>Email:</strong> ${user.email}`, `<strong>Rol:</strong> ${roleLabel}`]),
+        emailButton(resetLink, 'Configurar mi contraseña'),
+        emailWarning('Este enlace expira en 48 horas', 'Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login.'),
+      ].join(''),
+    });
 
     await sendMail({ to: user.email, subject: '🎉 Bienvenido a MySelec CRM — Configurá tu contraseña', html });
     res.json({ ok: true, sentTo: user.email });
@@ -387,36 +308,16 @@ router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
       sendMail({
         to: user.email,
         subject: '🔑 Tu contraseña fue cambiada · MySelec CRM',
-        html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;font-family:sans-serif">
-<div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
-  <div style="background:#1B2A4A;padding:24px 32px 20px">
-    <div style="color:#fff;font-size:18px;font-weight:700">🔑 Contraseña actualizada</div>
-  </div>
-  <div style="padding:24px 32px">
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      Hola <strong>${user.name}</strong>,
-    </p>
-    <p style="color:#334155;font-size:14px;line-height:1.6;margin:0 0 16px">
-      ${adminName} cambió la contraseña de tu cuenta en MySelec CRM. Contactalo para obtener tu nueva contraseña.
-    </p>
-    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px 16px;margin:0 0 20px">
-      <div style="font-size:12px;color:#9A3412;font-weight:600">💡 Recomendación</div>
-      <div style="font-size:12px;color:#9A3412;margin-top:4px">
-        Una vez que ingreses, podés cambiar tu contraseña desde <strong>Mi Perfil → Seguridad</strong>.
-      </div>
-    </div>
-    <div style="text-align:center">
-      <a href="${APP_URL}" style="display:inline-block;padding:12px 28px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700">
-        Ingresar al CRM →
-      </a>
-    </div>
-  </div>
-  <div style="padding:16px 32px;background:#F8FAFC;text-align:center">
-    <div style="font-size:11px;color:#94A3B8">MySelec CRM · ${APP_URL}</div>
-  </div>
-</div>
-</body></html>`,
+        html: brandedEmail({
+          title: 'Contraseña actualizada',
+          preheader: 'Tu contraseña de MySelec CRM fue cambiada',
+          content: [
+            emailParagraph(`Hola <strong>${user.name}</strong>,`),
+            emailParagraph(`${adminName} cambió la contraseña de tu cuenta en MySelec CRM. Contactalo para obtener tu nueva contraseña.`),
+            emailWarning('Recomendación', 'Una vez que ingreses, podés cambiar tu contraseña desde <strong>Mi Perfil</strong>.'),
+            emailButton(APP_URL, 'Ingresar al CRM'),
+          ].join(''),
+        }),
       }).catch(err => console.error('Error enviando mail de cambio de contraseña:', err.message));
     }
 
@@ -551,13 +452,14 @@ router.patch('/:id/password', authMiddleware, async (req, res) => {
     await sendMail({
       to: user.email,
       subject: 'Tu contraseña fue cambiada · MySelec CRM',
-      html: `
-        <div style="font-family:sans-serif;max-width:500px;margin:0 auto">
-          <h2 style="color:#1B2A4A">Contraseña actualizada</h2>
-          <p>Hola ${user.name}, tu contraseña de MySelec CRM fue cambiada exitosamente.</p>
-          <p style="color:#64748B;font-size:13px">Si no fuiste vos, contactá al administrador del sistema de inmediato.</p>
-        </div>
-      `,
+      html: brandedEmail({
+        title: 'Contraseña actualizada',
+        content: [
+          emailParagraph(`Hola <strong>${user.name}</strong>,`),
+          emailParagraph('Tu contraseña de MySelec CRM fue cambiada exitosamente.'),
+          emailWarning('Importante', 'Si no fuiste vos, contactá al administrador del sistema de inmediato.'),
+        ].join(''),
+      }),
     });
 
     res.json({ ok: true, passwordChangedAt: new Date() });

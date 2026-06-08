@@ -188,14 +188,15 @@ router.post('/register', async (req, res) => {
       await sendMail({
         to: adminsToNotify.map(a => a.email).join(', '),
         subject: 'Nuevo registro pendiente · MySelec CRM',
-        html: `
-          <div style="font-family:sans-serif;max-width:500px;margin:0 auto">
-            <h2 style="color:#1B2A4A">Nuevo usuario pendiente de aprobación</h2>
-            <p><strong>${name.trim()} ${lastName.trim()}</strong> (${email}) se registró y está esperando aprobación.</p>
-            <p>DNI: ${dni} ${cuit ? `· CUIT: ${cuit}` : ''}<br/>Teléfono: ${phone}</p>
-            <p>Ingresá al CRM → sección <strong>Equipo</strong> para revisar y aprobar.</p>
-          </div>
-        `,
+        html: require('../services/emailTemplate').brandedEmail({
+          title: 'Nuevo registro pendiente',
+          preheader: `${name.trim()} ${lastName.trim()} se registró y espera aprobación`,
+          content: [
+            require('../services/emailTemplate').emailParagraph(`<strong>${name.trim()} ${lastName.trim()}</strong> (${email}) se registró y está esperando aprobación.`),
+            require('../services/emailTemplate').emailInfoBox([`<strong>DNI:</strong> ${dni}${cuit ? ` · <strong>CUIT:</strong> ${cuit}` : ''}`, `<strong>Teléfono:</strong> ${phone}`]),
+            require('../services/emailTemplate').emailParagraph('Ingresá al CRM → sección <strong>Equipo</strong> para revisar y aprobar.'),
+          ].join(''),
+        }),
       });
     }
 

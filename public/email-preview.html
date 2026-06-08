@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Email Preview — MySelec CRM</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #1a1a2e; color: #fff; }
+  .tabs { display: flex; gap: 0; background: #16213e; padding: 16px 24px 0; flex-wrap: wrap; }
+  .tab { padding: 10px 20px; cursor: pointer; border-radius: 8px 8px 0 0; font-size: 13px; font-weight: 600; color: #94a3b8; transition: all 0.2s; }
+  .tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+  .tab.active { color: #20759E; background: #0f172a; }
+  .preview-frame { border: none; width: 100%; height: calc(100vh - 56px); background: #F5F6F7; }
+  h1 { display: none; }
+</style>
+</head>
+<body>
+
+<div class="tabs">
+  <div class="tab active" data-idx="0">Bienvenida</div>
+  <div class="tab" data-idx="1">Admin Confirmación</div>
+  <div class="tab" data-idx="2">Reenviar Bienvenida</div>
+  <div class="tab" data-idx="3">Contraseña Cambiada</div>
+  <div class="tab" data-idx="4">Recuperar Contraseña</div>
+  <div class="tab" data-idx="5">Notificación</div>
+  <div class="tab" data-idx="6">Presupuesto</div>
+</div>
+
+<iframe id="frame" class="preview-frame"></iframe>
+
+<script>
+const C = {
+  brandDark: '#004669', brand: '#20759E', black: '#231F20',
+  grayDark: '#939598', grayMid: '#BCBEC0', grayLight: '#E8E9EA',
+  bg: '#F5F6F7', white: '#FFFFFF',
+};
+const APP = 'https://myselec-crm.up.railway.app';
+const LOGO = '/Logo-M.png';
+
+function wrap(title, preheader, content, showLogo = true) {
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+${preheader ? `<span style="display:none;max-height:0;overflow:hidden;mso-hide:all">${preheader}</span>` : ''}
+</head>
+<body style="margin:0;padding:0;background:${C.bg};font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg}">
+<tr><td align="center" style="padding:32px 16px">
+  <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+    <tr>
+      <td style="background:${C.brandDark};padding:${showLogo ? '24px 32px' : '20px 32px'}">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            ${showLogo ? `<td style="width:40px;vertical-align:middle"><img src="${LOGO}" alt="M" width="36" height="36" style="display:block;border-radius:6px;background:${C.white}"></td>` : ''}
+            <td style="vertical-align:middle;${showLogo ? 'padding-left:14px' : ''}">
+              <div style="color:${C.white};font-size:18px;font-weight:700;letter-spacing:0.3px">${title || 'MySelec CRM'}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr><td style="background:${C.brand};height:3px;font-size:0;line-height:0">&nbsp;</td></tr>
+    <tr>
+      <td style="background:${C.white};padding:28px 32px">
+        ${content}
+      </td>
+    </tr>
+    <tr>
+      <td style="background:${C.grayLight};padding:16px 32px;text-align:center">
+        <div style="margin-bottom:10px">
+          <a href="${APP}" style="display:inline-block;padding:8px 20px;background:${C.brandDark};color:${C.white};text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:0.2px">Ir al CRM</a>
+        </div>
+        <div style="font-size:11px;color:${C.grayDark};line-height:1.5">
+          MySelec CRM
+        </div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+function p(t) { return `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 16px">${t}</p>`; }
+function btn(href, label) { return `<div style="text-align:center;margin:24px 0"><a href="${href}" style="display:inline-block;padding:13px 32px;background:${C.brand};color:${C.white};text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;letter-spacing:0.2px">${label}</a></div>`; }
+function info(lines) { return `<div style="background:${C.bg};border-radius:8px;padding:14px 16px;margin:16px 0">${lines.map(l=>`<div style="font-size:14px;color:${C.black};margin-top:2px">${l}</div>`).join('')}</div>`; }
+function warn(title, text) { return `<div style="background:#FFF8F0;border:1px solid #F0C8A0;border-radius:8px;padding:12px 16px;margin:16px 0"><div style="font-size:12px;color:#8B4513;font-weight:600">${title}</div>${text?`<div style="font-size:12px;color:#8B4513;margin-top:4px">${text}</div>`:''}</div>`; }
+
+const emails = [
+  // 0: Welcome
+  wrap('Bienvenido a MySelec CRM', 'Configurá tu contraseña para comenzar', [
+    p('Hola <strong>Juan Pérez</strong>,'),
+    p('Carlos Admin te creó una cuenta en el CRM de MySelec.'),
+    info(['<strong>Email:</strong> juan.perez@empresa.com', '<strong>Rol:</strong> Vendedor']),
+    p('Para empezar, configurá tu contraseña haciendo click en el botón:'),
+    btn('#', 'Configurar mi contraseña'),
+    warn('Este enlace expira en 48 horas', 'Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login para generar uno nuevo.'),
+  ].join('')),
+
+  // 1: Admin confirmation
+  wrap('Usuario creado', 'Nuevo usuario: Juan Pérez', [
+    p('Creaste un nuevo usuario en MySelec CRM:'),
+    info(['<strong>Nombre:</strong> Juan Pérez', '<strong>Email:</strong> juan.perez@empresa.com', '<strong>Rol:</strong> Vendedor']),
+    p(`<span style="color:${C.grayDark};font-size:13px">Se envió un mail de bienvenida con el link para configurar la contraseña.</span>`),
+  ].join('')),
+
+  // 2: Resend welcome
+  wrap('Bienvenido a MySelec CRM', 'Configurá tu contraseña para comenzar', [
+    p('Hola <strong>Juan Pérez</strong>,'),
+    p('Te reenviamos el link para configurar tu contraseña en MySelec CRM.'),
+    info(['<strong>Email:</strong> juan.perez@empresa.com', '<strong>Rol:</strong> Vendedor']),
+    btn('#', 'Configurar mi contraseña'),
+    warn('Este enlace expira en 48 horas', 'Si ya expiró, usá <strong>"Olvidé mi contraseña"</strong> en la pantalla de login.'),
+  ].join('')),
+
+  // 3: Password changed
+  wrap('Contraseña actualizada', 'Tu contraseña de MySelec CRM fue cambiada', [
+    p('Hola <strong>Juan Pérez</strong>,'),
+    p('Carlos Admin cambió la contraseña de tu cuenta en MySelec CRM. Contactalo para obtener tu nueva contraseña.'),
+    warn('Recomendación', 'Una vez que ingreses, podés cambiar tu contraseña desde <strong>Mi Perfil</strong>.'),
+    btn('#', 'Ingresar al CRM'),
+  ].join('')),
+
+  // 4: Password reset
+  wrap('Recuperar contraseña', 'Restablecé tu contraseña de MySelec CRM', [
+    p('Recibimos una solicitud para restablecer la contraseña de tu cuenta en MySelec CRM.'),
+    btn('#', 'Restablecer contraseña'),
+    warn('Este link expira en 1 hora', 'Si no solicitaste esto, podés ignorar este mail con tranquilidad.'),
+  ].join('')),
+
+  // 5: Notification
+  wrap('Notificación', 'Alerta de etapas vencidas', [
+    p('Hola María,'),
+    p('Tenés <strong>3 cotizaciones</strong> con etapas vencidas:'),
+    p('• COT-0450 — Cliente ABC S.A. — Etapa "enviado" vencida hace 2 días'),
+    p('• COT-0447 — Cliente XYZ Corp — Etapa "armado" vencida hace 5 días'),
+    p('• COT-0441 — Cliente Demo Ltd — Etapa "revisión" vencida hace 1 día'),
+    p('Ingresá al CRM para gestionar estas cotizaciones.'),
+  ].join('')),
+
+  // 6: Quote email
+  wrap('MySelec', '', [
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Estimado/a Cliente ABC S.A.,</p>`,
+    '<br>',
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Adjunto encontrará el presupuesto N° COT-0450 (NP Flexxus: NP-12345) solicitado.</p>`,
+    '<br>',
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Quedamos a su disposición para cualquier consulta.</p>`,
+    '<br>',
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Saludos cordiales,</p>`,
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Juan Pérez</p>`,
+    `<p style="color:${C.black};font-size:14px;line-height:1.6;margin:0 0 8px">Myselec</p>`,
+  ].join('\n')),
+];
+
+const tabs = document.querySelectorAll('.tab');
+const frame = document.getElementById('frame');
+
+function show(idx) {
+  tabs.forEach(t => t.classList.toggle('active', +t.dataset.idx === idx));
+  frame.srcdoc = emails[idx];
+}
+
+tabs.forEach(t => t.addEventListener('click', () => show(+t.dataset.idx)));
+show(0);
+</script>
+</body>
+</html>
