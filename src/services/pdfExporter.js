@@ -1,40 +1,39 @@
 /**
- * pdfExporter.js — Genera reportes PDF para exportación
- * Usa pdfkit para crear PDFs con header, tabla de datos y resumen.
+ * pdfExporter.js — Reportes PDF con identidad visual Myselec
  */
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
 
-// ─── Constantes de diseño ─────────────────────────────────────────────────────
-const COLORS = {
-  headerBg:   '#1e293b', // navy-900
-  headerText: '#ffffff',
-  brandBlue:  '#2563eb',
-  textDark:   '#1e293b',
-  textMid:    '#475569',
-  textLight:  '#94a3b8',
-  line:       '#e2e8f0',
-  rowAlt:     '#f8fafc',
-  usd:        '#1e40af',
-  ars:        '#047857',
+// ─── Brand colors (manual de identidad 2022) ─────────────────────────────────
+const C = {
+  brand:      '#20759E',
+  brandDark:  '#004669',
+  black:      '#231F20',
+  grayDark:   '#939598',
+  grayMid:    '#BCBEC0',
+  grayLight:  '#E8E9EA',
+  grayBg:     '#F5F6F7',
+  white:      '#FFFFFF',
+  accent:     '#20759E',
+  danger:     '#C0392B',
+  success:    '#1A7A4C',
 };
 
-const PAGE = { width: 842, height: 595, margin: 40 }; // A4 landscape
+const PAGE = { width: 842, height: 595, margin: 40 };
 const LOGO_PATH = path.join(__dirname, '../../public/Logo.png');
+const CONTENT_W = PAGE.width - PAGE.margin * 2;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtMoney(n, cur) {
   if (n == null) return '—';
-  const prefix = cur === 'ARS' ? 'AR$ ' : 'U$S ';
-  return prefix + Number(n).toLocaleString('es-AR');
+  return (cur === 'ARS' ? 'AR$ ' : 'U$S ') + Number(n).toLocaleString('es-AR');
 }
 
 function fmtMoney2(n, cur) {
   if (n == null) return '—';
-  const prefix = cur === 'ARS' ? 'AR$ ' : 'U$S ';
-  return prefix + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (cur === 'ARS' ? 'AR$ ' : 'U$S ') + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtDate(d) {
@@ -54,182 +53,209 @@ function truncate(s, max) {
   return s.length > max ? s.substring(0, max - 1) + '…' : s;
 }
 
-// ─── Dibujar header común ──────────────────────────────────────────────────────
+// ─── Header ───────────────────────────────────────────────────────────────────
 
 function drawHeader(doc, title, subtitle, filters) {
   const m = PAGE.margin;
 
-  // Header bar
-  doc.rect(0, 0, PAGE.width, 56).fill(COLORS.headerBg);
+  // Top accent line
+  doc.rect(0, 0, PAGE.width, 4).fill(C.brand);
 
-  // Logo (si existe)
+  // Header area
+  doc.rect(0, 4, PAGE.width, 62).fill(C.brandDark);
+
+  // Logo
   if (fs.existsSync(LOGO_PATH)) {
-    try { doc.image(LOGO_PATH, m, 10, { height: 36 }); } catch (_) {}
+    try { doc.image(LOGO_PATH, m, 14, { height: 42 }); } catch (_) {}
   }
 
-  // Título del reporte
-  doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.headerText)
-    .text(title, PAGE.width / 2 - 150, 12, { width: 300, align: 'center' });
-  doc.font('Helvetica').fontSize(8).fillColor('#94a3b8')
-    .text(subtitle, PAGE.width / 2 - 150, 30, { width: 300, align: 'center' });
+  // Title block — right-aligned
+  doc.font('Helvetica-Bold').fontSize(16).fillColor(C.white)
+    .text(title, PAGE.width - m - 350, 16, { width: 350, align: 'right' });
+  doc.font('Helvetica').fontSize(9).fillColor(C.grayMid)
+    .text(subtitle, PAGE.width - m - 350, 36, { width: 350, align: 'right' });
 
-  // Fecha de generación
+  // Date stamp
   const now = new Date().toLocaleString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  doc.font('Helvetica').fontSize(8).fillColor('#94a3b8')
-    .text(`Generado: ${now}`, PAGE.width - m - 180, 18, { width: 180, align: 'right' });
+  doc.font('Helvetica').fontSize(7).fillColor(C.grayMid)
+    .text(now, PAGE.width - m - 350, 50, { width: 350, align: 'right' });
 
-  // Filtros aplicados
-  let y = 66;
+  let y = 78;
+
+  // Filter chips
   if (filters && (filters.seller || filters.from || filters.to)) {
     const parts = [];
-    if (filters.seller) parts.push(`Vendedor: ${filters.seller}`);
-    if (filters.from)   parts.push(`Desde: ${fmtDate(filters.from)}`);
-    if (filters.to)     parts.push(`Hasta: ${fmtDate(filters.to)}`);
-    doc.font('Helvetica').fontSize(8).fillColor(COLORS.textMid)
-      .text(`Filtros: ${parts.join(' · ')}`, m, y);
-    y += 16;
+    if (filters.seller) parts.push(filters.seller);
+    if (filters.from)   parts.push(`Desde ${fmtDate(filters.from)}`);
+    if (filters.to)     parts.push(`Hasta ${fmtDate(filters.to)}`);
+
+    let chipX = m;
+    parts.forEach(label => {
+      const w = doc.font('Helvetica').fontSize(7.5).widthOfString(label) + 16;
+      doc.roundedRect(chipX, y, w, 18, 9).fill(C.grayBg);
+      doc.font('Helvetica').fontSize(7.5).fillColor(C.brandDark)
+        .text(label, chipX + 8, y + 4, { width: w - 16 });
+      chipX += w + 6;
+    });
+    y += 28;
   }
 
   return y;
 }
 
-// ─── Dibujar tabla genérica ────────────────────────────────────────────────────
+// ─── Footer ───────────────────────────────────────────────────────────────────
 
-function drawTable(doc, startY, columns, rows, options = {}) {
+function drawFooter(doc, pageNum, totalPages) {
   const m = PAGE.margin;
-  const tableWidth = PAGE.width - m * 2;
-  const rowHeight = 18;
-  const headerHeight = 22;
+  const y = PAGE.height - 28;
 
-  // Calcular anchos de columna
-  const totalFlex = columns.reduce((s, c) => s + (c.flex || 1), 0);
-  const colWidths = columns.map(c => (c.flex || 1) / totalFlex * tableWidth);
+  doc.moveTo(m, y).lineTo(PAGE.width - m, y).lineWidth(0.5).strokeColor(C.grayMid).stroke();
 
-  let y = startY;
+  doc.font('Helvetica').fontSize(7).fillColor(C.grayDark)
+    .text('Myselec SRL · Reporte generado desde CRM', m, y + 6, { width: CONTENT_W / 2 });
 
-  // Header de tabla
-  doc.rect(m, y, tableWidth, headerHeight).fill('#f1f5f9');
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.textMid);
-  let x = m;
-  columns.forEach((col, i) => {
-    const textX = col.align === 'right' ? x : x + 4;
-    const textW = col.align === 'right' ? colWidths[i] - 4 : colWidths[i] - 4;
-    doc.text(col.header.toUpperCase(), textX, y + 6, { width: textW, align: col.align || 'left' });
-    x += colWidths[i];
-  });
-  y += headerHeight;
-
-  // Línea debajo del header
-  doc.moveTo(m, y).lineTo(m + tableWidth, y).lineWidth(0.5).strokeColor(COLORS.line).stroke();
-
-  // Filas de datos
-  rows.forEach((row, ri) => {
-    // Nueva página si no hay espacio
-    if (y + rowHeight > PAGE.height - 50) {
-      doc.addPage({ size: [PAGE.width, PAGE.height], margin: m });
-      y = m;
-      // Repetir header de tabla
-      doc.rect(m, y, tableWidth, headerHeight).fill('#f1f5f9');
-      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.textMid);
-      let hx = m;
-      columns.forEach((col, i) => {
-        const textX = col.align === 'right' ? hx : hx + 4;
-        const textW = col.align === 'right' ? colWidths[i] - 4 : colWidths[i] - 4;
-        doc.text(col.header.toUpperCase(), textX, y + 6, { width: textW, align: col.align || 'left' });
-        hx += colWidths[i];
-      });
-      y += headerHeight;
-      doc.moveTo(m, y).lineTo(m + tableWidth, y).lineWidth(0.5).strokeColor(COLORS.line).stroke();
-    }
-
-    // Fondo alternado
-    if (ri % 2 === 1) {
-      doc.rect(m, y, tableWidth, rowHeight).fill(COLORS.rowAlt);
-    }
-
-    // Datos de la fila
-    doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.textDark);
-    x = m;
-    columns.forEach((col, i) => {
-      const val = col.key ? (typeof col.key === 'function' ? col.key(row) : row[col.key]) : '';
-      const text = val != null ? String(val) : '—';
-      const textX = col.align === 'right' ? x : x + 4;
-      const textW = col.align === 'right' ? colWidths[i] - 4 : colWidths[i] - 4;
-
-      if (col.color) doc.fillColor(col.color(row) || COLORS.textDark);
-      if (col.bold)  doc.font('Helvetica-Bold');
-      if (col.mono)  doc.font('Courier');
-
-      doc.text(text, textX, y + 5, { width: textW, align: col.align || 'left', lineBreak: false });
-
-      // Reset
-      doc.font('Helvetica').fillColor(COLORS.textDark);
-      x += colWidths[i];
-    });
-
-    // Línea separadora
-    y += rowHeight;
-    doc.moveTo(m, y).lineTo(m + tableWidth, y).lineWidth(0.3).strokeColor(COLORS.line).stroke();
-  });
-
-  return y;
+  doc.font('Helvetica').fontSize(7).fillColor(C.grayDark)
+    .text(`Página ${pageNum} de ${totalPages}`, m + CONTENT_W / 2, y + 6, { width: CONTENT_W / 2, align: 'right' });
 }
 
-// ─── Dibujar KPI cards ─────────────────────────────────────────────────────────
+// ─── KPI Cards ────────────────────────────────────────────────────────────────
 
 function drawKPIs(doc, y, kpis) {
   const m = PAGE.margin;
-  const cardW = (PAGE.width - m * 2 - (kpis.length - 1) * 10) / kpis.length;
-  const cardH = 42;
+  const gap = 10;
+  const cardW = (CONTENT_W - (kpis.length - 1) * gap) / kpis.length;
+  const cardH = 48;
 
   kpis.forEach((kpi, i) => {
-    const x = m + i * (cardW + 10);
-    // Card background
-    doc.roundedRect(x, y, cardW, cardH, 4).fill('#f8fafc');
-    doc.roundedRect(x, y, cardW, cardH, 4).lineWidth(0.5).strokeColor(COLORS.line).stroke();
+    const x = m + i * (cardW + gap);
+
+    // Card with left accent border
+    doc.roundedRect(x, y, cardW, cardH, 4).fill(C.white);
+    doc.roundedRect(x, y, cardW, cardH, 4).lineWidth(0.5).strokeColor(C.grayLight).stroke();
+    doc.rect(x, y + 4, 3, cardH - 8).fill(kpi.accent || C.brand);
+
     // Label
-    doc.font('Helvetica').fontSize(7).fillColor(COLORS.textMid)
-      .text(kpi.label.toUpperCase(), x + 8, y + 6, { width: cardW - 16 });
+    doc.font('Helvetica').fontSize(7).fillColor(C.grayDark)
+      .text(kpi.label.toUpperCase(), x + 12, y + 8, { width: cardW - 20 });
+
     // Value
-    doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.textDark)
-      .text(kpi.value, x + 8, y + 20, { width: cardW - 16 });
+    doc.font('Helvetica-Bold').fontSize(14).fillColor(C.black)
+      .text(kpi.value, x + 12, y + 22, { width: cardW - 20 });
   });
 
-  return y + cardH + 12;
+  return y + cardH + 14;
 }
 
-// ─── Dibujar footer con totales ───────────────────────────────────────────────
+// ─── Table ────────────────────────────────────────────────────────────────────
 
-function drawTotals(doc, y, totals) {
+function drawTable(doc, startY, columns, rows) {
   const m = PAGE.margin;
-  const tableWidth = PAGE.width - m * 2;
+  const rowH = 20;
+  const headerH = 24;
 
-  doc.rect(m, y, tableWidth, 24).fill('#f1f5f9');
-  doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.textDark);
+  const totalFlex = columns.reduce((s, c) => s + (c.flex || 1), 0);
+  const colWidths = columns.map(c => (c.flex || 1) / totalFlex * CONTENT_W);
 
-  const parts = [];
-  totals.forEach(t => {
-    if (t.value) parts.push(`${t.label}: ${t.value}`);
+  let y = startY;
+  let pageCount = 1;
+
+  function drawTableHeader(yPos) {
+    // Header background
+    doc.rect(m, yPos, CONTENT_W, headerH).fill(C.brandDark);
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.white);
+    let x = m;
+    columns.forEach((col, i) => {
+      doc.text(col.header.toUpperCase(), x + 6, yPos + 7, { width: colWidths[i] - 12, align: col.align || 'left', lineBreak: false });
+      x += colWidths[i];
+    });
+    return yPos + headerH;
+  }
+
+  y = drawTableHeader(y);
+
+  rows.forEach((row, ri) => {
+    if (y + rowH > PAGE.height - 45) {
+      drawFooter(doc, pageCount, '__TOTAL__');
+      pageCount++;
+      doc.addPage({ size: [PAGE.width, PAGE.height], margin: m });
+      y = m;
+      y = drawTableHeader(y);
+    }
+
+    // Zebra stripe
+    if (ri % 2 === 0) {
+      doc.rect(m, y, CONTENT_W, rowH).fill(C.grayBg);
+    }
+
+    // Row data
+    let x = m;
+    columns.forEach((col, i) => {
+      const val = col.key ? (typeof col.key === 'function' ? col.key(row) : row[col.key]) : '';
+      const text = val != null ? String(val) : '—';
+
+      let color = C.black;
+      if (col.color) color = col.color(row) || C.black;
+
+      doc.font(col.bold ? 'Helvetica-Bold' : col.mono ? 'Courier' : 'Helvetica')
+        .fontSize(7.5).fillColor(color)
+        .text(text, x + 6, y + 6, { width: colWidths[i] - 12, align: col.align || 'left', lineBreak: false });
+
+      x += colWidths[i];
+    });
+
+    y += rowH;
+
+    // Subtle row divider
+    doc.moveTo(m, y).lineTo(m + CONTENT_W, y).lineWidth(0.3).strokeColor(C.grayLight).stroke();
   });
 
-  doc.text(parts.join('     |     '), m + 8, y + 7, { width: tableWidth - 16, align: 'center' });
-  return y + 30;
+  return { y, pageCount };
 }
 
+// ─── Summary bar ──────────────────────────────────────────────────────────────
+
+function drawSummary(doc, y, items) {
+  const m = PAGE.margin;
+
+  if (y + 34 > PAGE.height - 45) return y;
+
+  y += 8;
+  doc.roundedRect(m, y, CONTENT_W, 30, 4).fill(C.brandDark);
+
+  const segW = CONTENT_W / items.length;
+  items.forEach((item, i) => {
+    const x = m + i * segW;
+    doc.font('Helvetica').fontSize(7).fillColor(C.grayMid)
+      .text(item.label.toUpperCase(), x + 12, y + 4, { width: segW - 24, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.white)
+      .text(item.value, x + 12, y + 14, { width: segW - 24, align: 'center' });
+  });
+
+  return y + 38;
+}
+
+// ─── Build PDF with page numbers ──────────────────────────────────────────────
+
+function finalizePdf(doc, pageCount) {
+  const range = doc.bufferedPageRange();
+  const total = range.count;
+  for (let i = 0; i < total; i++) {
+    doc.switchToPage(i);
+    drawFooter(doc, i + 1, total);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORTE 1: Cotizaciones
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function generateCotizaciones(quotes, { filters, stages } = {}) {
-  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true });
+  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true, bufferPages: true });
   const buffers = [];
   doc.on('data', b => buffers.push(b));
 
-  const subtitle = `${quotes.length} cotizaciones · Reporte generado desde Myselec CRM`;
-  let y = drawHeader(doc, 'Reporte de Cotizaciones', subtitle, filters);
+  let y = drawHeader(doc, 'Reporte de Cotizaciones', `${quotes.length} cotizaciones`, filters);
 
-  // KPIs
   const totalUSD = quotes.filter(q => (q.currency || 'USD') !== 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
   const totalARS = quotes.filter(q => q.currency === 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
   const enviados = quotes.filter(q => q.stage === 'enviado').length;
@@ -239,17 +265,15 @@ async function generateCotizaciones(quotes, { filters, stages } = {}) {
     { label: 'Total cotizaciones', value: String(quotes.length) },
     { label: 'Enviados', value: String(enviados) },
     { label: 'Aceptadas', value: String(aceptadas) },
-    { label: 'Monto USD', value: totalUSD > 0 ? fmtMoney(Math.round(totalUSD), 'USD') : '—' },
-    { label: 'Monto ARS', value: totalARS > 0 ? fmtMoney(Math.round(totalARS), 'ARS') : '—' },
+    { label: 'Monto USD', value: totalUSD > 0 ? fmtMoney(Math.round(totalUSD), 'USD') : '—', accent: '#1e40af' },
+    { label: 'Monto ARS', value: totalARS > 0 ? fmtMoney(Math.round(totalARS), 'ARS') : '—', accent: C.success },
   ]);
 
-  // Mapa de etapas
   const stageMap = {};
   if (stages) stages.forEach(s => { stageMap[s.stageKey] = s.label; });
 
-  // Tabla
   const columns = [
-    { header: 'Código',   key: 'code',       flex: 1.2, mono: true },
+    { header: 'Código',   key: 'code',       flex: 1.2, mono: true, bold: true },
     { header: 'Cliente',  key: r => truncate(r.clientName, 28), flex: 2.5 },
     { header: 'Vendedor', key: r => truncate(r.sellerName, 16), flex: 1.5 },
     { header: 'Etapa',    key: r => stageMap[r.stage] || r.stage, flex: 1.5 },
@@ -257,7 +281,7 @@ async function generateCotizaciones(quotes, { filters, stages } = {}) {
     { header: 'Moneda',   key: r => r.currency || 'USD', flex: 0.7 },
     { header: 'Monto',    key: r => r.amount != null ? fmtMoney(r.amount, r.currency) : '—', flex: 1.5, align: 'right', bold: true },
     { header: 'Días',     key: r => r.dias != null ? `${r.dias}d` : '—', flex: 0.6, align: 'right',
-      color: r => r.dias >= 5 ? '#dc2626' : COLORS.textDark },
+      color: r => r.dias >= 5 ? C.danger : C.black },
     { header: 'Ingreso',  key: r => fmtDateShort(r.createdAt), flex: 1, align: 'right' },
   ];
 
@@ -273,15 +297,15 @@ async function generateCotizaciones(quotes, { filters, stages } = {}) {
     createdAt:  q.createdAt,
   }));
 
-  y = drawTable(doc, y, columns, rows);
+  const result = drawTable(doc, y, columns, rows);
 
-  // Totales
-  const totals = [];
-  if (totalUSD > 0) totals.push({ label: 'Total USD', value: fmtMoney(Math.round(totalUSD), 'USD') });
-  if (totalARS > 0) totals.push({ label: 'Total ARS', value: fmtMoney(Math.round(totalARS), 'ARS') });
-  totals.push({ label: 'Registros', value: String(quotes.length) });
-  if (y + 30 < PAGE.height - 20) drawTotals(doc, y + 6, totals);
+  const summaryItems = [];
+  if (totalUSD > 0) summaryItems.push({ label: 'Total USD', value: fmtMoney(Math.round(totalUSD), 'USD') });
+  if (totalARS > 0) summaryItems.push({ label: 'Total ARS', value: fmtMoney(Math.round(totalARS), 'ARS') });
+  summaryItems.push({ label: 'Registros', value: String(quotes.length) });
+  drawSummary(doc, result.y, summaryItems);
 
+  finalizePdf(doc);
   doc.end();
   return new Promise(resolve => doc.on('end', () => resolve(Buffer.concat(buffers))));
 }
@@ -292,21 +316,18 @@ async function generateCotizaciones(quotes, { filters, stages } = {}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function generateRechazos(quotes, { filters } = {}) {
-  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true });
+  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true, bufferPages: true });
   const buffers = [];
   doc.on('data', b => buffers.push(b));
 
-  const subtitle = `${quotes.length} rechazos · Análisis de oportunidades perdidas`;
-  let y = drawHeader(doc, 'Reporte de Rechazos', subtitle, filters);
+  let y = drawHeader(doc, 'Análisis de Rechazos', `${quotes.length} oportunidades perdidas`, filters);
 
-  // KPIs
   const totalUSD = quotes.filter(q => (q.currency || 'USD') !== 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
   const totalARS = quotes.filter(q => q.currency === 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
   const avgDias = quotes.length
     ? Math.round(quotes.reduce((s, q) => s + Math.floor((new Date(q.updatedAt).getTime() - new Date(q.createdAt).getTime()) / (1000 * 60 * 60 * 24)), 0) / quotes.length)
     : 0;
 
-  // Motivo más frecuente
   const reasonCounts = {};
   quotes.forEach(q => {
     const r = q.rejectReason || 'Sin especificar';
@@ -315,20 +336,19 @@ async function generateRechazos(quotes, { filters } = {}) {
   const topReason = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0];
 
   y = drawKPIs(doc, y, [
-    { label: 'Total rechazos', value: String(quotes.length) },
-    { label: 'Perdido USD', value: totalUSD > 0 ? fmtMoney(Math.round(totalUSD), 'USD') : '—' },
-    { label: 'Perdido ARS', value: totalARS > 0 ? fmtMoney(Math.round(totalARS), 'ARS') : '—' },
-    { label: 'Días prom. hasta rechazo', value: `${avgDias}d` },
-    { label: 'Motivo principal', value: topReason ? truncate(topReason[0], 20) : '—' },
+    { label: 'Total rechazos', value: String(quotes.length), accent: C.danger },
+    { label: 'Perdido USD', value: totalUSD > 0 ? fmtMoney(Math.round(totalUSD), 'USD') : '—', accent: C.danger },
+    { label: 'Perdido ARS', value: totalARS > 0 ? fmtMoney(Math.round(totalARS), 'ARS') : '—', accent: C.danger },
+    { label: 'Días prom.', value: `${avgDias}d` },
+    { label: 'Motivo principal', value: topReason ? truncate(topReason[0], 18) : '—' },
   ]);
 
-  // Tabla
   const columns = [
-    { header: 'Código',   key: 'code',       flex: 1.1, mono: true },
+    { header: 'Código',   key: 'code',       flex: 1.1, mono: true, bold: true },
     { header: 'Cliente',  key: r => truncate(r.clientName, 25), flex: 2.2 },
     { header: 'Vendedor', key: r => truncate(r.sellerName, 14), flex: 1.3 },
     { header: 'Motivo',   key: r => truncate(r.rejectReason, 22), flex: 2, bold: true,
-      color: () => '#dc2626' },
+      color: () => C.danger },
     { header: 'Moneda',   key: r => r.currency || 'USD', flex: 0.6 },
     { header: 'Monto',    key: r => r.amount != null ? fmtMoney(r.amount, r.currency) : '—', flex: 1.3, align: 'right', bold: true },
     { header: 'Días',     key: r => `${r.diasHastaRechazo}d`, flex: 0.6, align: 'right' },
@@ -346,15 +366,15 @@ async function generateRechazos(quotes, { filters } = {}) {
     updatedAt:        q.updatedAt,
   }));
 
-  y = drawTable(doc, y, columns, rows);
+  const result = drawTable(doc, y, columns, rows);
 
-  // Totales
-  const totals = [];
-  if (totalUSD > 0) totals.push({ label: 'Perdido USD', value: fmtMoney(Math.round(totalUSD), 'USD') });
-  if (totalARS > 0) totals.push({ label: 'Perdido ARS', value: fmtMoney(Math.round(totalARS), 'ARS') });
-  totals.push({ label: 'Rechazos', value: String(quotes.length) });
-  if (y + 30 < PAGE.height - 20) drawTotals(doc, y + 6, totals);
+  const summaryItems = [];
+  if (totalUSD > 0) summaryItems.push({ label: 'Perdido USD', value: fmtMoney(Math.round(totalUSD), 'USD') });
+  if (totalARS > 0) summaryItems.push({ label: 'Perdido ARS', value: fmtMoney(Math.round(totalARS), 'ARS') });
+  summaryItems.push({ label: 'Total rechazos', value: String(quotes.length) });
+  drawSummary(doc, result.y, summaryItems);
 
+  finalizePdf(doc);
   doc.end();
   return new Promise(resolve => doc.on('end', () => resolve(Buffer.concat(buffers))));
 }
@@ -365,14 +385,12 @@ async function generateRechazos(quotes, { filters } = {}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function generateOrdenes(orders, { filters, stages } = {}) {
-  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true });
+  const doc = new PDFDocument({ size: [PAGE.width, PAGE.height], margin: PAGE.margin, autoFirstPage: true, bufferPages: true });
   const buffers = [];
   doc.on('data', b => buffers.push(b));
 
-  const subtitle = `${orders.length} órdenes · Estado de entregas y logística`;
-  let y = drawHeader(doc, 'Reporte de Órdenes de Compra', subtitle, filters);
+  let y = drawHeader(doc, 'Reporte de Órdenes de Compra', `${orders.length} órdenes`, filters);
 
-  // KPIs
   const stageMap = {};
   if (stages) stages.forEach(s => { stageMap[s.stageKey] = s.label; });
   const lastStage = stages?.[stages.length - 1]?.stageKey;
@@ -382,14 +400,13 @@ async function generateOrdenes(orders, { filters, stages } = {}) {
 
   y = drawKPIs(doc, y, [
     { label: 'Total órdenes', value: String(orders.length) },
-    { label: 'En curso', value: String(enCurso) },
-    { label: 'Entregadas', value: String(entregadas) },
+    { label: 'En curso', value: String(enCurso), accent: '#D4A017' },
+    { label: 'Entregadas', value: String(entregadas), accent: C.success },
     { label: 'Con tracking', value: String(conTracking) },
   ]);
 
-  // Tabla
   const columns = [
-    { header: 'Código OC', key: 'code',         flex: 1.1, mono: true },
+    { header: 'Código OC', key: 'code',         flex: 1.1, mono: true, bold: true },
     { header: 'Cliente',   key: r => truncate(r.clientName, 25), flex: 2.5 },
     { header: 'Vendedor',  key: r => truncate(r.sellerName, 14), flex: 1.3 },
     { header: 'Etapa',     key: r => stageMap[r.stage] || r.stage, flex: 1.5 },
@@ -412,16 +429,15 @@ async function generateOrdenes(orders, { filters, stages } = {}) {
     createdAt:      o.createdAt,
   }));
 
-  y = drawTable(doc, y, columns, rows);
+  const result = drawTable(doc, y, columns, rows);
 
-  // Totales
-  const totals = [
-    { label: 'Total órdenes', value: String(orders.length) },
+  drawSummary(doc, result.y, [
+    { label: 'Total', value: String(orders.length) },
     { label: 'En curso', value: String(enCurso) },
     { label: 'Entregadas', value: String(entregadas) },
-  ];
-  if (y + 30 < PAGE.height - 20) drawTotals(doc, y + 6, totals);
+  ]);
 
+  finalizePdf(doc);
   doc.end();
   return new Promise(resolve => doc.on('end', () => resolve(Buffer.concat(buffers))));
 }
