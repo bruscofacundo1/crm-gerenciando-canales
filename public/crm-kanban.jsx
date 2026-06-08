@@ -179,7 +179,83 @@ function OrderCard({ o, onOpen, compact }) {
 
 // ---------- Boards ----------
 function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, logisticsActions }) {
-  const { moveOrderStage, pushToast } = useApp();
+  const { moveOrderStage, moveQuoteStage, pushToast } = useApp();
+
+  /* ── Drag & drop state ── */
+  const [dragCode,  setDragCode]  = useS(null);   // code of card being dragged
+  const [overStage, setOverStage] = useS(null);   // stageId being hovered
+  const [justDropped, setJustDropped] = useS(null); // code that just landed (for animation)
+  const enterCounters = React.useRef({});          // counter per column to prevent flicker
+
+  const onCardDragStart = (e, item) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    // Build styled ghost
+    const ghost = el.cloneNode(true);
+    ghost.className = '';
+    ghost.style.cssText = [
+      'position:fixed;top:-9999px;left:-9999px',
+      'width:' + el.offsetWidth + 'px',
+      'transform:rotate(2deg) scale(1.04)',
+      'box-shadow:0 16px 40px -12px rgba(0,70,105,.24),0 4px 12px -4px rgba(0,70,105,.08)',
+      'border-radius:12px',
+      'opacity:.88',
+      'background:#fff',
+      'border:1px solid rgba(32,117,158,.25)',
+      'z-index:99999',
+      'pointer-events:none',
+    ].join(';');
+    // Copy inner styles for children
+    Array.from(el.children).forEach((child, i) => {
+      if (ghost.children[i]) ghost.children[i].style.cssText = child.style?.cssText || '';
+    });
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, e.clientX - rect.left, e.clientY - rect.top);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-kanban', JSON.stringify({ code: item.code, kind }));
+    setTimeout(() => ghost.remove(), 0);
+    requestAnimationFrame(() => setDragCode(item.code));
+  };
+
+  const onCardDragEnd = () => {
+    setDragCode(null);
+    setOverStage(null);
+    enterCounters.current = {};
+  };
+
+  const onColDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+
+  const onColEnter = (e, stageId) => {
+    e.preventDefault();
+    enterCounters.current[stageId] = (enterCounters.current[stageId] || 0) + 1;
+    setOverStage(stageId);
+  };
+
+  const onColLeave = (stageId) => {
+    enterCounters.current[stageId] = (enterCounters.current[stageId] || 0) - 1;
+    if (enterCounters.current[stageId] <= 0) {
+      enterCounters.current[stageId] = 0;
+      setOverStage(prev => prev === stageId ? null : prev);
+    }
+  };
+
+  const onColDrop = (e, targetStageId) => {
+    e.preventDefault();
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/x-kanban'));
+      if (data.kind !== kind) return;
+      const item = items.find(i => i.code === data.code);
+      if (item && item.stage !== targetStageId) {
+        if (kind === 'quote') moveQuoteStage(data.code, targetStageId);
+        else moveOrderStage(data.code, targetStageId);
+        setJustDropped(data.code);
+        setTimeout(() => setJustDropped(null), 400);
+      }
+    } catch (ex) { /* ignore bad data */ }
+    setDragCode(null);
+    setOverStage(null);
+    enterCounters.current = {};
+  };
 
   const quickAdvance = (o) => {
     const idx = STAGES_F2.findIndex(s => s.id === o.stage);
@@ -189,9 +265,8 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
   };
 
   // ── Pares globales: PRESUPUESTO con SOLICITUD vinculada en cualquier columna ──
-  // La SOLICITUD desaparece de su columna y se muestra pegada al PRESUPUESTO.
-  const pairedSolIds  = new Set(); // IDs de SOLICITUDs ocultas de su columna
-  const presToSolMap  = new Map(); // presupuestoId → solicitud item
+  const pairedSolIds  = new Set();
+  const presToSolMap  = new Map();
   if (kind === 'quote') {
     for (const it of items) {
       if (it.mailType === 'PRESUPUESTO' && it.linkedQuoteId) {
@@ -200,6 +275,9 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
       }
     }
   }
+
+  // Helper: source column shouldn't highlight
+  const dragItem = dragCode ? items.find(i => i.code === dragCode) : null;
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">
@@ -213,12 +291,21 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
       <div className="flex-1 min-h-0 overflow-x-auto scroll-thin px-6 pb-6 pt-4 bg-surface">
         <div className="flex gap-3 h-full min-w-max">
           {stages.map(st => {
-            // Filtrar SOLICITUDs que tienen par → no aparecen en su propia columna
             const list  = items.filter(i => i.stage === st.id && !pairedSolIds.has(i.id));
             const totalUSD = list.filter(i => (i.currency||'USD') !== 'ARS').reduce((a,b) => a + (b.monto||0), 0);
             const totalARS = list.filter(i => i.currency === 'ARS').reduce((a,b) => a + (b.monto||0), 0);
+            const isDropTarget = dragCode && overStage === st.id && (!dragItem || dragItem.stage !== st.id);
             return (
-              <div key={st.id} className="w-[292px] shrink-0 flex flex-col bg-white rounded-xl border border-line shadow-xs">
+              <div key={st.id}
+                onDragOver={onColDragOver}
+                onDragEnter={(e) => onColEnter(e, st.id)}
+                onDragLeave={() => onColLeave(st.id)}
+                onDrop={(e) => onColDrop(e, st.id)}
+                className={cx(
+                  'w-[292px] shrink-0 flex flex-col rounded-xl border shadow-xs transition-all duration-200',
+                  isDropTarget ? 'drag-over-col bg-white' : 'bg-white border-line'
+                )}
+              >
                 <div className="px-3.5 py-3 flex items-center justify-between border-b border-line">
                   <div className="flex items-center gap-2 min-w-0">
                     <StageDot tone={st.tone}/>
@@ -231,14 +318,32 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
                   {kind === 'quote'
                     ? list.map(it => {
                         const sol = presToSolMap.get(it.id);
-                        return sol
-                          ? <PairedQuoteCard key={it.code} pres={it} sol={sol}
-                              onOpenPres={() => onOpen(it.code)}
-                              onOpenSol={() => onOpen(sol.code)}/>
-                          : <QuoteCard key={it.code} q={it} onOpen={() => onOpen(it.code)}/>;
+                        return (
+                          <div key={it.code} draggable
+                            onDragStart={(e) => onCardDragStart(e, it)}
+                            onDragEnd={onCardDragEnd}
+                            className={cx(
+                              dragCode === it.code && 'drag-source',
+                              justDropped === it.code && 'card-drop-in'
+                            )}>
+                            {sol
+                              ? <PairedQuoteCard pres={it} sol={sol}
+                                  onOpenPres={() => onOpen(it.code)}
+                                  onOpenSol={() => onOpen(sol.code)}/>
+                              : <QuoteCard q={it} onOpen={() => onOpen(it.code)}/>
+                            }
+                          </div>
+                        );
                       })
                     : list.map(it => (
-                        <div key={it.code} className="space-y-1.5">
+                        <div key={it.code} draggable
+                          onDragStart={(e) => onCardDragStart(e, it)}
+                          onDragEnd={onCardDragEnd}
+                          className={cx(
+                            'space-y-1.5',
+                            dragCode === it.code && 'drag-source',
+                            justDropped === it.code && 'card-drop-in'
+                          )}>
                           <OrderCard o={it} onOpen={() => onOpen(it.code)}/>
                           {logisticsActions && (
                             <button onClick={(e) => { e.stopPropagation(); quickAdvance(it); }}
