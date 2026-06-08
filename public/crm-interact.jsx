@@ -418,6 +418,7 @@ function NewQuoteModal({ defaultClient }) {
     ingreso: new Date().toISOString().slice(0,10),
     fechaLimite: '',
     monto: '',
+    currency: 'USD',
     origin: 'Mail',
     observaciones: '',
     fileName: '',
@@ -437,6 +438,7 @@ function NewQuoteModal({ defaultClient }) {
         clientId: client?.id || null,
         sellerId: form.seller || null,
         amount: form.monto ? parseFloat(form.monto) : null,
+        currency: form.currency,
         source,
         deadline: form.fechaLimite || null,
       });
@@ -489,8 +491,14 @@ function NewQuoteModal({ defaultClient }) {
         <FormGroup label="Fecha límite de armado">
           <input type="date" className="inp w-full" value={form.fechaLimite} onChange={e=>set('fechaLimite',e.target.value)}/>
         </FormGroup>
-        <FormGroup label="Monto estimado (ARS)" hint="Opcional — se completa al armar el presupuesto" cols={2}>
-          <input type="number" className="inp w-full" placeholder="Ej: 45200" value={form.monto} onChange={e=>set('monto',e.target.value)}/>
+        <FormGroup label="Monto estimado" hint="Opcional — se completa al armar el presupuesto" cols={2}>
+          <div className="flex gap-2">
+            <select className="inp w-24 shrink-0" value={form.currency} onChange={e=>set('currency',e.target.value)}>
+              <option value="USD">U$S</option>
+              <option value="ARS">AR$</option>
+            </select>
+            <input type="number" className="inp flex-1" placeholder="Ej: 45200" value={form.monto} onChange={e=>set('monto',e.target.value)}/>
+          </div>
         </FormGroup>
         <FormGroup label="Observaciones" cols={2}>
           <textarea rows="3" className="inp w-full resize-none" placeholder="Contexto del pedido, urgencia, condiciones particulares…"
@@ -750,7 +758,7 @@ function NewOrderModal() {
         {q && (
           <div className="col-span-2 bg-surface rounded-lg px-3 py-2 border border-line text-[12px] text-ink-600 flex items-center gap-2">
             <Icon name="info" size={13} className="text-brand"/>
-            <span><b>{clients.find(c=>c.code===q.client)?.name || q.clientName || '?'}</b>{` · ${fmtMoney(q.monto)} · ${q.stage}`}</span>
+            <span><b>{clients.find(c=>c.code===q.client)?.name || q.clientName || '?'}</b>{` · ${fmtMoney(q.monto, q.currency)} · ${q.stage}`}</span>
           </div>
         )}
 
@@ -1245,7 +1253,7 @@ function SearchPaletteModal() {
                     <Icon name="clipboard-list" size={15} className="text-ink-500"/>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] font-semibold truncate"><span className="mono text-navy-900">{x.code}</span> — {c?.name}</div>
-                      <div className="text-[11px] text-ink-500">{c?.city}{c?.city&&x.monto?' · ':''}{x.monto?fmtMoney(x.monto):''}</div>
+                      <div className="text-[11px] text-ink-500">{c?.city}{c?.city&&x.monto?' · ':''}{x.monto?fmtMoney(x.monto, x.currency):''}</div>
                     </div>
                     {stg && <Badge tone={stg.tone} dot>{stg.label}</Badge>}
                   </button>
@@ -1391,8 +1399,9 @@ function ClientDetailModal({ clientId }) {
   const fmtDate = (d) => new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' });
   const fmtTime = (d) => new Date(d).toLocaleString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 
-  // Calcular totales
-  const totalAmount = data.quotes.reduce((s, q) => s + (q.amount || 0), 0);
+  // Calcular totales por moneda
+  const totalUSD = data.quotes.filter(q => (q.currency||'USD') !== 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
+  const totalARS = data.quotes.filter(q => q.currency === 'ARS').reduce((s, q) => s + (q.amount || 0), 0);
   const wonCount = data.quotes.filter(q => q.stage === 'aceptada').length;
   const activeCount = data.quotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
 
@@ -1413,7 +1422,9 @@ function ClientDetailModal({ clientId }) {
           { label: 'Cotizaciones', value: data.quotes.length, color: 'text-ink-800' },
           { label: 'Activas', value: activeCount, color: 'text-brand' },
           { label: 'Ganadas', value: wonCount, color: 'text-ok' },
-          { label: 'Monto total', value: totalAmount > 0 ? `U$S ${Math.round(totalAmount).toLocaleString('es-AR')}` : '—', color: 'text-ink-800' },
+          { label: 'Monto total', value: totalUSD > 0 || totalARS > 0
+            ? [totalUSD > 0 && fmtMoney(Math.round(totalUSD), 'USD'), totalARS > 0 && fmtMoney(Math.round(totalARS), 'ARS')].filter(Boolean).join(' + ')
+            : '—', color: 'text-ink-800' },
         ].map(k => (
           <div key={k.label} className="bg-surface rounded-lg p-3 text-center">
             <div className="text-[10px] font-medium text-ink-400 uppercase tracking-wider">{k.label}</div>
@@ -1447,7 +1458,7 @@ function ClientDetailModal({ clientId }) {
                     {q.flexxusCode && <span className="text-[10px] text-ink-400 font-mono">{q.flexxusCode}</span>}
                   </div>
                   <div className="text-[11px] text-ink-400 mt-0.5">
-                    {fmtDate(q.createdAt)}{q.seller ? ` · ${q.seller.name}` : ''}{q.amount ? ` · U$S ${Math.round(q.amount).toLocaleString('es-AR')}` : ''}
+                    {fmtDate(q.createdAt)}{q.seller ? ` · ${q.seller.name}` : ''}{q.amount ? ` · ${fmtMoney(Math.round(q.amount), q.currency)}` : ''}
                   </div>
                 </div>
                 <span className={cx('px-2 py-0.5 rounded text-[10px] font-semibold',
@@ -1517,6 +1528,145 @@ function ClientDetailModal({ clientId }) {
   );
 }
 
+// --- Export PDF Modal ---
+function ExportModal({ exportType }) {
+  const { closeModal, pushToast } = useApp();
+  const [mode, setMode] = useS('download'); // download | email
+  const [to, setTo] = useS('');
+  const [cc, setCc] = useS('');
+  const [subject, setSubject] = useS('');
+  const [body, setBody] = useS('');
+  const [sending, setSending] = useS(false);
+  const [sellerId, setSellerId] = useS('');
+  const [from, setFrom] = useS('');
+  const [toDate, setToDate] = useS('');
+
+  const TYPES = {
+    cotizaciones: { label: 'Cotizaciones', icon: 'clipboard-list' },
+    rechazos:     { label: 'Rechazos',     icon: 'x-circle' },
+    ordenes:      { label: 'Órdenes de Compra', icon: 'truck' },
+  };
+  const typeInfo = TYPES[exportType] || TYPES.cotizaciones;
+
+  const handleDownload = () => {
+    const params = {};
+    if (sellerId) params.sellerId = sellerId;
+    if (from)     params.from = from;
+    if (toDate)   params.to = toDate;
+    const url = CrmApi.exportPdfUrl(exportType, params);
+    // Abrir con token en header via fetch + blob
+    const token = CrmAuth.getToken();
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        if (!r.ok) throw new Error('Error al generar PDF');
+        return r.blob();
+      })
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${exportType}_${new Date().toISOString().slice(0,10)}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        pushToast('PDF descargado correctamente');
+        closeModal();
+      })
+      .catch(err => pushToast(err.message || 'Error al descargar', 'bad'));
+  };
+
+  const handleSend = async () => {
+    if (!to.trim()) return pushToast('Ingresá un destinatario', 'bad');
+    setSending(true);
+    try {
+      const filters = {};
+      if (sellerId) filters.sellerId = sellerId;
+      if (from)     filters.from = from;
+      if (toDate)   filters.to = toDate;
+      await CrmApi.sendExportMail({ type: exportType, to: to.trim(), cc: cc.trim() || null, subject: subject.trim() || null, body: body.trim() || null, filters });
+      pushToast('Reporte enviado por mail correctamente');
+      closeModal();
+    } catch (err) {
+      pushToast(err.message || 'Error al enviar', 'bad');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Modal onClose={closeModal} title={`Exportar ${typeInfo.label}`}
+      subtitle="Generar reporte PDF"
+      width={520}
+      footer={
+        <>
+          <button className="btn-ghost" onClick={closeModal}>Cancelar</button>
+          {mode === 'download'
+            ? <button className="btn-primary" onClick={handleDownload}><Icon name="download" size={13}/>Descargar PDF</button>
+            : <button className="btn-primary" disabled={!to.trim() || sending} onClick={handleSend}
+                style={(!to.trim() || sending) ? {opacity:.45, cursor:'not-allowed'} : {}}>
+                <Icon name={sending ? 'loader' : 'send'} size={13}/>{sending ? 'Enviando…' : 'Enviar por mail'}
+              </button>
+          }
+        </>
+      }>
+      {/* Mode toggle */}
+      <div className="flex gap-1 mb-4 bg-surface rounded-lg p-1 border border-line">
+        {[{id:'download', icon:'download', label:'Descargar'}, {id:'email', icon:'mail', label:'Enviar por mail'}].map(m => (
+          <button key={m.id} onClick={() => setMode(m.id)}
+            className={cx('flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-[12px] font-medium transition-all',
+              mode === m.id ? 'bg-white shadow-sm text-ink-900 border border-line' : 'text-ink-500 hover:text-ink-700')}>
+            <Icon name={m.icon} size={13}/>{m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filtros opcionales */}
+      <div className="bg-surface border border-line rounded-lg p-3 mb-4 space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Filtros del reporte (opcional)</div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-[11px] text-ink-500 block mb-1">Desde</label>
+            <input type="date" className="inp w-full text-[12px]" value={from} onChange={e=>setFrom(e.target.value)}/>
+          </div>
+          <div>
+            <label className="text-[11px] text-ink-500 block mb-1">Hasta</label>
+            <input type="date" className="inp w-full text-[12px]" value={toDate} onChange={e=>setToDate(e.target.value)}/>
+          </div>
+          <div>
+            <label className="text-[11px] text-ink-500 block mb-1">Vendedor</label>
+            <select className="inp w-full text-[12px]" value={sellerId} onChange={e=>setSellerId(e.target.value)}>
+              <option value="">Todos</option>
+              {(window.__exportUsers || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Email fields */}
+      {mode === 'email' && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-500 block mb-1">Destinatario *</label>
+            <input className="inp w-full" placeholder="email@ejemplo.com" value={to} onChange={e=>setTo(e.target.value)}/>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-500 block mb-1">CC (opcional)</label>
+            <input className="inp w-full" placeholder="otro@ejemplo.com" value={cc} onChange={e=>setCc(e.target.value)}/>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-500 block mb-1">Asunto (opcional)</label>
+            <input className="inp w-full" placeholder={`Reporte ${typeInfo.label} — Myselec CRM`} value={subject} onChange={e=>setSubject(e.target.value)}/>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-500 block mb-1">Mensaje (opcional)</label>
+            <textarea className="inp w-full resize-none" rows="3"
+              placeholder="Se incluye un mensaje por defecto si lo dejás vacío"
+              value={body} onChange={e=>setBody(e.target.value)}/>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 const MODAL_REGISTRY = {
   newQuote: NewQuoteModal,
   newOrder: NewOrderModal,
@@ -1528,6 +1678,7 @@ const MODAL_REGISTRY = {
   search: SearchPaletteModal,
   quoteDetail: QuoteDetailWrapper,
   orderDetail: OrderDetailWrapper,
+  exportPdf: ExportModal,
 };
 
 // ---------- Notifications Popover ----------

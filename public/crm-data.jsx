@@ -2,7 +2,7 @@
 
 // ---------- helpers ----------
 const cx = (...xs) => xs.filter(Boolean).join(' ');
-const fmtMoney = (n) => n == null ? '—' : '$ ' + n.toLocaleString('es-AR');
+const fmtMoney = (n, cur, dec) => n == null ? '—' : (cur === 'ARS' ? 'AR$ ' : 'U$S ') + n.toLocaleString('es-AR', dec != null ? { minimumFractionDigits: dec, maximumFractionDigits: dec } : undefined);
 const fmtDate  = (d) => {
   const o = typeof d === 'string' ? new Date(d) : d;
   return o.toLocaleDateString('es-AR', { day:'2-digit', month:'short' }).replace('.','');

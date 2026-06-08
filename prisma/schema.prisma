@@ -139,6 +139,7 @@ model Quote {
   seller         User?     @relation("QuoteSeller", fields: [sellerId], references: [id])
   stage          String    @default("recibida")
   source         String    @default("MANUAL")   // MANUAL | EMAIL | WHATSAPP
+  currency       String    @default("USD")  // USD | ARS
   amount         Float?                     // Total con IVA y percepciones (grand total)
   subtotalNeto   Float?                     // Subtotal neto (ítems, sin impuestos)
   ivaAmount      Float?                     // Monto IVA (21% típicamente)

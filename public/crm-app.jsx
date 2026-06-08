@@ -1283,7 +1283,13 @@ function Dashboard({ setScreen }) {
   }, [filters.sellerId, filters.from, filters.to]);
 
   const kv  = (val) => kpisLoading ? '...' : (val ?? '—');
-  const kMoney = (val) => kpisLoading ? '...' : (val ? `$ ${(val / 1000).toFixed(0)}k` : '—');
+  const kMoney = (usd, ars) => {
+    if (kpisLoading) return '...';
+    const parts = [];
+    if (usd) parts.push(`U$S ${(usd / 1000).toFixed(0)}k`);
+    if (ars) parts.push(`AR$ ${(ars / 1000).toFixed(0)}k`);
+    return parts.length ? parts.join(' + ') : '—';
+  };
 
   const fmtHours = (h) => {
     if (h == null) return '—';
@@ -1299,8 +1305,8 @@ function Dashboard({ setScreen }) {
     { label: 'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
     { label: 'OC en curso',           value: kv(kpisData?.ocEnCurso) },
     { label: 'Entregas este mes',     value: kv(kpisData?.entregasEsteMes) },
-    { label: 'Monto cotizado',        value: kMoney(kpisData?.montoTotal), sub: 'presupuestos' },
-    { label: 'Monto confirmado',      value: kMoney(kpisData?.montoConfirmado), sub: 'notas de pedido', highlight: true },
+    { label: 'Monto cotizado',        value: kMoney(kpisData?.montoTotalUSD, kpisData?.montoTotalARS), sub: 'presupuestos' },
+    { label: 'Monto confirmado',      value: kMoney(kpisData?.montoConfirmadoUSD, kpisData?.montoConfirmadoARS), sub: 'notas de pedido', highlight: true },
     { label: 'Tasa de conversión',    value: kpisLoading ? '...' : (kpisData?.tasaConversion != null ? `${Number(kpisData.tasaConversion).toFixed(0)}%` : '—') },
     { label: 'Tiempo de respuesta',   value: kpisLoading ? '...' : fmtHours(kpisData?.avgResponseHours), sub: 'promedio recibida → acción', icon: 'clock' },
     { label: 'Pendientes +24h',       value: kv(kpisData?.pendingAttention), sub: 'sin atender', icon: 'alert-triangle',
@@ -1389,8 +1395,49 @@ function Dashboard({ setScreen }) {
             </button>
           )}
 
+          {/* Export dropdown */}
+          <div className="relative ml-auto" ref={(() => { const r = React.useRef(null); return r; })()}>
+            {(() => {
+              const [expOpen, setExpOpen] = useState(false);
+              const ref = React.useRef(null);
+              useEffect(() => {
+                const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setExpOpen(false); };
+                document.addEventListener('mousedown', h);
+                return () => document.removeEventListener('mousedown', h);
+              }, []);
+              // Pasar users al modal para el filtro de vendedor
+              const openExport = (type) => {
+                window.__exportUsers = sellerUsers;
+                openModal('exportPdf', { exportType: type });
+                setExpOpen(false);
+              };
+              return (
+                <div ref={ref}>
+                  <button onClick={() => setExpOpen(p => !p)}
+                    className="h-8 px-3 rounded-lg border border-line bg-white text-xs font-medium text-ink-600 hover:text-brand hover:border-brand transition-colors flex items-center gap-1.5">
+                    <Icon name="file-down" size={13}/>Exportar PDF
+                  </button>
+                  {expOpen && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-xl border border-line py-1 z-50">
+                      {[
+                        { type: 'cotizaciones', label: 'Cotizaciones', icon: 'clipboard-list' },
+                        { type: 'rechazos', label: 'Rechazos', icon: 'x-circle' },
+                        { type: 'ordenes', label: 'Órdenes de compra', icon: 'truck' },
+                      ].map(item => (
+                        <button key={item.type} onClick={() => openExport(item.type)}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-[13px] text-ink-700 hover:bg-surface transition-colors">
+                          <Icon name={item.icon} size={14} className="text-ink-400"/>{item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
           {kpisLoading && (
-            <span className="text-xs text-ink-400 italic ml-auto">Actualizando...</span>
+            <span className="text-xs text-ink-400 italic">Actualizando...</span>
           )}
         </div>
 
@@ -1444,7 +1491,7 @@ function Dashboard({ setScreen }) {
                       <td className="px-4 py-2.5 text-ink-800 font-medium">{a.clientName}</td>
                       <td className="px-4 py-2.5 text-ink-500">{a.sellerName}</td>
                       <td className="px-4 py-2.5 text-right text-ink-700 font-mono text-[13px]">
-                        {a.amount ? `$ ${(a.amount / 1000).toFixed(0)}k` : '—'}
+                        {a.amount ? fmtMoney(a.amount, a.currency) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full ${a.daysWaiting >= 7 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
@@ -1631,7 +1678,7 @@ function Dashboard({ setScreen }) {
                       <td><div className="flex items-center gap-2"><Avatar name={sellerName} size={22}/>{sellerName.split(' ')[0]}</div></td>
                       <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : q.stage}</td>
                       <td className="text-right"><span className="mono text-bad font-semibold">{q.dias}d</span></td>
-                      <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto) : '—'}</td>
+                      <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto, q.currency) : '—'}</td>
                     </tr>
                   );
                 })}

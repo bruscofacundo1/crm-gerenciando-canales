@@ -81,6 +81,7 @@ router.get('/', authMiddleware, async (req, res) => {
       ingreso: q.createdAt.toISOString(),
       dias: Math.floor((Date.now() - q.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
       monto: q.amount,
+      currency: q.currency || 'USD',
       adj: q._count.attachments,
       notas: q._count.notes,
       flexxus: q.flexxusCode || '',
@@ -135,7 +136,7 @@ router.get('/send-accounts', authMiddleware, async (req, res) => {
 // POST /api/quotes - Create new quote
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { clientId, sellerId, amount, source, deadline, notes } = req.body;
+    const { clientId, sellerId, amount, source, deadline, notes, currency } = req.body;
 
     // Generate next code
     const code = await nextCode(prisma.quote, 'COT-2026');
@@ -155,6 +156,7 @@ router.post('/', authMiddleware, async (req, res) => {
         source: source || 'MANUAL',
         mailType: 'PRESUPUESTO',
         stage: 'enviado',
+        currency: currency === 'ARS' ? 'ARS' : 'USD',
         deadline: deadline ? new Date(deadline) : null,
         followUpDate,
       },
@@ -647,6 +649,7 @@ router.post('/:id/duplicate', authMiddleware, async (req, res) => {
         emailSubject: original.emailSubject ? `[Dup] ${original.emailSubject}` : null,
         emailFrom: original.emailFrom,
         amount: original.amount,
+        currency: original.currency || 'USD',
         subtotalNeto: original.subtotalNeto,
         ivaAmount: original.ivaAmount,
         totalPercepciones: original.totalPercepciones,

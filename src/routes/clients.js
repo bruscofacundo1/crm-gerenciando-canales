@@ -129,7 +129,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
         defaultSeller: { select: { id: true, name: true } },
         quotes: {
           select: {
-            id: true, code: true, stage: true, amount: true, mailType: true,
+            id: true, code: true, stage: true, amount: true, currency: true, mailType: true,
             flexxusCode: true, linkedQuoteId: true, createdAt: true, updatedAt: true,
             seller: { select: { name: true } },
           },

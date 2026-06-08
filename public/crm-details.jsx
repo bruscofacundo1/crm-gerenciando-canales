@@ -430,7 +430,7 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
               {isOC ? 'Total OC (confirmado)' : 'Total presupuesto'}
             </td>
             <td className="mono text-right font-bold text-[13px] pr-3 py-2">
-              $ {totalOC.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {fmtMoney(totalOC, q.currency, 2)}
             </td>
             {isOC && (
               <td className="!px-2">
@@ -1291,7 +1291,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
           <Field label="Ingreso">
             <span className="mono">{fmtDate(q.ingreso)} <span className="text-ink-500">· hace {q.dias}d</span></span>
           </Field>
-          <Field label="Total con IVA" mono value={q.monto != null ? fmtMoney(q.monto) : '—'}/>
+          <Field label="Total con IVA" mono value={q.monto != null ? fmtMoney(q.monto, q.currency) : '—'}/>
           <Field label="Cod. Flexxus NP" mono value={q.flexxus || '—'}/>
           <Field label="Zona de entrega" value={cli?.zone || '—'}/>
           <Field label="Contacto">
@@ -1546,18 +1546,18 @@ function QuoteDetail({ code, onClose, canReassign }) {
                     <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
                     {q.flexxus && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{q.flexxus}</span></li>}
                     {priceBreakdown?.subtotalNeto != null && (
-                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">U$S {priceBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">{fmtMoney(priceBreakdown.subtotalNeto, q.currency, 2)}</span></li>
                     )}
                     {priceBreakdown?.ivaAmount != null && priceBreakdown.ivaAmount > 0 && (
-                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">U$S {priceBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">{fmtMoney(priceBreakdown.ivaAmount, q.currency, 2)}</span></li>
                     )}
                     {priceBreakdown?.totalPercepciones != null && priceBreakdown.totalPercepciones > 0 && (
-                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">U$S {priceBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">{fmtMoney(priceBreakdown.totalPercepciones, q.currency, 2)}</span></li>
                     )}
                     {(q.monto != null || priceBreakdown?.total != null) && (
                       <li className="flex justify-between border-t border-line pt-1.5 mt-0.5">
                         <span className="font-semibold text-ink-800">Total</span>
-                        <span className="mono font-semibold">{fmtMoney(priceBreakdown?.total ?? q.monto)}</span>
+                        <span className="mono font-semibold">{fmtMoney(priceBreakdown?.total ?? q.monto, q.currency)}</span>
                       </li>
                     )}
                     <li className="flex justify-between"><span className="text-ink-500">Ítems</span><span>{detailItems.filter(i=>i.accepted).length} cotizados{detailItems.filter(i=>!i.accepted).length > 0 ? `, ${detailItems.filter(i=>!i.accepted).length} NC` : ''}</span></li>
@@ -1576,7 +1576,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                   <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Resumen</div>
                   <ul className="text-[12.5px] space-y-1.5">
                     <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
-                    <li className="flex justify-between"><span className="text-ink-500">Monto</span><span className="mono">{q.monto != null ? fmtMoney(q.monto) : '—'}</span></li>
+                    <li className="flex justify-between"><span className="text-ink-500">Monto</span><span className="mono">{q.monto != null ? fmtMoney(q.monto, q.currency) : '—'}</span></li>
                     <li className="flex justify-between"><span className="text-ink-500">Ingreso</span><span className="mono">{fmtDate(q.ingreso)}</span></li>
                   </ul>
                 </div>
@@ -1917,6 +1917,7 @@ function OrderDetail({ code, onClose, canReassign }) {
   const [npItems, setNpItems]         = useState([]);   // ítems de la NP (para quote-source)
   const [linkedPres, setLinkedPres]   = useState(null); // presupuesto vinculado (para quote-source)
   const [npBreakdown, setNpBreakdown] = useState(null); // { subtotalNeto, ivaAmount, totalPercepciones, total }
+  const [npCurrency, setNpCurrency]   = useState('USD'); // moneda de la NP/presupuesto
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const noteInputRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
@@ -1938,6 +1939,7 @@ function OrderDetail({ code, onClose, canReassign }) {
           // NP por mail: los ítems son de la quote misma, linkedQuote es el presupuesto
           setNpItems(detail.items || []);
           setLinkedPres(detail.linkedQuote || null);
+          setNpCurrency(detail.currency || 'USD');
           // Breakdown de precios del NP (parseado del PDF Flexxus)
           if (detail.subtotalNeto != null || detail.ivaAmount != null || detail.amount != null) {
             setNpBreakdown({
@@ -1950,6 +1952,7 @@ function OrderDetail({ code, onClose, canReassign }) {
         } else {
           setOrderDetail(detail);
           setNotaPedido(detail.notaPedido || null);
+          setNpCurrency(detail.notaPedido?.currency || detail.fromQuote?.currency || 'USD');
           setPresItems(detail.fromQuote?.items || []);
         }
         setLoading(false);
@@ -2192,8 +2195,8 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <td className="px-3 py-2 mono text-ink-600 text-[11px]">{it.sku || '—'}</td>
                       <td className="px-3 py-2 text-ink-800 max-w-xs truncate" title={it.description}>{it.description}</td>
                       <td className="px-3 py-2 text-right mono">{it.quantity ?? '—'}</td>
-                      <td className="px-3 py-2 text-right mono">{it.unitPrice != null ? `U$S ${it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2})}` : '—'}</td>
-                      <td className="px-3 py-2 text-right mono font-semibold">{it.total != null ? `U$S ${it.total.toLocaleString('es-AR',{minimumFractionDigits:2})}` : '—'}</td>
+                      <td className="px-3 py-2 text-right mono">{fmtMoney(it.unitPrice, npCurrency, 2)}</td>
+                      <td className="px-3 py-2 text-right mono font-semibold">{fmtMoney(it.total, npCurrency, 2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2202,7 +2205,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                     <tr className="bg-indigo-50 font-semibold">
                       <td colSpan={4} className="px-3 py-2 text-right text-indigo-700">Total NP</td>
                       <td className="px-3 py-2 text-right mono text-indigo-800">
-                        U$S {npItems.reduce((s,i) => s + (i.total||0), 0).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        {fmtMoney(npItems.reduce((s,i) => s + (i.total||0), 0), npCurrency, 2)}
                       </td>
                     </tr>
                   </tfoot>
@@ -2235,7 +2238,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                 <div>
                   <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold mb-1">Monto NP</p>
                   <p className="font-mono font-semibold text-indigo-800">
-                    {notaPedido.amount != null ? `U$S ${notaPedido.amount.toLocaleString('es-AR', {minimumFractionDigits:2})}` : '—'}
+                    {fmtMoney(notaPedido.amount, npCurrency, 2)}
                   </p>
                 </div>
               </div>
@@ -2432,18 +2435,18 @@ function OrderDetail({ code, onClose, canReassign }) {
                     {o.flexxus && o.flexxus !== '—' && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{o.flexxus}</span></li>}
                     {linkedPres && <li className="flex justify-between"><span className="text-ink-500">Presupuesto</span><span className="mono">{linkedPres.code}</span></li>}
                     {npBreakdown?.subtotalNeto != null && (
-                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">U$S {npBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">{fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}</span></li>
                     )}
                     {npBreakdown?.ivaAmount != null && npBreakdown.ivaAmount > 0 && (
-                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">U$S {npBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">{fmtMoney(npBreakdown.ivaAmount, npCurrency, 2)}</span></li>
                     )}
                     {npBreakdown?.totalPercepciones != null && npBreakdown.totalPercepciones > 0 && (
-                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">U$S {npBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}</span></li>
+                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">{fmtMoney(npBreakdown.totalPercepciones, npCurrency, 2)}</span></li>
                     )}
                     <li className="flex justify-between border-t border-line pt-1.5 mt-0.5">
                       <span className="font-semibold text-ink-800">Total</span>
                       <span className="mono font-semibold">
-                        U$S {(npBreakdown?.total ?? npItems.reduce((s,i)=>s+(i.total||0),0)).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                        {fmtMoney(npBreakdown?.total ?? npItems.reduce((s,i)=>s+(i.total||0),0), npCurrency, 2)}
                       </span>
                     </li>
                     <li className="flex justify-between"><span className="text-ink-500">Ítems</span><span>{npItems.length} en NP</span></li>

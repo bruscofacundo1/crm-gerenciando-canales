@@ -30,7 +30,8 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
   const activas   = myQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
   const enviadas  = myQuotes.filter(q => q.stage === 'enviado').length;
   const ganadas   = myQuotes.filter(q => q.stage === 'aceptada').length;
-  const monto     = myQuotes.filter(q => q.monto).reduce((a,b)=>a+b.monto,0);
+  const montoUSD  = myQuotes.filter(q => q.monto && (q.currency||'USD') !== 'ARS').reduce((a,b)=>a+b.monto,0);
+  const montoARS  = myQuotes.filter(q => q.monto && q.currency === 'ARS').reduce((a,b)=>a+b.monto,0);
 
   return (
     <div>
@@ -52,7 +53,7 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
             { k:'Cotizaciones activas',  v:activas,   d:'mes corriente', tone:'blue', icon:'clipboard-list' },
             { k:'Presupuestos enviados', v:enviadas,  d:'esperando respuesta', tone:'orange', icon:'mail' },
             { k:`Ganadas (${new Date().toLocaleString('es-AR',{month:'long'})})`, v:ganadas, d:`tasa ${Math.round((ganadas/Math.max(myQuotes.length,1))*100)}%`, tone:'green', icon:'trophy' },
-            { k:'Monto cotizado',        v:fmtMoney(monto), d:'en presupuestos vigentes', tone:'navy', icon:'banknote' },
+            { k:'Monto cotizado',        v:[montoUSD>0&&fmtMoney(montoUSD,'USD'), montoARS>0&&fmtMoney(montoARS,'ARS')].filter(Boolean).join(' + ') || '—', d:'en presupuestos vigentes', tone:'navy', icon:'banknote' },
           ].map((k,i) => (
             <div key={i} className="bg-white rounded-xl border border-line p-4 shadow-card flex items-start gap-3">
               <div className={cx('w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
@@ -156,7 +157,7 @@ function MySalesView({ user, initialTab='quotes', onOpen }) {
                         <td className="text-right mono">
                           <span className={q.dias>=5?'text-bad font-semibold':''}>{q.dias != null ? `${q.dias}d` : '—'}</span>
                         </td>
-                        <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto) : '—'}</td>
+                        <td className="text-right mono">{q.monto != null ? fmtMoney(q.monto, q.currency) : '—'}</td>
                         <td className="text-right"><Icon name="chevron-right" size={14} className="text-ink-400"/></td>
                       </tr>
                     );
@@ -248,7 +249,8 @@ function RejectionAnalysis() {
 
   // KPIs
   const totalRechazos = items.length;
-  const montoTotal = items.reduce((s,r) => s + (r.monto||0), 0);
+  const montoTotalUSD = items.filter(r=>(r.currency||'USD')!=='ARS').reduce((s,r) => s + (r.monto||0), 0);
+  const montoTotalARS = items.filter(r=>r.currency==='ARS').reduce((s,r) => s + (r.monto||0), 0);
   const avgDias = items.length ? Math.round(items.reduce((s,r) => s + r.diasHastaRechazo, 0) / items.length) : 0;
 
   // Motivos agrupados (para chart)
@@ -274,7 +276,7 @@ function RejectionAnalysis() {
   const uniqueReasons = [...new Set(items.map(r => r.rejectReason))].sort();
   const uniqueSellers = [...new Map(items.filter(r=>r.sellerId).map(r => [r.sellerId, r.sellerName])).entries()];
 
-  const fmtMoney = v => v != null ? `$ ${Number(v).toLocaleString('es-AR', { minimumFractionDigits: 0 })}` : '—';
+  // Usar fmtMoney global (con soporte de moneda) — ver crm-data.jsx
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
 
   const toggleSort = (col) => {
@@ -288,14 +290,14 @@ function RejectionAnalysis() {
   return (
     <div className="flex-1 overflow-y-auto scroll-thin bg-surface">
       <PageHead subtitle="Análisis" title="Cotizaciones rechazadas"
-        description={`${totalRechazos} rechazos registrados · $${(montoTotal/1000).toFixed(0)}k en oportunidades perdidas`}/>
+        description={`${totalRechazos} rechazos registrados · ${[montoTotalUSD>0&&`U$S ${(montoTotalUSD/1000).toFixed(0)}k`, montoTotalARS>0&&`AR$ ${(montoTotalARS/1000).toFixed(0)}k`].filter(Boolean).join(' + ')||'—'} en oportunidades perdidas`}/>
 
       <div className="p-6 space-y-5">
         {/* KPIs */}
         <div className="grid grid-cols-4 gap-4">
           {[
             { label:'Total rechazos',    value: totalRechazos, icon:'x-circle',     tone:'bg-red-50 text-red-700' },
-            { label:'Monto perdido',     value: fmtMoney(montoTotal), icon:'dollar-sign', tone:'bg-orange-50 text-orange-700' },
+            { label:'Monto perdido',     value: [montoTotalUSD>0&&fmtMoney(montoTotalUSD,'USD'), montoTotalARS>0&&fmtMoney(montoTotalARS,'ARS')].filter(Boolean).join(' + ') || '—', icon:'dollar-sign', tone:'bg-orange-50 text-orange-700' },
             { label:'Promedio días',     value: `${avgDias}d`, icon:'clock',         tone:'bg-blue-50 text-blue-700', sub:'hasta rechazo' },
             { label:'Principal motivo',  value: reasonChart[0]?.name || '—', icon:'alert-triangle', tone:'bg-amber-50 text-amber-700',
               sub: reasonChart[0] ? `${reasonChart[0].value} casos (${Math.round(reasonChart[0].value/totalRechazos*100)}%)` : '' },
@@ -405,7 +407,7 @@ function RejectionAnalysis() {
                       <span className="text-[13px]">{r.sellerName.split(' ')[0]}</span>
                     </div>
                   </td>
-                  <td className="mono text-[12px] font-semibold">{fmtMoney(r.monto)}</td>
+                  <td className="mono text-[12px] font-semibold">{fmtMoney(r.monto, r.currency)}</td>
                   <td>
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700">
                       <Icon name="x-circle" size={11}/> {r.rejectReason}
@@ -1225,13 +1227,12 @@ function Clients({ readonly=false }) {
     ...cliOrders.map(o => ({ ...o, _kind: 'order', _date: o.fecha })),
   ].sort((a, b) => new Date(b._date) - new Date(a._date));
 
-  // Totals
-  const montoGanado = cliQuotes
-    .filter(q => q.stage === 'aceptada' && q.monto)
-    .reduce((s, q) => s + q.monto, 0);
-  const montoEnCurso = cliQuotes
-    .filter(q => !['aceptada','rechazada'].includes(q.stage) && q.monto)
-    .reduce((s, q) => s + q.monto, 0);
+  // Totals por moneda
+  const ganadoUSD = cliQuotes.filter(q => q.stage==='aceptada' && q.monto && (q.currency||'USD')!=='ARS').reduce((s,q)=>s+q.monto,0);
+  const ganadoARS = cliQuotes.filter(q => q.stage==='aceptada' && q.monto && q.currency==='ARS').reduce((s,q)=>s+q.monto,0);
+  const cursoUSD  = cliQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage) && q.monto && (q.currency||'USD')!=='ARS').reduce((s,q)=>s+q.monto,0);
+  const cursoARS  = cliQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage) && q.monto && q.currency==='ARS').reduce((s,q)=>s+q.monto,0);
+  const fmtMulti = (usd,ars,cur) => [usd>0&&fmtMoney(usd,'USD'),ars>0&&fmtMoney(ars,'ARS')].filter(Boolean).join(' + ') || '—';
 
   return (
     <div>
@@ -1455,8 +1456,8 @@ function Clients({ readonly=false }) {
               },
               {
                 k: 'Monto ganado',
-                v: fmtMoney(montoGanado),
-                sub: montoEnCurso > 0 ? `+ ${fmtMoney(montoEnCurso)} en curso` : 'en cotizaciones aceptadas',
+                v: fmtMulti(ganadoUSD, ganadoARS),
+                sub: (cursoUSD > 0 || cursoARS > 0) ? `+ ${fmtMulti(cursoUSD, cursoARS)} en curso` : 'en cotizaciones aceptadas',
                 tone: 'navy', icon: 'banknote',
               },
             ].map((k,i)=>(
@@ -1506,7 +1507,7 @@ function Clients({ readonly=false }) {
                         <td>{stg ? <Badge tone={stg.tone} dot>{stg.label}</Badge> : <span className="text-ink-400">{row.stage}</span>}</td>
                         <td className="text-[12px]">{s?.name?.split(' ')?.[0]||'—'}</td>
                         <td className="mono text-[12px]">{row._date ? fmtDate(row._date) : '—'}</td>
-                        <td className="text-right mono text-[12px]">{isQ ? fmtMoney(row.monto) : '—'}</td>
+                        <td className="text-right mono text-[12px]">{isQ ? fmtMoney(row.monto, row.currency) : '—'}</td>
                       </tr>
                     );
                   })}
@@ -4454,7 +4455,7 @@ function Comparativa() {
     agregado:         { label: 'Agregado en NP',   bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500'   },
   };
 
-  const fmtUSD = (v) => v == null ? '—' : `U$S ${Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtUSD = (v) => fmtMoney(v == null ? null : Number(v), 'USD', 2);
   const fmtQty = (v) => v == null ? '—' : Number(v).toLocaleString('es-AR');
 
   return (

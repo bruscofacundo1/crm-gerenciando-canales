@@ -93,6 +93,7 @@ app.use('/api/settings',      require('./routes/settings'));
 app.use('/api/articles',      require('./routes/articles'));
 app.use('/api/logs',          require('./routes/logs'));
 app.use('/api/feedback',      require('./routes/feedback'));
+app.use('/api/exports',       require('./routes/exports'));
 
 // POST /api/feedback/upload-image — captura de pantalla adjunta al reporte
 const FEEDBACK_IMG_DIR = path.join(__dirname, '..', 'uploads', 'feedback');

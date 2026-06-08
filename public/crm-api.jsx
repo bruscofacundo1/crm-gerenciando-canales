@@ -229,6 +229,10 @@ const CrmApi = {
   getAlerts:          (p) => apiFetch(`/data/alerts${toQS(p)}`),
   getComparativa:     (p) => apiFetch(`/data/comparativa${toQS(p)}`),
 
+  // Exports PDF
+  exportPdfUrl: (type, params) => `${API_BASE}/exports/${type}${toQS(params)}`,
+  sendExportMail: (data) => apiFetch('/exports/send', { method: 'POST', body: JSON.stringify(data) }),
+
   // Mail
   syncMail: () => apiFetch('/mail/sync', { method: 'POST' }),
   getInbox: (limit = 20) => apiFetch(`/mail/inbox?limit=${limit}`),

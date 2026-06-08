@@ -96,14 +96,22 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       prisma.order.count({ where: { stage: 'entregada' } }),
     ]);
 
-    const [totalAmount, montoConfirmado] = await Promise.all([
+    const [totalAmount, montoConfirmado, totalAmountARS, montoConfirmadoARS] = await Promise.all([
       prisma.quote.aggregate({
         _sum:  { amount: true },
-        where: { ...base, amount: { not: null } },
+        where: { ...base, amount: { not: null }, currency: { not: 'ARS' } },
       }),
       prisma.quote.aggregate({
         _sum:  { amount: true },
-        where: { ...base, mailType: 'NOTA_PEDIDO', amount: { not: null } },
+        where: { ...base, mailType: 'NOTA_PEDIDO', amount: { not: null }, currency: { not: 'ARS' } },
+      }),
+      prisma.quote.aggregate({
+        _sum:  { amount: true },
+        where: { ...base, amount: { not: null }, currency: 'ARS' },
+      }),
+      prisma.quote.aggregate({
+        _sum:  { amount: true },
+        where: { ...base, mailType: 'NOTA_PEDIDO', amount: { not: null }, currency: 'ARS' },
       }),
     ]);
 
@@ -145,8 +153,10 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       presupuestosEnviados: sentQuotes,
       ocEnCurso:            activeOrders,
       entregasEsteMes:      deliveredOrders,
-      montoTotal:           totalAmount._sum.amount    || 0,
-      montoConfirmado:      montoConfirmado._sum.amount || 0,
+      montoTotalUSD:        totalAmount._sum.amount    || 0,
+      montoConfirmadoUSD:   montoConfirmado._sum.amount || 0,
+      montoTotalARS:        totalAmountARS._sum.amount    || 0,
+      montoConfirmadoARS:   montoConfirmadoARS._sum.amount || 0,
       tasaConversion:       conversionRate,
       avgResponseHours,
       pendingAttention,
@@ -365,6 +375,7 @@ router.get('/alerts', authMiddleware, async (req, res) => {
       clientName:  q.client?.name  || '—',
       sellerName:  q.seller?.name  || '—',
       amount:      q.amount,
+      currency:    q.currency || 'USD',
       followUpDate: q.followUpDate?.toISOString() || null,
       daysWaiting: q.followUpDate
         ? Math.floor((now - new Date(q.followUpDate)) / (1000 * 60 * 60 * 24))
@@ -444,6 +455,7 @@ router.get('/rejections-detail', authMiddleware, async (req, res) => {
       sellerName:   q.seller?.name || '—',
       sellerId:     q.seller?.id || null,
       monto:        q.amount,
+      currency:     q.currency || 'USD',
       rejectReason: q.rejectReason || 'Sin especificar',
       rejectNotes:  q.rejectNotes || '',
       flexxus:      q.flexxusCode || '',
@@ -474,7 +486,7 @@ router.get('/search/products', authMiddleware, async (req, res) => {
       },
       include: {
         quote: {
-          select: { id: true, code: true, stage: true, mailType: true, amount: true, flexxusCode: true,
+          select: { id: true, code: true, stage: true, mailType: true, amount: true, currency: true, flexxusCode: true,
                     client: { select: { name: true, code: true } },
                     seller: { select: { name: true } } },
         },
@@ -494,6 +506,7 @@ router.get('/search/products', authMiddleware, async (req, res) => {
         stage:      it.quote.stage,
         mailType:   it.quote.mailType,
         monto:      it.quote.amount,
+        currency:   it.quote.currency || 'USD',
         flexxus:    it.quote.flexxusCode,
         clientName: it.quote.client?.name || '—',
         sellerName: it.quote.seller?.name || '—',

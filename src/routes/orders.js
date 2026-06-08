@@ -215,7 +215,7 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
         seller: { select: { id: true, name: true, email: true } },
         fromQuote: {
           select: {
-            id: true, code: true, flexxusCode: true, amount: true,
+            id: true, code: true, flexxusCode: true, amount: true, currency: true,
             items: { orderBy: { sortOrder: 'asc' } },
           },
         },

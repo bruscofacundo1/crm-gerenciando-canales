@@ -55,7 +55,7 @@ function QuoteCard({ q, onOpen, compact }) {
       <div className="text-[11px] text-ink-500 truncate">{displaySub}</div>
 
       {q.monto != null && (
-        <div className="mt-2.5 mono text-[13px] font-bold text-ink-900">{fmtMoney(q.monto)}</div>
+        <div className="mt-2.5 mono text-[13px] font-bold text-ink-900">{fmtMoney(q.monto, q.currency)}</div>
       )}
 
       {!compact && sel && (
@@ -107,7 +107,7 @@ function PairedQuoteCard({ pres, sol, onOpenPres, onOpenSol }) {
         <div className="text-[13px] font-semibold text-ink-900 mt-1 leading-snug truncate">{displayName}</div>
         {displaySub && <div className="text-[11px] text-ink-500 truncate">{displaySub}</div>}
         {pres.monto != null && (
-          <div className="mt-2 mono text-[13px] font-bold text-ink-900">{fmtMoney(pres.monto)}</div>
+          <div className="mt-2 mono text-[13px] font-bold text-ink-900">{fmtMoney(pres.monto, pres.currency)}</div>
         )}
         {sel && (
           <div className="mt-2.5 flex items-center justify-between">
@@ -210,7 +210,8 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
           {stages.map(st => {
             // Filtrar SOLICITUDs que tienen par → no aparecen en su propia columna
             const list  = items.filter(i => i.stage === st.id && !pairedSolIds.has(i.id));
-            const total = list.reduce((a,b) => a + (b.monto||0), 0);
+            const totalUSD = list.filter(i => (i.currency||'USD') !== 'ARS').reduce((a,b) => a + (b.monto||0), 0);
+            const totalARS = list.filter(i => i.currency === 'ARS').reduce((a,b) => a + (b.monto||0), 0);
             return (
               <div key={st.id} className="w-[292px] shrink-0 flex flex-col bg-white rounded-xl border border-line">
                 <div className="px-3.5 py-3 flex items-center justify-between border-b border-line">
@@ -244,9 +245,10 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
                       ))
                   }
                 </div>
-                {total > 0 && (
-                  <div className="px-3.5 py-2 border-t border-line text-[11px] flex justify-between text-ink-500">
-                    <span>Total etapa</span><span className="mono font-semibold text-ink-700">{fmtMoney(total)}</span>
+                {(totalUSD > 0 || totalARS > 0) && (
+                  <div className="px-3.5 py-2 border-t border-line text-[11px] flex flex-col gap-0.5 text-ink-500">
+                    {totalUSD > 0 && <div className="flex justify-between"><span>Total USD</span><span className="mono font-semibold text-ink-700">{fmtMoney(totalUSD, 'USD')}</span></div>}
+                    {totalARS > 0 && <div className="flex justify-between"><span>Total ARS</span><span className="mono font-semibold text-ink-700">{fmtMoney(totalARS, 'ARS')}</span></div>}
                   </div>
                 )}
               </div>
