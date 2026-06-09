@@ -2604,7 +2604,7 @@ function Config() {
   };
 
   /* ── Grid column template for stage rows ── */
-  const stageGridCols = 'grid-cols-[20px_20px_10px_1fr_auto_auto_auto_auto]';
+  const stageGridCols = 'grid-cols-[20px_20px_10px_1fr_110px_180px_55px_auto]';
 
   const StageList = ({ stages, phase, entryKeys = [] }) => (
     <div>
