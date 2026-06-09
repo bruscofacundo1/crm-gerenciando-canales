@@ -2634,20 +2634,22 @@ function Config() {
       {stagesLoading ? (
         <div className="text-[13px] text-ink-400 py-6 text-center">Cargando etapas…</div>
       ) : (<>
+        <div className="overflow-x-auto -mx-1 px-1">
+        <div className="min-w-[520px]">
         {/* Header de columnas */}
-        <div className="flex items-center gap-2 px-2.5 mb-2 py-1.5 rounded-lg bg-surface select-none text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+        <div className="flex items-center gap-2 px-2.5 mb-2 py-1.5 rounded-lg bg-surface select-none text-[10px] font-semibold uppercase tracking-wider text-ink-500">
           <div className="w-5 shrink-0"/>
           <div className="w-5 shrink-0"/>
           <div className="w-2.5 shrink-0"/>
           <div className="flex-1">Etapa</div>
-          <div className="w-[102px] text-center border-l border-ink-300 flex items-center justify-center gap-1">
-            <Icon name="check-circle" size={10} className="text-ink-400"/>Obligatoria
+          <div className="w-[102px] text-center border-l-2 border-ink-400 flex items-center justify-center gap-1">
+            <Icon name="check-circle" size={10} className="text-ink-500"/>Obligatoria
           </div>
-          <div className="w-[168px] text-center border-l border-ink-300 flex items-center justify-center gap-1">
-            <Icon name="clock" size={10} className="text-ink-400"/>Tiempo máx.
+          <div className="w-[168px] text-center border-l-2 border-ink-400 flex items-center justify-center gap-1">
+            <Icon name="clock" size={10} className="text-ink-500"/>Tiempo máx.
           </div>
-          <div className="w-[52px] text-center border-l border-ink-300 flex items-center justify-center gap-1" title="Alerta por email al superar el tiempo máximo">
-            <Icon name="mail" size={10} className="text-ink-400"/>Alerta
+          <div className="w-[46px] text-center border-l-2 border-ink-400 flex items-center justify-center gap-1" title="Alerta por email al superar el tiempo máximo">
+            <Icon name="mail" size={10} className="text-ink-500"/>
           </div>
         </div>
         <ul className="space-y-1.5">
@@ -2699,7 +2701,7 @@ function Config() {
                   <StageDot tone={s.tone}/>
                   <span className="flex-1 text-[13px] font-medium text-ink-900">{s.label}</span>
                   {/* Columna Obligatoria — solo el toggle, centrado */}
-                  <div className="w-[102px] flex justify-center shrink-0 border-l border-line">
+                  <div className="w-[102px] flex justify-center shrink-0 border-l-2 border-ink-400">
                     <button onClick={() => handleToggleMandatory(s)}
                       title={s.mandatory ? 'Quitar obligatoria' : 'Marcar como obligatoria'}
                       className={cx('w-8 h-4 rounded-full relative transition-colors',
@@ -2709,7 +2711,7 @@ function Config() {
                     </button>
                   </div>
                   {/* Zona de tiempo máximo — ancho fijo para que nada se mueva */}
-                  <div className="flex items-center gap-1.5 shrink-0 w-[168px] border-l border-line pl-2">
+                  <div className="flex items-center gap-1.5 shrink-0 w-[168px] border-l-2 border-ink-400 pl-2">
                     <button
                       title={s.maxHours ? 'Desactivar tiempo máximo' : 'Activar tiempo máximo'}
                       onClick={() => {
@@ -2759,7 +2761,7 @@ function Config() {
                     </select>
                   </div>
                   {/* Toggle alerta por mail — solo visible cuando hay tiempo máximo */}
-                  <div className={cx('flex items-center gap-1.5 shrink-0 transition-opacity border-l border-line pl-2', !s.maxHours && 'opacity-30 pointer-events-none')}
+                  <div className={cx('flex items-center gap-1.5 shrink-0 transition-opacity border-l-2 border-ink-400 pl-2', !s.maxHours && 'opacity-30 pointer-events-none')}
                     title={s.maxHours ? (s.emailAlert ? 'Desactivar alerta por mail al vendedor' : 'Activar alerta por mail al vendedor cuando se supera el tiempo') : 'Configurá un tiempo máximo primero'}>
                     <Icon name="mail" size={12} className="text-ink-400"/>
                     <button
@@ -2796,6 +2798,8 @@ function Config() {
             </li>
           )}
         </ul>
+        </div>{/* min-w */}
+        </div>{/* overflow-x-auto */}
       </>)}
     </div>
   );
@@ -2821,7 +2825,7 @@ function Config() {
 
       {tab==='pipeline' && (
         <div className="p-6 space-y-5">
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <StageList stages={f1} phase="COTIZACION" title="Fase 1 · Cotizaciones"
               entryKeys={[
                 { key: 'default_stage_solicitud',   label: 'Solicitud' },
