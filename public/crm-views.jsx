@@ -2604,7 +2604,7 @@ function Config() {
   };
 
   /* ── Grid column template for stage rows ── */
-  const stageGridCols = 'grid-cols-[20px_20px_10px_1fr_110px_180px_55px_auto]';
+  const stageGridCols = 'grid-cols-[20px_20px_10px_1fr_110px_180px_55px]';
 
   const StageList = ({ stages, phase, entryKeys = [] }) => (
     <div>
@@ -2644,7 +2644,6 @@ function Config() {
           <div className="flex items-center justify-center border-l-2 border-ink-400 pl-3 pr-1" title="Alerta por email al superar el tiempo máximo">
             <Icon name="mail" size={10} className="text-ink-500"/>
           </div>
-          <div/>
         </div>
 
         {/* Stage rows */}
@@ -2687,7 +2686,7 @@ function Config() {
                   <button onClick={() => setEditingId(null)} className="btn-ghost text-[12px] py-1 px-2">Cancelar</button>
                 </div>
               ) : (
-                <div className={cx('group grid items-center gap-x-3 px-3 py-2.5 rounded-lg hover:bg-surface/70', stageGridCols)}>
+                <div className={cx('group relative grid items-center gap-x-3 px-3 py-2.5 rounded-lg hover:bg-surface/70', stageGridCols)}>
                   {/* Grip */}
                   <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-ink-300 hover:text-ink-500 select-none"
                     title="Arrastrar para reordenar">
@@ -2775,8 +2774,8 @@ function Config() {
                     </button>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Actions — absolute para no afectar el grid */}
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface/90 rounded-md px-0.5">
                     <button onClick={() => startEdit(s)} className="btn-ghost p-1" title="Editar">
                       <Icon name="pencil" size={13} className="text-ink-500"/>
                     </button>
