@@ -1600,7 +1600,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
             return visibleAdj.map(a => {
               const ext = extOf(a.filename, a.mimeType);
               const isPdf = ext === 'pdf';
-              const fileUrl = `/uploads/attachments/${a.filename}`;
+              const fileUrl = authUrl(`/uploads/attachments/${a.filename}`);
               return (
                 <div key={a.id} className="bg-white border border-line rounded-xl p-3 flex items-center gap-3">
                   <div className={cx('w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-[11px] shrink-0', extBg(ext))}>
@@ -2652,7 +2652,7 @@ function OrderDetail({ code, onClose, canReassign }) {
             <div className="space-y-2">
               {attachments.map((a, i) => {
                 const ext = extOf(a.filename);
-                const fileUrl = `/uploads/attachments/${a.filename}`;
+                const fileUrl = authUrl(`/uploads/attachments/${a.filename}`);
                 return (
                   <div key={a.id || i} className="flex items-center gap-3 p-3 border border-line rounded-xl hover:bg-surface">
                     <span className={cx('w-8 h-8 rounded-lg text-white text-[10px] font-bold inline-flex items-center justify-center uppercase shrink-0', extBg(ext))}>

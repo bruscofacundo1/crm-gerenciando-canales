@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto  = require('crypto');
 const { authMiddleware, requireRole, isAdmin } = require('../middleware/auth');
 const { syncMails, syncAccount, listRecentMails } = require('../services/mailReader');
 const prisma = require('../db');
@@ -7,6 +8,27 @@ const adminOrDev = (req, res, next) => {
   if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo administradores' });
   next();
 };
+
+// ── Cifrado de passwords IMAP (AES-256-GCM) ─────────────────────────────────
+const MAIL_ENC_KEY = process.env.MAIL_ENCRYPTION_KEY; // 64-char hex = 32 bytes
+function encryptPassword(plain) {
+  if (!MAIL_ENC_KEY) return plain; // fallback sin cifrar si no hay key
+  const key = Buffer.from(MAIL_ENC_KEY, 'hex');
+  const iv  = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+}
+function decryptPassword(stored) {
+  if (!stored.startsWith('enc:')) return stored; // texto plano legacy
+  if (!MAIL_ENC_KEY) return stored;
+  const [, ivHex, tagHex, encHex] = stored.split(':');
+  const key = Buffer.from(MAIL_ENC_KEY, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  return decipher.update(Buffer.from(encHex, 'hex'), null, 'utf8') + decipher.final('utf8');
+}
 
 const router = express.Router();
 
@@ -35,7 +57,7 @@ async function getMailAccounts() {
       if (Array.isArray(dbAccounts)) {
         for (const a of dbAccounts) {
           if (!accounts.find(x => x.user.toLowerCase() === a.user.toLowerCase())) {
-            accounts.push({ ...a, _origin: 'db' });
+            accounts.push({ ...a, password: decryptPassword(a.password), _origin: 'db' });
           }
         }
       }
@@ -119,7 +141,7 @@ router.post('/accounts', authMiddleware, adminOrDev, async (req, res) => {
     if (current.find(a => a.user.toLowerCase() === user.toLowerCase())) {
       return res.status(409).json({ error: 'La cuenta ya está configurada' });
     }
-    current.push({ user, password });
+    current.push({ user, password: encryptPassword(password) });
     await prisma.appSetting.upsert({
       where:  { key: 'mail_accounts' },
       update: { value: JSON.stringify(current) },
@@ -205,8 +227,8 @@ router.post('/test/:email', authMiddleware, adminOrDev, async (req, res) => {
   }
 });
 
-// ── GET /api/mail/inbox — bandeja reciente ────────────────────────────────────
-router.get('/inbox', authMiddleware, async (req, res) => {
+// ── GET /api/mail/inbox — bandeja reciente (solo admin/dev) ───────────────────
+router.get('/inbox', authMiddleware, adminOrDev, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
     const mails = await listRecentMails(limit);

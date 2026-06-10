@@ -10,16 +10,22 @@ const prisma = require('../db');
 
 const router = express.Router();
 
-async function nextCode(model, prefix) {
-  // findFirst + desc es O(log n) en lugar de cargar toda la tabla.
-  // El constraint @unique en 'code' atrapa colisiones; el caller puede relanzar P2002.
-  const last = await model.findFirst({
-    where:   { code: { startsWith: prefix } },
-    orderBy: { code: 'desc' },
-    select:  { code: true },
-  });
-  const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
-  return `${prefix}-${String(num + 1).padStart(3, '0')}`;
+async function nextCode(model, prefix, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const last = await model.findFirst({
+      where:   { code: { startsWith: prefix } },
+      orderBy: { code: 'desc' },
+      select:  { code: true },
+    });
+    const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
+    const code = `${prefix}-${String(num + 1 + attempt).padStart(3, '0')}`;
+    // Verificar que no exista (race condition)
+    const exists = await model.findFirst({ where: { code }, select: { code: true } });
+    if (!exists) return code;
+  }
+  // Fallback: timestamp-based code
+  const ts = Date.now().toString(36).toUpperCase();
+  return `${prefix}-X${ts}`;
 }
 
 // GET /api/quotes - All quotes (admin sees all, seller sees own)

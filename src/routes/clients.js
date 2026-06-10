@@ -187,16 +187,25 @@ router.post('/', authMiddleware, async (req, res) => {
     }, 0);
     const code = `CLI-${String(maxNum + 1).padStart(3, '0')}`;
 
-    const domain = req.body.email ? req.body.email.split('@')[1] || null : null;
+    const { name, cuit, email, phone, address, city, province,
+            zone, activity, defaultSellerId, postalCode } = req.body;
+    const emailDomain = email ? email.split('@')[1] || null : null;
 
-    const data = { code, ...req.body, emailDomain: domain };
-
-    if (data.defaultSellerId) {
-      const seller = await prisma.user.findUnique({ where: { id: data.defaultSellerId } });
-      if (!seller) data.defaultSellerId = null;
+    let sellerId = defaultSellerId || null;
+    if (sellerId) {
+      const seller = await prisma.user.findUnique({ where: { id: sellerId } });
+      if (!seller) sellerId = null;
     }
 
-    const client = await prisma.client.create({ data });
+    const client = await prisma.client.create({
+      data: {
+        code, name, cuit: cuit||null, email: email||null,
+        emailDomain, phone: phone||null, address: address||null,
+        city: city||null, province: province||null, zone: zone||null,
+        activity: activity||null, defaultSellerId: sellerId,
+        postalCode: postalCode||null,
+      },
+    });
     res.status(201).json(client);
   } catch (err) {
     console.error('Error creating client:', err);
@@ -315,6 +324,10 @@ router.post('/:id/emails', authMiddleware, async (req, res) => {
 // DELETE /api/clients/:id/emails/:emailId — eliminar email de matcheo
 router.delete('/:id/emails/:emailId', authMiddleware, async (req, res) => {
   try {
+    // Validar que el email pertenezca al cliente de la URL (previene IDOR)
+    const record = await prisma.clientEmail.findUnique({ where: { id: req.params.emailId } });
+    if (!record) return res.status(404).json({ error: 'Email no encontrado' });
+    if (record.clientId !== req.params.id) return res.status(403).json({ error: 'El email no pertenece a este cliente' });
     await prisma.clientEmail.delete({ where: { id: req.params.emailId } });
     res.json({ ok: true });
   } catch (err) {

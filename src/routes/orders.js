@@ -7,14 +7,20 @@ const prisma = require('../db');
 const router  = express.Router();
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-async function nextCode(model, prefix) {
-  const last = await model.findFirst({
-    where:   { code: { startsWith: prefix } },
-    orderBy: { code: 'desc' },
-    select:  { code: true },
-  });
-  const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
-  return `${prefix}-${String(num + 1).padStart(3, '0')}`;
+async function nextCode(model, prefix, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const last = await model.findFirst({
+      where:   { code: { startsWith: prefix } },
+      orderBy: { code: 'desc' },
+      select:  { code: true },
+    });
+    const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
+    const code = `${prefix}-${String(num + 1 + attempt).padStart(3, '0')}`;
+    const exists = await model.findFirst({ where: { code }, select: { code: true } });
+    if (!exists) return code;
+  }
+  const ts = Date.now().toString(36).toUpperCase();
+  return `${prefix}-X${ts}`;
 }
 
 // GET /api/orders
@@ -252,6 +258,11 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
 // POST /api/orders/:id/notes — add a note to an order
 router.post('/:id/notes', authMiddleware, async (req, res) => {
   try {
+    // Ownership check para VENDEDOR
+    if (req.user.role === 'VENDEDOR') {
+      const own = await prisma.order.findUnique({ where: { id: req.params.id }, select: { sellerId: true } });
+      if (own && own.sellerId !== req.user.id) return res.status(403).json({ error: 'Sin permiso sobre esta orden' });
+    }
     const text = (req.body.text || '').trim();
     if (!text) return res.status(400).json({ error: 'El texto de la nota no puede estar vacío' });
     const note = await prisma.note.create({
@@ -319,6 +330,10 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
       where: { id: req.params.id, mailType: { in: ['OC', 'NOTA_PEDIDO'] } },
     });
     if (emailOC) {
+      // Ownership check para VENDEDOR
+      if (req.user.role === 'VENDEDOR' && emailOC.sellerId !== req.user.id) {
+        return res.status(403).json({ error: 'Sin permiso sobre esta orden' });
+      }
       await prisma.quote.update({ where: { id: req.params.id }, data: { stage } });
       await prisma.activity.create({
         data: { action: 'STAGE_CHANGE', detail: `Etapa → ${stage}`, userId: req.user.id, quoteId: req.params.id },

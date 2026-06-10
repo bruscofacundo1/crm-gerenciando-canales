@@ -11,9 +11,10 @@ const DEFAULTS = {
   mail_sync_enabled:           'true',
 
   // ── Etapas de entrada ────────────────────────────────────────────────────
-  default_stage_solicitud:     'recibida',
-  default_stage_presupuesto:   'enviado',
-  default_stage_nota_pedido:   'np_enviada',
+  default_stage_solicitud:              'recibida',
+  default_stage_solicitud_con_vendedor: 'asignada',
+  default_stage_presupuesto:            'enviado',
+  default_stage_nota_pedido:            'np_enviada',
 
   // ── Acceso ───────────────────────────────────────────────────────────────
   allowed_email_domains:       'myselec.com,myselec.com.ar,gmail.com',

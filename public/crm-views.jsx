@@ -2215,9 +2215,10 @@ function Config() {
 
   // Etapas de entrada por tipo de mail
   const [incomingStages, setIncomingStages] = useState({
-    default_stage_solicitud:   'recibida',
-    default_stage_presupuesto: 'enviado',
-    default_stage_nota_pedido: 'np_enviada',
+    default_stage_solicitud:              'recibida',
+    default_stage_solicitud_con_vendedor: 'asignada',
+    default_stage_presupuesto:            'enviado',
+    default_stage_nota_pedido:            'np_enviada',
   });
   const [followUpDays, setFollowUpDays] = useState('4');
   const [allowedEmailDomains, setAllowedEmailDomains] = useState('myselec.com,myselec.com.ar,gmail.com');
@@ -2531,9 +2532,16 @@ function Config() {
   const handleDelete = async (stage) => {
     if (!window.confirm(`¿Eliminar la etapa "${stage.label}"? Esta acción no se puede deshacer.`)) return;
     try {
-      await CrmApi.deleteStage(stage.id);
-      setStagesData(sd => sd.filter(s => s.id !== stage.id));
+      const res = await CrmApi.deleteStage(stage.id);
+      const remaining = stagesData.filter(s => s.id !== stage.id);
+      setStagesData(remaining);
       pushToast(`Etapa "${stage.label}" eliminada`);
+      // Si el backend reseteó alguna etapa de entrada, sincronizar el state local
+      if (res.resetEntryStages && Object.keys(res.resetEntryStages).length > 0) {
+        setIncomingStages(prev => ({ ...prev, ...res.resetEntryStages }));
+        const fallbackLabel = remaining.find(s => s.stageKey === Object.values(res.resetEntryStages)[0])?.label || '';
+        pushToast(`Etapa de entrada reasignada a "${fallbackLabel}"`, 'info');
+      }
     } catch (err) {
       pushToast(err.message || 'Error al eliminar', 'bad');
     }
@@ -2610,21 +2618,26 @@ function Config() {
     <div>
       {/* Entrada por tipo de mail */}
       {entryKeys.length > 0 && (
-        <div className="flex items-center gap-4 mb-4 flex-wrap">
-          {entryKeys.map(({ key, label }) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className="text-[11.5px] text-ink-500 font-medium">Entrada {label}:</span>
-              <select
-                value={incomingStages[key] || ''}
-                onChange={e => saveEntryStage(key, e.target.value)}
-                className="border border-line rounded-md px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-brand/30 text-ink-700"
-              >
-                {stages.map(s => (
-                  <option key={s.id} value={s.stageKey}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-          ))}
+        <div className="mb-5">
+          <div className="text-[11px] text-ink-400 mb-2.5 max-w-lg">
+            Cuando llega un mail, el sistema lo clasifica y lo coloca en la etapa que elijas acá. Podés cambiarla en cualquier momento.
+          </div>
+          <div className="flex items-center gap-4 flex-wrap">
+            {entryKeys.map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className="text-[11.5px] text-ink-500 font-medium">Entrada {label}:</span>
+                <select
+                  value={incomingStages[key] || ''}
+                  onChange={e => saveEntryStage(key, e.target.value)}
+                  className="border border-line rounded-md px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-brand/30 text-ink-700"
+                >
+                  {stages.map(s => (
+                    <option key={s.id} value={s.stageKey}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -2861,8 +2874,9 @@ function Config() {
               {activePhase === 'COTIZACION' ? (
                 <StageList stages={f1} phase="COTIZACION"
                   entryKeys={[
-                    { key: 'default_stage_solicitud',   label: 'Solicitud' },
-                    { key: 'default_stage_presupuesto', label: 'Presupuesto' },
+                    { key: 'default_stage_solicitud',              label: 'Solicitud' },
+                    { key: 'default_stage_solicitud_con_vendedor', label: 'Solicitud (con vendedor)' },
+                    { key: 'default_stage_presupuesto',            label: 'Presupuesto' },
                   ]}
                 />
               ) : (
@@ -5328,8 +5342,8 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
 
               {/* Imagen adjunta */}
               {post.imageUrl && (
-                <a href={post.imageUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block">
-                  <img src={post.imageUrl} alt="captura adjunta"
+                <a href={authUrl(post.imageUrl)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block">
+                  <img src={authUrl(post.imageUrl)} alt="captura adjunta"
                     className="max-h-48 rounded-lg border border-slate-200 object-contain hover:opacity-90 transition-opacity"/>
                 </a>
               )}

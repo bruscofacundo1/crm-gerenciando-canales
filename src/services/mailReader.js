@@ -1,4 +1,5 @@
 const Imap = require('imap');
+const crypto = require('crypto');
 const { simpleParser } = require('mailparser');
 const fs = require('fs');
 const path = require('path');
@@ -6,6 +7,18 @@ const { parseFlexxusPDF, isFlexxusPDF, isNotaPedidoPDF, parseNotaPedidoPDF } = r
 const { sendMail } = require('./mailer');
 
 const prisma = require('../db');
+
+// ── Descifrado de passwords IMAP ─────────────────────────────────────────────
+const MAIL_ENC_KEY = process.env.MAIL_ENCRYPTION_KEY;
+function decryptPassword(stored) {
+  if (!stored || !stored.startsWith('enc:')) return stored;
+  if (!MAIL_ENC_KEY) return stored;
+  const [, ivHex, tagHex, encHex] = stored.split(':');
+  const key = Buffer.from(MAIL_ENC_KEY, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  return decipher.update(Buffer.from(encHex, 'hex'), null, 'utf8') + decipher.final('utf8');
+}
 
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads', 'attachments');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -126,14 +139,20 @@ async function copyPresupuestoItemsToOC(presupuestoId, ocId) {
   console.log(`   📋 ${items.length} ítems copiados de PRESUPUESTO ${presupuestoId} → OC ${ocId}`);
 }
 
-async function nextCode(model, prefix) {
-  const last = await model.findFirst({
-    where:   { code: { startsWith: prefix } },
-    orderBy: { code: 'desc' },
-    select:  { code: true },
-  });
-  const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
-  return `${prefix}-${String(num + 1).padStart(3, '0')}`;
+async function nextCode(model, prefix, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const last = await model.findFirst({
+      where:   { code: { startsWith: prefix } },
+      orderBy: { code: 'desc' },
+      select:  { code: true },
+    });
+    const num = last ? (parseInt(last.code.split('-').pop()) || 0) : 0;
+    const code = `${prefix}-${String(num + 1 + attempt).padStart(3, '0')}`;
+    const exists = await model.findFirst({ where: { code }, select: { code: true } });
+    if (!exists) return code;
+  }
+  const ts = Date.now().toString(36).toUpperCase();
+  return `${prefix}-X${ts}`;
 }
 
 /**
@@ -493,7 +512,7 @@ async function syncMails() {
       if (Array.isArray(dbAccounts)) {
         for (const a of dbAccounts) {
           if (!accounts.find(x => x.user.toLowerCase() === a.user.toLowerCase())) {
-            accounts.push(a);
+            accounts.push({ ...a, password: decryptPassword(a.password) });
           }
         }
       }
@@ -1376,11 +1395,17 @@ async function processEmail(mailData, imap) {
 
     // Leer etapas de entrada configurables
     const stageSettings = await prisma.appSetting.findMany({
-      where: { key: { in: ['default_stage_solicitud', 'default_stage_presupuesto'] } },
+      where: { key: { in: ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto'] } },
     }).then(rows => Object.fromEntries(rows.map(r => [r.key, r.value])));
-    const entryStage = mailType === 'PRESUPUESTO'
-      ? (stageSettings.default_stage_presupuesto || 'enviado')
-      : (stageSettings.default_stage_solicitud   || 'recibida');
+    let entryStage;
+    if (mailType === 'PRESUPUESTO') {
+      entryStage = stageSettings.default_stage_presupuesto || 'enviado';
+    } else if (sellerId) {
+      // Solicitud con vendedor auto-asignado → etapa diferente
+      entryStage = stageSettings.default_stage_solicitud_con_vendedor || 'asignada';
+    } else {
+      entryStage = stageSettings.default_stage_solicitud || 'recibida';
+    }
 
     const quote = await prisma.quote.create({
       data: {

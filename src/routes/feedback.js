@@ -12,10 +12,15 @@
 
 const router = require('express').Router();
 const prisma  = require('../db');
-const {authMiddleware, isAdmin } = require('../middleware/auth');
+const {authMiddleware, isAdmin, isDeveloper } = require('../middleware/auth');
 const { sendMail }       = require('../services/mailer');
 
 router.use(authMiddleware);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -193,9 +198,9 @@ router.post('/', async (req, res) => {
               require('../services/emailTemplate').emailInfoBox([
                 `<strong>Tipo:</strong> ${typeLabel}`,
                 ...(mod ? [`<strong>Módulo:</strong> ${mod}`] : []),
-                `<strong>Título:</strong> ${title.trim()}`,
+                `<strong>Título:</strong> ${escHtml(title.trim())}`,
               ]),
-              `<div style="background:#F5F6F7;border-radius:8px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${body.trim()}</div>`,
+              `<div style="background:#F5F6F7;border-radius:8px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${escHtml(body.trim())}</div>`,
               require('../services/emailTemplate').emailParagraph('Ingresá al CRM → sección <strong>Foro</strong> para responder.'),
             ].join(''),
           }),
@@ -251,7 +256,7 @@ router.post('/:id/respond', async (req, res) => {
             preheader: `${req.user.name} respondió a tu reporte`,
             content: [
               require('../services/emailTemplate').emailParagraph(`<strong>${req.user.name}</strong> respondió a: <em>${post.title}</em>`),
-              `<div style="background:#F5F6F7;border-left:3px solid #20759E;border-radius:4px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${body.trim()}</div>`,
+              `<div style="background:#F5F6F7;border-left:3px solid #20759E;border-radius:4px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${escHtml(body.trim())}</div>`,
               require('../services/emailTemplate').emailParagraph('Podés ver el hilo completo en la sección <strong>Foro</strong> del CRM.'),
             ].join(''),
           }),

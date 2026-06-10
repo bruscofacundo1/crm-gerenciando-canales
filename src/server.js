@@ -67,16 +67,23 @@ const authLimiter = rateLimit({
 
 // Middleware
 app.use(cors({
-  origin: process.env.APP_URL || true,   // true = refleja el origin (equivalente a * pero funciona con credentials)
+  origin: process.env.APP_URL || true,   // En producción APP_URL debe estar seteado explícitamente
   credentials: true,
 }));
+if (!process.env.APP_URL) console.warn('⚠️  APP_URL no seteado — CORS acepta cualquier origin. Setear en producción.');
 app.use(express.json({ limit: '10mb' }));
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Serve uploaded attachments
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Serve uploaded attachments — requiere autenticación (header o query param)
+app.use('/uploads', (req, res, next) => {
+  // Permitir token en query string para <img src> y <a href> que no envían header
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  authMiddleware(req, res, next);
+}, express.static(path.join(__dirname, '..', 'uploads')));
 
 // API Routes
 app.use('/api/auth/login',          authLimiter);
@@ -127,7 +134,23 @@ const storage = multer.diskStorage({
     cb(null, `${req.params.id}-${Date.now()}-${safe}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
+const ALLOWED_ATTACH_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+  'application/vnd.ms-excel', // xls
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+  'application/msword', // doc
+  'text/csv',
+]);
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_ATTACH_TYPES.has(file.mimetype)) cb(null, true);
+    else cb(new Error('Tipo de archivo no permitido. Se aceptan PDF, imágenes, Excel, Word y CSV.'));
+  },
+});
 
 app.post('/api/quotes/:id/attachments', authMiddleware, upload.array('files', 10), async (req, res) => {
   try {

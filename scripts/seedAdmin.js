@@ -12,7 +12,9 @@ async function main() {
     return;
   }
 
-  const hashed = await bcrypt.hash('Brusco1973', 10);
+  const tempPw = process.env.ADMIN_SEED_PASSWORD || require('crypto').randomBytes(16).toString('hex');
+  console.log('  Contraseña temporal:', tempPw, '(cambiarla tras el primer login)');
+  const hashed = await bcrypt.hash(tempPw, 10);
   const user = await prisma.user.create({
     data: {
       name: 'Facundo Brusco',

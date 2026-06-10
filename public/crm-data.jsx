@@ -12,6 +12,7 @@ const fmtDateTime = (d) => {
   return o.toLocaleString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
 };
 const initialsOf = (name='') => name.split(' ').map(s=>s[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
+const authUrl = (path) => { const t = localStorage.getItem('crm_token'); return t ? `${path}?token=${encodeURIComponent(t)}` : path; };
 
 // ---------- Lucide icon wrapper ----------
 function Icon({ name, size = 16, className = '', strokeWidth = 2 }) {
@@ -150,7 +151,7 @@ const CH_MONTHLY    = [];
 
 // Expose to other scripts
 Object.assign(window, {
-  cx, fmtMoney, fmtDate, fmtDateTime,
+  cx, fmtMoney, fmtDate, fmtDateTime, authUrl,
   Icon, Logo, Avatar, Badge,
   USERS, CLIENTS, QUOTES, ORDERS,
   STAGES_F1, STAGES_F2, ACTIVITY, COMMENTS,

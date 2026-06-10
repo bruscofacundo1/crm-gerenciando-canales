@@ -292,13 +292,50 @@ router.delete('/stages/:id', authMiddleware, async (req, res) => {
     const stage = await prisma.stageDefinition.findUnique({ where: { id: req.params.id } });
     if (!stage) return res.status(404).json({ error: 'Etapa no encontrada' });
 
+    // Chequear quotes en esta etapa
     const quotesInStage = await prisma.quote.count({ where: { stage: stage.stageKey } });
     if (quotesInStage > 0) {
       return res.status(400).json({ error: `No se puede eliminar: hay ${quotesInStage} cotización(es) en esta etapa` });
     }
+    // Chequear orders en esta etapa (fase ORDEN_COMPRA)
+    if (stage.phase === 'ORDEN_COMPRA') {
+      const ordersInStage = await prisma.order.count({ where: { stage: stage.stageKey } });
+      if (ordersInStage > 0) {
+        return res.status(400).json({ error: `No se puede eliminar: hay ${ordersInStage} orden(es) en esta etapa` });
+      }
+    }
 
     await prisma.stageDefinition.delete({ where: { id: req.params.id } });
-    res.json({ ok: true });
+
+    // Si la etapa eliminada era "etapa de entrada" de algún tipo de mail,
+    // auto-resetear al primer stage restante de esa fase
+    const entryKeys = stage.phase === 'COTIZACION'
+      ? ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto']
+      : ['default_stage_nota_pedido'];
+
+    const affectedSettings = await prisma.appSetting.findMany({
+      where: { key: { in: entryKeys }, value: stage.stageKey },
+    });
+
+    const resetEntryStages = {};
+    if (affectedSettings.length > 0) {
+      // Buscar la primera etapa restante de esa fase (por orden)
+      const fallback = await prisma.stageDefinition.findFirst({
+        where: { phase: stage.phase, active: true },
+        orderBy: { order: 'asc' },
+      });
+      if (fallback) {
+        for (const s of affectedSettings) {
+          await prisma.appSetting.update({
+            where: { key: s.key },
+            data: { value: fallback.stageKey },
+          });
+          resetEntryStages[s.key] = fallback.stageKey;
+        }
+      }
+    }
+
+    res.json({ ok: true, resetEntryStages });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
