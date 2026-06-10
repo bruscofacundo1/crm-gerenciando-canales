@@ -221,7 +221,7 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
         seller: { select: { id: true, name: true, email: true } },
         fromQuote: {
           select: {
-            id: true, code: true, flexxusCode: true, amount: true, currency: true,
+            id: true, code: true, flexxusCode: true, amount: true, currency: true, stage: true,
             items: { orderBy: { sortOrder: 'asc' } },
           },
         },
@@ -243,6 +243,14 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
     if (order.fromQuoteId) {
       notaPedido = await prisma.quote.findFirst({
         where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: order.fromQuoteId },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    // Fallback: buscar NP por flexxusCode de la Order (cubre NPs sin presupuesto vinculado)
+    if (!notaPedido && order.flexxusCode) {
+      notaPedido = await prisma.quote.findFirst({
+        where: { mailType: 'NOTA_PEDIDO', flexxusCode: order.flexxusCode },
         include: { items: { orderBy: { sortOrder: 'asc' } } },
         orderBy: { createdAt: 'desc' },
       });
@@ -384,13 +392,45 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (npQuote) {
-      // Si tiene presupuesto vinculado, devolverlo a 'enviado'
+      // 1. Si tiene presupuesto vinculado, devolverlo a 'enviado' y limpiar su linkedQuoteId si apuntaba a esta NP
+      if (npQuote.linkedQuoteId) {
+        const pres = await prisma.quote.findUnique({
+          where: { id: npQuote.linkedQuoteId },
+          select: { id: true, linkedQuoteId: true },
+        });
+        if (pres) {
+          const updateData = { stage: 'enviado' };
+          // Si el presupuesto apunta a esta NP, limpiar el vínculo bidireccional
+          if (pres.linkedQuoteId === npQuote.id) {
+            updateData.linkedQuoteId = null;
+          }
+          await prisma.quote.update({ where: { id: pres.id }, data: updateData });
+        }
+      }
+
+      // 2. Si hay una Order asociada (Order.fromQuoteId → presupuesto, NP.linkedQuoteId → presupuesto),
+      //    limpiar el flexxusCode de la Order ya que la NP se eliminó
+      if (npQuote.linkedQuoteId) {
+        const relatedOrder = await prisma.order.findFirst({
+          where: { fromQuoteId: npQuote.linkedQuoteId },
+          select: { id: true },
+        });
+        if (relatedOrder) {
+          await prisma.order.update({
+            where: { id: relatedOrder.id },
+            data: { flexxusCode: null },
+          });
+        }
+      }
+
+      // 3. Limpiar el propio linkedQuoteId para evitar FK constraint
       if (npQuote.linkedQuoteId) {
         await prisma.quote.update({
-          where: { id: npQuote.linkedQuoteId },
-          data: { stage: 'enviado' },
+          where: { id: npQuote.id },
+          data: { linkedQuoteId: null },
         });
       }
+
       await prisma.quote.delete({ where: { id: req.params.id } });
       return res.json({ ok: true, code: npQuote.code });
     }
@@ -398,16 +438,37 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     // Es una Order manual
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      select: { id: true, code: true, fromQuoteId: true },
+      select: { id: true, code: true, fromQuoteId: true, flexxusCode: true },
     });
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
 
-    // Si vino de un presupuesto, devolverlo a 'enviado'
+    // 1. Si vino de un presupuesto, devolverlo a 'enviado'
     if (order.fromQuoteId) {
       await prisma.quote.update({
         where: { id: order.fromQuoteId },
         data: { stage: 'enviado' },
       });
+    }
+
+    // 2. Limpiar NP Quote asociada (huérfana sin la Order)
+    const orphanNP = order.fromQuoteId
+      ? await prisma.quote.findFirst({
+          where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: order.fromQuoteId },
+          select: { id: true },
+        })
+      : (order.flexxusCode
+        ? await prisma.quote.findFirst({
+            where: { mailType: 'NOTA_PEDIDO', flexxusCode: order.flexxusCode },
+            select: { id: true },
+          })
+        : null);
+    if (orphanNP) {
+      // Limpiar FK antes de borrar
+      await prisma.quote.update({
+        where: { id: orphanNP.id },
+        data: { linkedQuoteId: null },
+      });
+      await prisma.quote.delete({ where: { id: orphanNP.id } });
     }
 
     await prisma.order.delete({ where: { id: req.params.id } });

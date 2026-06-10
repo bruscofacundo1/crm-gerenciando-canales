@@ -701,6 +701,10 @@ async function processNotaPedido(parsed, mailData, att, imap) {
       mailType:       'NOTA_PEDIDO',
       flexxusCode:    npData.npCode,
       amount:         npTotal,
+      currency:       'USD',
+      subtotalNeto:       npData.subtotalNeto       ?? null,
+      ivaAmount:          npData.ivaAmount          ?? null,
+      totalPercepciones:  npData.totalPercepciones  ?? null,
       emailSubject:   subject.substring(0, 500),
       emailMessageId: messageId,
       emailFrom:      fromAddr,
@@ -935,6 +939,12 @@ async function processSentMail(parsed, mailData, imap) {
 
   const bodyText = parsed.text || (parsed.html ? stripHtml(parsed.html) : '');
 
+  // followUpDate: igual que en creación manual — hoy + follow_up_days
+  const fudSetting = await prisma.appSetting.findUnique({ where: { key: 'follow_up_days' } });
+  const fudDaysSent = Math.max(1, parseInt(fudSetting?.value || '4'));
+  const followUpDateSent = new Date();
+  followUpDateSent.setDate(followUpDateSent.getDate() + fudDaysSent);
+
   const quote = await prisma.quote.create({
     data: {
       code,
@@ -943,11 +953,13 @@ async function processSentMail(parsed, mailData, imap) {
       stage:             'enviado',
       source:            'EMAIL',
       mailType:          'PRESUPUESTO',
+      currency:          'USD',
       flexxusCode:       flexxusData?.npCode || null,
       amount:            flexxusGrandTotal || null,
       subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
       ivaAmount:         flexxusData?.ivaAmount || null,
       totalPercepciones: flexxusData?.totalPercepciones || null,
+      followUpDate:      followUpDateSent,
       emailSubject:      subject.substring(0, 500),
       emailMessageId:    messageId,
       emailFrom:         fromAddr,
@@ -1379,18 +1391,26 @@ async function processEmail(mailData, imap) {
       : null;
     const flexxusGrandTotal = flexxusData?.total || itemsSubtotal; // total con IVA del PDF
 
-    // Leer etapas de entrada configurables
-    const stageSettings = await prisma.appSetting.findMany({
-      where: { key: { in: ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto'] } },
+    // Leer etapas de entrada configurables + follow_up_days (para paridad con creación manual)
+    const stageAndFudSettings = await prisma.appSetting.findMany({
+      where: { key: { in: ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto', 'follow_up_days'] } },
     }).then(rows => Object.fromEntries(rows.map(r => [r.key, r.value])));
     let entryStage;
     if (mailType === 'PRESUPUESTO') {
-      entryStage = stageSettings.default_stage_presupuesto || 'enviado';
+      entryStage = stageAndFudSettings.default_stage_presupuesto || 'enviado';
     } else if (sellerId) {
       // Solicitud con vendedor auto-asignado → etapa diferente
-      entryStage = stageSettings.default_stage_solicitud_con_vendedor || 'asignada';
+      entryStage = stageAndFudSettings.default_stage_solicitud_con_vendedor || 'asignada';
     } else {
-      entryStage = stageSettings.default_stage_solicitud || 'recibida';
+      entryStage = stageAndFudSettings.default_stage_solicitud || 'recibida';
+    }
+
+    // followUpDate: igual que en creación manual — hoy + follow_up_days para PRESUPUESTO
+    let followUpDate = null;
+    if (mailType === 'PRESUPUESTO') {
+      const fudDays = Math.max(1, parseInt(stageAndFudSettings.follow_up_days || '4'));
+      followUpDate = new Date();
+      followUpDate.setDate(followUpDate.getDate() + fudDays);
     }
 
     const quote = await prisma.quote.create({
@@ -1401,11 +1421,13 @@ async function processEmail(mailData, imap) {
         stage:             entryStage,
         source:            'EMAIL',
         mailType,
+        currency:          'USD',
         flexxusCode:       flexxusData?.npCode || null,
         amount:            flexxusGrandTotal || null,
         subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
         ivaAmount:         flexxusData?.ivaAmount || null,
         totalPercepciones: flexxusData?.totalPercepciones || null,
+        followUpDate,
         emailSubject:      subject.substring(0, 500),
         emailMessageId:    messageId,
         emailFrom:         originalSender,

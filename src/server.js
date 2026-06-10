@@ -308,20 +308,25 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
 
           // Crear/actualizar Quote NOTA_PEDIDO con los ítems del PDF
           // → necesario para que la vista comparativa (tab NP) tenga los datos
-          if (linkedPresId && data.items?.length > 0) {
+          // Se crea siempre que haya ítems (igual que la ruta por mail)
+          if (data.items?.length > 0) {
             try {
               // ¿Ya existe una NP Quote vinculada al presupuesto?
-              let npQuote = await prisma.quote.findFirst({
-                where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: linkedPresId },
-                include: { _count: { select: { items: true } } },
-              });
+              let npQuote = linkedPresId
+                ? await prisma.quote.findFirst({
+                    where: { mailType: 'NOTA_PEDIDO', linkedQuoteId: linkedPresId },
+                    include: { _count: { select: { items: true } } },
+                  })
+                : null;
 
               if (!npQuote) {
                 // Obtener datos del presupuesto para heredar cliente/vendedor
-                const pres = await prisma.quote.findUnique({
-                  where:  { id: linkedPresId },
-                  select: { clientId: true, sellerId: true },
-                });
+                const pres = linkedPresId
+                  ? await prisma.quote.findUnique({
+                      where:  { id: linkedPresId },
+                      select: { clientId: true, sellerId: true },
+                    })
+                  : null;
 
                 // Código único para la NP Quote
                 const lastQ = await prisma.quote.findFirst({
@@ -340,16 +345,34 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
                     stage:         'np_enviada',
                     flexxusCode:   data.npCode   || null,
                     amount:        data.total    || null,
+                    currency:      'USD',
                     subtotalNeto:  data.subtotalNeto       || null,
                     ivaAmount:     data.ivaAmount          || null,
                     totalPercepciones: data.totalPercepciones || null,
                     clientId:      order?.clientId  || pres?.clientId  || null,
                     sellerId:      order?.sellerId  || pres?.sellerId  || null,
-                    linkedQuoteId: linkedPresId,
+                    linkedQuoteId: linkedPresId || null,
                     emailSubject:  `NP ${data.npCode || ''} — ${data.clientName || ''}`.trim(),
                   },
                 });
-                console.log(`   ✅ NOTA_PEDIDO Quote creada: ${npQCode} ← presupuesto ${linkedPresId}`);
+                console.log(`   ✅ NOTA_PEDIDO Quote creada: ${npQCode}${linkedPresId ? ` ← presupuesto ${linkedPresId}` : ' (sin presupuesto vinculado)'}`);
+
+                // Vínculo bidireccional: el presupuesto apunta a la NP (igual que ruta por mail)
+                if (linkedPresId) {
+                  const presCheck = await prisma.quote.findUnique({ where: { id: linkedPresId }, select: { linkedQuoteId: true } });
+                  if (presCheck && !presCheck.linkedQuoteId) {
+                    await prisma.quote.update({ where: { id: linkedPresId }, data: { linkedQuoteId: npQuote.id } });
+                  }
+                }
+
+                // Actividad en la NP Quote (igual que ruta por mail)
+                await prisma.activity.create({
+                  data: {
+                    action:  'CREATED',
+                    detail:  `Nota de Pedido ${data.npCode || ''} cargada manualmente${linkedPresId ? ` → Pres. vinculado` : ''}`,
+                    quoteId: npQuote.id,
+                  },
+                });
               }
 
               // Crear ítems si no existen aún

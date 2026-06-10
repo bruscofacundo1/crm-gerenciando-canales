@@ -552,6 +552,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Solo administradores pueden eliminar cotizaciones' });
     }
 
+    // ── Limpiar todas las referencias FK antes de eliminar ──────────────────
+
+    // 1. Quotes que apuntan a esta vía linkedQuoteId (solicitud, NP, etc.)
+    await prisma.quote.updateMany({
+      where: { linkedQuoteId: req.params.id },
+      data:  { linkedQuoteId: null },
+    });
+
+    // 2. Orders que apuntan a esta vía fromQuoteId
+    await prisma.order.updateMany({
+      where: { fromQuoteId: req.params.id },
+      data:  { fromQuoteId: null },
+    });
+
+    // 3. Si es PRESUPUESTO: si tiene NP Quotes vinculadas (linkedQuoteId → this), ya se limpiaron arriba.
+    //    Si tiene Order asociada, el fromQuoteId ya se limpió arriba.
+
+    // 4. Si es SOLICITUD: el presupuesto vinculado ya se limpió en paso 1.
+
+    // 5. Limpiar el propio linkedQuoteId (para no tener FK roto al borrar)
+    if (quote.linkedQuoteId) {
+      await prisma.quote.update({
+        where: { id: req.params.id },
+        data:  { linkedQuoteId: null },
+      });
+    }
+
     await prisma.quote.delete({ where: { id: req.params.id } });
     res.json({ ok: true, code: quote.code });
   } catch (err) {
@@ -786,9 +813,21 @@ router.patch('/:id/link', authMiddleware, async (req, res) => {
         await copyPresupuestoItemsToOC(presupuesto.id, oc.id);
       }
     } else {
-      // Desvincular: también limpiar el linkedQuoteId de cualquier quote que apunte a esta
+      // Desvincular: limpiar el linkedQuoteId de SOLICITUD/PRESUPUESTO que apuntan a esta,
+      // pero NO tocar las NOTA_PEDIDO vinculadas (ese es un vínculo diferente)
       await prisma.quote.updateMany({
-        where: { linkedQuoteId: req.params.id },
+        where: {
+          linkedQuoteId: req.params.id,
+          mailType: { notIn: ['NOTA_PEDIDO'] },
+        },
+        data: { linkedQuoteId: null },
+      });
+      // También limpiar quotes sin mailType (manuales)
+      await prisma.quote.updateMany({
+        where: {
+          linkedQuoteId: req.params.id,
+          mailType: null,
+        },
         data: { linkedQuoteId: null },
       });
     }

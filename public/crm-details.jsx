@@ -307,8 +307,8 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
             <th className="w-24">SKU</th>
             <th>Descripción</th>
             <th className="!text-right w-20">Cant.</th>
-            <th className="!text-right w-28">P. Unit.</th>
-            <th className="!text-right w-28">Total</th>
+            <th className="!text-right w-28">P. Unit. ({q.currency === 'ARS' ? 'AR$' : 'U$S'})</th>
+            <th className="!text-right w-28">Total ({q.currency === 'ARS' ? 'AR$' : 'U$S'})</th>
             {isOC && <th className="w-16"></th>}
           </tr>
         </thead>
@@ -370,10 +370,10 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
                 </td>
                 <td className={cx('mono text-right', unchecked && 'line-through')}>{it.quantity}</td>
                 <td className={cx('mono text-right', unchecked && 'line-through')}>
-                  {it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}
+                  {it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}
                 </td>
                 <td className={cx('mono text-right font-semibold', unchecked && 'line-through')}>
-                  {it.total != null ? it.total.toLocaleString('es-AR') : '—'}
+                  {it.total != null ? it.total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}
                 </td>
                 {isOC && (
                   <td>
@@ -666,7 +666,7 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
 }
 
 function QuoteDetail({ code, onClose, canReassign }) {
-  const { quotes, clients, users, moveQuoteStage, setQuotes, pushToast, closeModal, openModal } = useApp();
+  const { quotes, clients, users, moveQuoteStage, setQuotes, setOrders, pushToast, closeModal, openModal } = useApp();
   const q = quotes.find(x => x.code === code);
   if (!q) return null;
   const cli = clients.find(c=>c.code===q.client);
@@ -913,10 +913,22 @@ function QuoteDetail({ code, onClose, canReassign }) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`¿Eliminar la cotización ${q.code}? Esta acción no se puede deshacer.`)) return;
+    const warnings = [];
+    if (linkedOrder) warnings.push(`La OC ${linkedOrder.code} perderá el vínculo con este presupuesto.`);
+    const linked = linkedQuotes.linkedQuote || linkedQuotes.linkedBy?.[0];
+    if (linked) warnings.push(`Se desvinculará de ${linked.code} (${linked.mailType || 'manual'}).`);
+    const npLinked = (linkedQuotes.linkedBy || []).find(x => x.mailType === 'NOTA_PEDIDO');
+    if (npLinked) warnings.push(`La NP ${npLinked.code} perderá su vínculo.`);
+    const msg = `¿Eliminar la cotización ${q.code}? Esta acción no se puede deshacer.`
+      + (warnings.length ? '\n\n' + warnings.join('\n') : '');
+    if (!window.confirm(msg)) return;
     try {
       await CrmApi.deleteQuote(q.id);
       setQuotes(qs => qs.filter(x => x.id !== q.id));
+      // Refrescar orders si había una OC vinculada (pierde su fromQuote)
+      if (linkedOrder) {
+        try { const fresh = await CrmApi.getOrders(); setOrders(fresh); } catch(e) {}
+      }
       pushToast('Cotización eliminada');
       closeModal();
     } catch (err) {
@@ -1112,7 +1124,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
             <button className="btn-ghost text-bad border-red-200 hover:bg-red-50" onClick={() => setRejectPending(true)}>
               Marcar rechazada
             </button>
-            <button className="btn-accent" onClick={() => handleQuoteStage('enviado')}>
+            <button className="btn-accent" onClick={() => handleQuoteStage('aceptada')}>
               <Icon name="check" size={14}/>Marcar aceptada
             </button>
           </>)}
@@ -1468,14 +1480,14 @@ function QuoteDetail({ code, onClose, canReassign }) {
           {detailItems.length > 0 ? (
             <div className="grid grid-cols-3 gap-5">
               <div className="col-span-2 bg-white border border-line rounded-xl p-5">
-                <div className="text-sm font-semibold mb-3 text-ink-900">Presupuesto Flexxus</div>
+                <div className="text-sm font-semibold mb-3 text-ink-900">{q.flexxus ? 'Presupuesto Flexxus' : 'Presupuesto'}</div>
                 <table className="w-full text-[12.5px]">
                   <thead><tr className="text-left text-ink-500">
                     <th className="font-semibold pb-2">SKU</th>
                     <th className="font-semibold pb-2">Descripción</th>
                     <th className="font-semibold pb-2 text-right">Cant.</th>
-                    <th className="font-semibold pb-2 text-right">P. Unit.</th>
-                    <th className="font-semibold pb-2 text-right">Total</th>
+                    <th className="font-semibold pb-2 text-right">P. Unit. ({q.currency === 'ARS' ? 'AR$' : 'U$S'})</th>
+                    <th className="font-semibold pb-2 text-right">Total ({q.currency === 'ARS' ? 'AR$' : 'U$S'})</th>
                   </tr></thead>
                   <tbody>
                     {detailItems.filter(i => i.accepted).map((it, idx) => (
@@ -1485,8 +1497,8 @@ function QuoteDetail({ code, onClose, canReassign }) {
                         </td>
                         <td className="py-2">{it.description}</td>
                         <td className="py-2 mono text-right">{it.quantity}</td>
-                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR') : '—'}</td>
+                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1495,7 +1507,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       <tr className="border-t border-line">
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Subtotal neto</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {priceBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(priceBreakdown.subtotalNeto, q.currency, 2)}
                         </td>
                       </tr>
                     )}
@@ -1503,7 +1515,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       <tr>
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">IVA 21%</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {priceBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(priceBreakdown.ivaAmount, q.currency, 2)}
                         </td>
                       </tr>
                     )}
@@ -1511,7 +1523,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       <tr>
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Percepciones</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {priceBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(priceBreakdown.totalPercepciones, q.currency, 2)}
                         </td>
                       </tr>
                     )}
@@ -1519,7 +1531,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                       <tr className="border-t-2 border-ink-900">
                         <td colSpan="4" className="text-right pt-3 font-bold">TOTAL</td>
                         <td className="text-right pt-3 mono font-bold text-base">
-                          {(priceBreakdown?.total ?? q.monto).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(priceBreakdown?.total ?? q.monto, q.currency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2154,6 +2166,37 @@ function OrderDetail({ code, onClose, canReassign }) {
         </div>
       </div>
 
+      {/* ── Tarjeta de presupuesto vinculado (igual que solicitud↔presupuesto en QuoteDetail) ── */}
+      {(() => {
+        const linked = isQuoteSource ? linkedPres : (orderDetail?.fromQuote || null);
+        if (!linked) return null;
+        return (
+          <div className="mx-6 mb-4 px-4 py-3 bg-white border border-line rounded-xl flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-blue-50 text-blue-600">
+              <Icon name="file-text" size={15}/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-0.5">
+                Presupuesto vinculado
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="mono text-[13px] font-semibold text-ink-900">{linked.code}</span>
+                {linked.flexxusCode && <Badge tone="slate"><span className="mono">{linked.flexxusCode}</span></Badge>}
+                {linked.stage && <StageDot tone={STAGES_F1.find(s=>s.id===linked.stage)?.tone||'gray'}/>}
+                {linked.stage && <span className="text-[11.5px] text-ink-500">{linked.stage}</span>}
+                {linked.amount != null && (
+                  <span className="text-[12px] mono text-ink-500 ml-1">{fmtMoney(linked.amount, linked.currency || npCurrency, 2)}</span>
+                )}
+              </div>
+            </div>
+            <button className="btn-ghost text-[12px] py-1 px-2.5 shrink-0"
+              onClick={() => { onClose(); setTimeout(()=>openModal('quoteDetail',{code: linked.code}),80); }}>
+              Ver <Icon name="arrow-right" size={11}/>
+            </button>
+          </div>
+        );
+      })()}
+
       {/* ── Tabs ── */}
       <TabBar
         tabs={[
@@ -2360,14 +2403,14 @@ function OrderDetail({ code, onClose, canReassign }) {
             <div className="grid grid-cols-3 gap-5">
               {/* Tabla de ítems */}
               <div className="col-span-2 bg-white border border-line rounded-xl p-5">
-                <div className="text-sm font-semibold mb-3 text-ink-900">Nota de Pedido Flexxus</div>
+                <div className="text-sm font-semibold mb-3 text-ink-900">{o.flexxus && o.flexxus !== '—' ? 'Nota de Pedido Flexxus' : 'Nota de Pedido'}</div>
                 <table className="w-full text-[12.5px]">
                   <thead><tr className="text-left text-ink-500">
                     <th className="font-semibold pb-2">SKU</th>
                     <th className="font-semibold pb-2">Descripción</th>
                     <th className="font-semibold pb-2 text-right">Cant.</th>
-                    <th className="font-semibold pb-2 text-right">P. Unit.</th>
-                    <th className="font-semibold pb-2 text-right">Total</th>
+                    <th className="font-semibold pb-2 text-right">P. Unit. ({npCurrency === 'ARS' ? 'AR$' : 'U$S'})</th>
+                    <th className="font-semibold pb-2 text-right">Total ({npCurrency === 'ARS' ? 'AR$' : 'U$S'})</th>
                   </tr></thead>
                   <tbody>
                     {npItems.map((it, idx) => (
@@ -2377,8 +2420,8 @@ function OrderDetail({ code, onClose, canReassign }) {
                         </td>
                         <td className="py-2">{it.description}</td>
                         <td className="py-2 mono text-right">{it.quantity}</td>
-                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR') : '—'}</td>
+                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2387,7 +2430,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr className="border-t border-line">
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Subtotal neto</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {npBreakdown.subtotalNeto.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2395,7 +2438,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr>
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">IVA 21%</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {npBreakdown.ivaAmount.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(npBreakdown.ivaAmount, npCurrency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2403,7 +2446,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr>
                         <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Percepciones</td>
                         <td className="text-right py-1.5 mono text-[12px] text-ink-500">
-                          {npBreakdown.totalPercepciones.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(npBreakdown.totalPercepciones, npCurrency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2411,7 +2454,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr className="border-t-2 border-ink-900">
                         <td colSpan="4" className="text-right pt-3 font-bold">TOTAL</td>
                         <td className="text-right pt-3 mono font-bold text-base">
-                          {npBreakdown.total.toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(npBreakdown.total, npCurrency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2419,7 +2462,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr className="border-t border-line">
                         <td colSpan="4" className="text-right pt-2 font-semibold text-[12px] text-ink-500">Total NP</td>
                         <td className="text-right pt-2 mono font-bold text-[13px]">
-                          {npItems.reduce((s,i) => s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(npItems.reduce((s,i) => s+(i.total||0),0), npCurrency, 2)}
                         </td>
                       </tr>
                     )}
@@ -2433,7 +2476,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                   <ul className="text-[12.5px] space-y-1.5">
                     <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
                     {o.flexxus && o.flexxus !== '—' && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{o.flexxus}</span></li>}
-                    {linkedPres && <li className="flex justify-between"><span className="text-ink-500">Presupuesto</span><span className="mono">{linkedPres.code}</span></li>}
+                    {linkedPres && <li className="flex justify-between"><span className="text-ink-500">Presupuesto</span><button className="mono text-brand hover:underline font-semibold" onClick={()=>{ onClose(); setTimeout(()=>openModal('quoteDetail',{code:linkedPres.code}),80); }}>{linkedPres.code}</button></li>}
                     {npBreakdown?.subtotalNeto != null && (
                       <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">{fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}</span></li>
                     )}
@@ -2479,8 +2522,8 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <th className="font-semibold pb-2">SKU</th>
                       <th className="font-semibold pb-2">Descripción</th>
                       <th className="font-semibold pb-2 text-right">Cant.</th>
-                      <th className="font-semibold pb-2 text-right">P. Unit.</th>
-                      <th className="font-semibold pb-2 text-right">Total</th>
+                      <th className="font-semibold pb-2 text-right">P. Unit. ({npCurrency === 'ARS' ? 'AR$' : 'U$S'})</th>
+                      <th className="font-semibold pb-2 text-right">Total ({npCurrency === 'ARS' ? 'AR$' : 'U$S'})</th>
                     </tr></thead>
                     <tbody>
                       {presItems.filter(i => i.accepted !== false).map((it, idx) => (
@@ -2488,8 +2531,8 @@ function OrderDetail({ code, onClose, canReassign }) {
                           <td className="py-2 mono text-ink-700"><CatalogBadge sku={it.sku} description={it.description}/></td>
                           <td className="py-2">{it.description}</td>
                           <td className="py-2 mono text-right">{it.quantity}</td>
-                          <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                          <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR') : '—'}</td>
+                          <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+                          <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2497,7 +2540,7 @@ function OrderDetail({ code, onClose, canReassign }) {
                       <tr className="border-t border-line">
                         <td colSpan="4" className="text-right pt-2 font-semibold text-[12px] text-ink-500">Total presupuesto</td>
                         <td className="text-right pt-2 mono font-bold text-[13px]">
-                          {presItems.filter(i=>i.accepted!==false).reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
+                          {fmtMoney(presItems.filter(i=>i.accepted!==false).reduce((s,i)=>s+(i.total||0),0), npCurrency, 2)}
                         </td>
                       </tr>
                     </tfoot>
@@ -2564,22 +2607,47 @@ function OrderDetail({ code, onClose, canReassign }) {
           ) : history.length === 0 ? (
             <div className="text-center py-8 text-ink-400 text-[13px]">Sin movimientos registrados</div>
           ) : (
-            <div className="space-y-3">
-              {history.map((h, i) => {
-                const st = STAGES_F2.find(s=>s.id===h.detail?.match(/→\s*(\S+)/)?.[1]) || null;
-                const dotColor = st ? (STAGE_DOT[st.tone] || '#939598') : '#939598';
+            <div className="space-y-0">
+              {history.map((a, i) => {
+                const iconMap = {
+                  CREATED:      { name:'plus-circle',    cls:'text-emerald-600 bg-emerald-50' },
+                  STAGE_CHANGE: { name:'arrow-right',    cls:'text-brand bg-brandSoft' },
+                  NOTE_ADDED:   { name:'message-square', cls:'text-ink-500 bg-surface' },
+                  ASSIGNED:     { name:'user',           cls:'text-orange-600 bg-orange-50' },
+                  LINKED:       { name:'link',           cls:'text-violet-600 bg-violet-50' },
+                  REMINDER_SENT:{ name:'bell',           cls:'text-amber-600 bg-amber-50' },
+                  EMAIL_SENT:   { name:'send',           cls:'text-blue-600 bg-blue-50' },
+                };
+                const ic = iconMap[a.action] || { name:'activity', cls:'text-ink-500 bg-surface' };
+                const isLast = i === history.length - 1;
+                const isFromLinked = a._fromCode && a._fromCode !== code;
+                const linkedTypeTone = a._fromType === 'SOLICITUD' ? 'sky' : a._fromType === 'PRESUPUESTO' ? 'blue' : a._fromType === 'NOTA_PEDIDO' ? 'purple' : 'gray';
                 return (
-                  <div key={h.id || i} className="relative pl-8 stepline">
-                    <span className="absolute left-1 top-1 w-4 h-4 rounded-full border-2 bg-white"
-                      style={{borderColor: dotColor}}/>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[12px] font-semibold text-ink-800">{h.action}</span>
-                      {h.user?.name && <span className="text-[11px] text-ink-500">· {h.user.name}</span>}
-                      <span className="text-[11px] text-ink-400 mono ml-auto">
-                        {h.createdAt ? fmtDateTime(h.createdAt) : ''}
-                      </span>
+                  <div key={`${a.id||i}-${a._fromCode||''}`} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={cx('w-8 h-8 rounded-full flex items-center justify-center shrink-0',
+                        isFromLinked ? 'ring-2 ring-offset-1 ring-violet-200 ' + ic.cls : ic.cls)}>
+                        <Icon name={ic.name} size={14}/>
+                      </div>
+                      {!isLast && <div className="w-px flex-1 bg-line mt-1 mb-1"/>}
                     </div>
-                    <div className="text-[13px] text-ink-700 mt-0.5">{h.detail}</div>
+                    <div className={cx('flex-1', isLast ? 'pb-0' : 'pb-4')}>
+                      <div className={cx('border rounded-xl px-4 py-3', isFromLinked ? 'bg-violet-50/40 border-violet-100' : 'bg-white border-line')}>
+                        {isFromLinked && (
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Icon name="link" size={11} className="text-violet-400"/>
+                            <span className="text-[10.5px] font-semibold text-violet-500 mono">{a._fromCode}</span>
+                            <Badge tone={linkedTypeTone} className="text-[9px]">{a._fromType}</Badge>
+                          </div>
+                        )}
+                        <p className="text-[13px] text-ink-900 leading-snug">{a.detail}</p>
+                        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-ink-500">
+                          <span className="font-medium">{a.user?.name || 'Sistema'}</span>
+                          <span>·</span>
+                          <span className="mono">{a.createdAt ? fmtDateTime(a.createdAt) : ''}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
