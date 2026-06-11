@@ -602,12 +602,12 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     if (quote.mailType === 'PRESUPUESTO') {
       const linkedSolicitudes = await prisma.quote.findMany({
         where: { linkedQuoteId: req.params.id, mailType: 'SOLICITUD' },
-        select: { id: true, stage: true },
+        select: { id: true, stage: true, sellerId: true },
       });
       for (const sol of linkedSolicitudes) {
         const revertData = { linkedQuoteId: null, flexxusCode: null };
         if (sol.stage === 'aceptada' || sol.stage === 'rechazada') {
-          revertData.stage = 'asignada';
+          revertData.stage = sol.sellerId ? 'asignada' : 'recibida';
           revertData.stageChangedAt = new Date();
           revertData.rejectReason = null;
           revertData.rejectNotes = null;
