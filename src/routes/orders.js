@@ -311,7 +311,8 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       }
     }
     const { carrier, trackingNumber, flexxusCode, clientOCCode, estimatedDate,
-            invoiceIssued, invoiceDate, waybillReceived, waybillDate, deliveryType } = req.body;
+            invoiceIssued, invoiceDate, waybillReceived, waybillDate, deliveryType,
+            clientId, sellerId, fromQuoteId } = req.body;
     const data = {};
     if (carrier          !== undefined) data.carrier          = carrier || null;
     if (trackingNumber   !== undefined) data.trackingNumber   = trackingNumber || null;
@@ -323,6 +324,9 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     if (invoiceDate      !== undefined) data.invoiceDate      = invoiceDate ? new Date(invoiceDate) : null;
     if (waybillReceived  !== undefined) data.waybillReceived  = waybillReceived;
     if (waybillDate      !== undefined) data.waybillDate      = waybillDate ? new Date(waybillDate) : null;
+    if (clientId         !== undefined) data.clientId         = clientId;
+    if (sellerId         !== undefined) data.sellerId         = sellerId || null;
+    if (fromQuoteId      !== undefined) data.fromQuoteId      = fromQuoteId || null;
 
     const updated = await prisma.order.update({ where: { id: req.params.id }, data });
     res.json(updated);

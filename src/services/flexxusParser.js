@@ -418,13 +418,20 @@ function parseNotaPedidoItems(lines) {
     if (matchDesc) {
       description = matchDesc.trim();
       const afterDesc = beforePrices.slice(matchDesc.length);
-      // afterDesc = "{sort_0-2?}{SKU_6}-{3}{qty}{remitida}"
-      // Ej: "1893710-0002000" → sort=1, SKU=893710-000, qty=200, rem=0
-      // Lazy 0-2 dígitos de prefijo para saltear el número de ítem
       const skuM = afterDesc.match(/^\d{0,2}?(\d{6}-\d{3})/);
-      if (skuM) sku = skuM[1].toUpperCase();
+      if (skuM) {
+        sku = skuM[1].toUpperCase();
+      } else if (afterDesc.length > 2 && /[A-Za-z]/.test(afterDesc)) {
+        // Código alfanumérico (ej "KIT ALPUB 4/4 4,550") — quitar qty+remitida del final
+        let code = afterDesc;
+        if (qty > 0) {
+          const re = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
+          code = code.replace(re, '');
+        }
+        code = code.replace(/[,.\s]+$/, '').trim();
+        if (code.length > 1 && /[A-Za-z]/.test(code)) sku = code;
+      }
     } else {
-      // Fallback: última ocurrencia de \d{6}-\d{3} en beforePrices
       const allSkuM = [...beforePrices.matchAll(/(\d{6}-\d{3})/g)];
       const lastSkuM = allSkuM[allSkuM.length - 1];
       if (lastSkuM) {
@@ -433,8 +440,8 @@ function parseNotaPedidoItems(lines) {
       }
     }
 
-    // Tercer fallback: cascada de 5 filtros (misma lógica que presupuestos)
-    if (!sku) {
+    // Cascada de 5 filtros solo cuando no hubo matchDesc (evita extraer números basura)
+    if (!sku && !matchDesc) {
       const extracted = extractSkuFromText(beforePrices);
       if (extracted.sku) {
         sku = extracted.sku;

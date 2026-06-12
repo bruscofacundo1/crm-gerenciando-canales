@@ -1903,7 +1903,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
 }
 
 function OrderDetail({ code, onClose, canReassign }) {
-  const { orders, clients, users, moveOrderStage, pushToast, openModal, setOrders, setQuotes } = useApp();
+  const { orders, clients, users, quotes, moveOrderStage, pushToast, openModal, setOrders, setQuotes } = useApp();
   const o = orders.find(x=>x.code===code);
   if (!o) return null;
 
@@ -1936,6 +1936,17 @@ function OrderDetail({ code, onClose, canReassign }) {
   const [editField, setEditField]   = useState(null);
   const [editVal, setEditVal]       = useState('');
   const [savingField, setSavingField] = useState(false);
+  const [npAssigningClient, setNpAssigningClient] = useState(false);
+  const [npAssignClientId, setNpAssignClientId]   = useState('');
+  const [npClientSearch, setNpClientSearch]        = useState('');
+  const [npClientDropOpen, setNpClientDropOpen]    = useState(false);
+  const [npAssignSaving, setNpAssignSaving]        = useState(false);
+  const [npAssigningSeller, setNpAssigningSeller]  = useState(false);
+  const [npAssignSellerId, setNpAssignSellerId]    = useState('');
+  const [npSellerSaving, setNpSellerSaving]        = useState(false);
+  const [npLinkDropOpen, setNpLinkDropOpen]        = useState(false);
+  const [npLinkSearch, setNpLinkSearch]            = useState('');
+  const [npLinkSaving, setNpLinkSaving]            = useState(false);
   const noteInputRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
 
@@ -2052,6 +2063,84 @@ function OrderDetail({ code, onClose, canReassign }) {
     } catch (err) {
       pushToast(err.message || 'Error al eliminar adjunto', 'bad');
     }
+  };
+
+  // ── NP: assign client ──
+  const handleNpAssignClient = async () => {
+    if (!npAssignClientId) return;
+    setNpAssignSaving(true);
+    try {
+      if (isQuoteSource) {
+        await CrmApi.assignQuoteClient(o.id, { clientId: npAssignClientId });
+      } else {
+        await CrmApi.updateOrder(o.id, { clientId: npAssignClientId });
+      }
+      const freshOrders = await CrmApi.getOrders();
+      setOrders(freshOrders);
+      pushToast('Cliente actualizado');
+      setNpAssigningClient(false);
+      setNpAssignClientId('');
+    } catch (err) { pushToast(err.message || 'Error al asignar cliente', 'bad'); }
+    finally { setNpAssignSaving(false); }
+  };
+
+  // ── NP: assign seller ──
+  const handleNpAssignSeller = async () => {
+    if (!npAssignSellerId) return;
+    setNpSellerSaving(true);
+    try {
+      if (isQuoteSource) {
+        await CrmApi.assignQuote(o.id, npAssignSellerId);
+      } else {
+        await CrmApi.updateOrder(o.id, { sellerId: npAssignSellerId });
+      }
+      const freshOrders = await CrmApi.getOrders();
+      setOrders(freshOrders);
+      pushToast('Vendedor actualizado');
+      setNpAssigningSeller(false);
+      setNpAssignSellerId('');
+    } catch (err) { pushToast(err.message || 'Error al actualizar vendedor', 'bad'); }
+    finally { setNpSellerSaving(false); }
+  };
+
+  // ── NP: link presupuesto ──
+  const handleNpLinkPresupuesto = async (presId) => {
+    if (!presId) return;
+    setNpLinkSaving(true);
+    try {
+      if (isQuoteSource) {
+        await CrmApi.linkQuote(o.id, presId);
+        const detail = await CrmApi.getQuoteDetail(o.id);
+        setLinkedPres(detail.linkedQuote || null);
+      } else {
+        await CrmApi.updateOrder(o.id, { fromQuoteId: presId });
+        const detail = await CrmApi.getOrderDetail(o.id);
+        setOrderDetail(detail);
+      }
+      const freshOrders = await CrmApi.getOrders();
+      setOrders(freshOrders);
+      setNpLinkDropOpen(false);
+      setNpLinkSearch('');
+      pushToast('Presupuesto vinculado');
+    } catch (err) { pushToast(err.message || 'Error al vincular', 'bad'); }
+    finally { setNpLinkSaving(false); }
+  };
+
+  const handleNpUnlinkPresupuesto = async () => {
+    if (!window.confirm('¿Desvincular el presupuesto de esta Nota de Pedido?')) return;
+    try {
+      if (isQuoteSource) {
+        await CrmApi.linkQuote(o.id, null);
+        setLinkedPres(null);
+      } else {
+        await CrmApi.updateOrder(o.id, { fromQuoteId: null });
+        const detail = await CrmApi.getOrderDetail(o.id);
+        setOrderDetail(detail);
+      }
+      const freshOrders = await CrmApi.getOrders();
+      setOrders(freshOrders);
+      pushToast('Vínculo eliminado');
+    } catch (err) { pushToast(err.message || 'Error', 'bad'); }
   };
 
   // ── Confirm delivery ──
@@ -2181,8 +2270,26 @@ function OrderDetail({ code, onClose, canReassign }) {
       <div className="px-6 pt-5 pb-4 bg-gradient-to-b from-surface to-white">
         <StagePipeline stages={STAGES_F2} currentId={o.stage}/>
         <div className="mt-4 grid grid-cols-4 gap-4">
-          <Field label="Cliente" value={cli?.name || '—'}/>
-          <Field label="Vendedor">
+          <Field label={isNP ? (
+            <span className="flex items-center gap-1">
+              Cliente
+              <button title="Cambiar cliente"
+                onClick={() => { setNpAssigningClient(true); setNpAssignClientId(cli?.id || ''); setNpClientSearch(''); setNpClientDropOpen(false); }}
+                className="text-ink-300 hover:text-brand transition-colors ml-0.5">
+                <Icon name="pencil" size={10}/>
+              </button>
+            </span>
+          ) : 'Cliente'} value={cli?.name || '—'}/>
+          <Field label={isNP ? (
+            <span className="flex items-center gap-1">
+              Vendedor
+              <button title="Cambiar vendedor"
+                onClick={() => { setNpAssigningSeller(true); setNpAssignSellerId(sel?.id || ''); }}
+                className="text-ink-300 hover:text-brand transition-colors ml-0.5">
+                <Icon name="pencil" size={10}/>
+              </button>
+            </span>
+          ) : 'Vendedor'}>
             {sel
               ? <div className="flex items-center gap-2"><Avatar name={sel.name} size={20}/>{sel.name}</div>
               : <span className="text-ink-400">Sin asignar</span>
@@ -2201,6 +2308,78 @@ function OrderDetail({ code, onClose, canReassign }) {
           <Field label="Fecha" mono value={o.fecha ? fmtDate(o.fecha) : '—'}/>
         </div>
       </div>
+
+      {/* ── NP: Client assignment panel ── */}
+      {npAssigningClient && (() => {
+        const selectedC = clients.find(c => c.id === npAssignClientId);
+        const filteredC = clients.filter(c =>
+          !npClientSearch ||
+          c.name.toLowerCase().includes(npClientSearch.toLowerCase()) ||
+          (c.cuit || '').includes(npClientSearch) ||
+          (c.email || '').toLowerCase().includes(npClientSearch.toLowerCase())
+        );
+        return (
+          <div className="mx-6 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="text-[13px] font-semibold text-amber-900 mb-2">Cambiar cliente</div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input className="inp w-full text-xs" placeholder="Buscar por nombre, CUIT o email…"
+                  value={npClientDropOpen ? npClientSearch : (selectedC?.name || '')}
+                  onFocus={() => { setNpClientDropOpen(true); setNpClientSearch(''); }}
+                  onChange={e => { setNpClientSearch(e.target.value); setNpAssignClientId(''); }}/>
+                {npClientDropOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setNpClientDropOpen(false)}/>
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-xl shadow-pop max-h-48 overflow-y-auto scroll-thin">
+                      {filteredC.slice(0, 50).map(c => (
+                        <button key={c.id} className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
+                          onClick={() => { setNpAssignClientId(c.id); setNpClientDropOpen(false); setNpClientSearch(''); }}>
+                          <div className="text-[12px] font-medium text-ink-900">{c.name}</div>
+                          {c.cuit && <div className="text-[11px] mono text-ink-500">{c.cuit}</div>}
+                        </button>
+                      ))}
+                      {filteredC.length === 0 && <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin resultados</div>}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button className="btn-primary text-[11px] py-1.5 px-3 shrink-0"
+                disabled={!npAssignClientId || npAssignSaving}
+                style={!npAssignClientId || npAssignSaving ? {opacity:.45} : {}}
+                onClick={handleNpAssignClient}>
+                {npAssignSaving ? 'Guardando…' : 'Confirmar'}
+              </button>
+              <button className="text-ink-400 hover:text-ink-700 shrink-0"
+                onClick={() => { setNpAssigningClient(false); setNpAssignClientId(''); }}>
+                <Icon name="x" size={14}/>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── NP: Seller assignment panel ── */}
+      {npAssigningSeller && (
+        <div className="mx-6 mt-3 px-4 py-3 bg-surface border border-line rounded-xl flex items-center gap-3">
+          <Icon name="user" size={14} className="text-ink-400 shrink-0"/>
+          <select className="inp text-xs flex-1" value={npAssignSellerId}
+            onChange={e => setNpAssignSellerId(e.target.value)} autoFocus>
+            <option value="">Seleccionar vendedor…</option>
+            {users.filter(u => u.role === 'Vendedor' || u.role === 'Administrador')
+              .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <button className="btn-primary text-[11px] py-1 px-2.5 shrink-0"
+            disabled={!npAssignSellerId || npSellerSaving}
+            style={!npAssignSellerId || npSellerSaving ? {opacity:.45} : {}}
+            onClick={handleNpAssignSeller}>
+            {npSellerSaving ? <Icon name="loader" size={12} className="animate-spin"/> : 'Guardar'}
+          </button>
+          <button className="text-ink-400 hover:text-ink-700 shrink-0"
+            onClick={() => { setNpAssigningSeller(false); setNpAssignSellerId(''); }}>
+            <Icon name="x" size={14}/>
+          </button>
+        </div>
+      )}
 
       {/* ── Tarjeta de presupuesto vinculado (igual que solicitud↔presupuesto en QuoteDetail) ── */}
       {(() => {
@@ -2351,14 +2530,17 @@ function OrderDetail({ code, onClose, canReassign }) {
                   </ul>
                 </div>
 
-                {/* Presupuesto vinculado */}
-                {linkedPresupuesto && (
+                {/* Presupuesto vinculado / vincular */}
+                {linkedPresupuesto ? (
                   <div className="bg-white border border-line rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600">
                         <Icon name="file-text" size={13}/>
                       </div>
-                      <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">Presupuesto vinculado</div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 flex-1">Presupuesto vinculado</div>
+                      <button onClick={handleNpUnlinkPresupuesto} className="text-ink-400 hover:text-bad" title="Desvincular">
+                        <Icon name="x" size={12}/>
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap mb-2">
                       <span className="mono text-[13px] font-semibold text-ink-900">{linkedPresupuesto.code}</span>
@@ -2372,6 +2554,46 @@ function OrderDetail({ code, onClose, canReassign }) {
                       onClick={() => { onClose(); setTimeout(()=>openModal('quoteDetail',{code: linkedPresupuesto.code}),80); }}>
                       Ver presupuesto <Icon name="arrow-right" size={11}/>
                     </button>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-line rounded-xl p-4">
+                    <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Presupuesto</div>
+                    <div className="relative">
+                      <button className="btn-ghost text-[12px] w-full justify-center" onClick={() => setNpLinkDropOpen(o=>!o)}>
+                        <Icon name="link" size={13}/>Vincular presupuesto
+                      </button>
+                      {npLinkDropOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setNpLinkDropOpen(false)}/>
+                          <div className="absolute bottom-full mb-1 left-0 z-20 w-full bg-white border border-line rounded-xl shadow-pop overflow-hidden">
+                            <div className="p-2 border-b border-line">
+                              <input autoFocus className="inp w-full text-xs" placeholder="Buscar por código…"
+                                value={npLinkSearch} onChange={e => setNpLinkSearch(e.target.value)}/>
+                            </div>
+                            <div className="max-h-48 overflow-y-auto scroll-thin">
+                              {quotes.filter(x =>
+                                x.mailType === 'PRESUPUESTO' &&
+                                (!npLinkSearch || x.code.toLowerCase().includes(npLinkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(npLinkSearch.toLowerCase()))
+                              ).slice(0,15).map(x => (
+                                <button key={x.id} disabled={npLinkSaving}
+                                  className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0 flex items-center gap-2"
+                                  onClick={() => handleNpLinkPresupuesto(x.id)}>
+                                  <span className="mono text-[12px] font-semibold text-ink-900">{x.code}</span>
+                                  <Badge tone="blue" className="text-[10px]">PRESUPUESTO</Badge>
+                                  <span className="text-[11px] text-ink-500 truncate">{x.clientName||'sin cliente'}</span>
+                                </button>
+                              ))}
+                              {quotes.filter(x =>
+                                x.mailType === 'PRESUPUESTO' &&
+                                (!npLinkSearch || x.code.toLowerCase().includes(npLinkSearch.toLowerCase()) || (x.clientName||'').toLowerCase().includes(npLinkSearch.toLowerCase()))
+                              ).length === 0 && (
+                                <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin presupuestos disponibles</div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
