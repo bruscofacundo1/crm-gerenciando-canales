@@ -2214,7 +2214,6 @@ function OrderDetail({ code, onClose, canReassign }) {
       <TabBar
         tabs={[
           { id:'resumen',  label:'Resumen' },
-          { id:'np', label:'Nota de Pedido' },
           ...(npItems.length > 0 ? [{ id:'items-np', label:'Ítems', count: npItems.length }] : []),
           { id:'historial',label:'Historial', count: loading ? null : history.length },
           { id:'notas',    label:'Notas',     count: loading ? null : notes.length },
@@ -2231,26 +2230,15 @@ function OrderDetail({ code, onClose, canReassign }) {
         return <OCItemsTab q={{ id: npQuoteId, mailType: 'NOTA_PEDIDO', currency: npCurrency }} detailItems={npItems} setDetailItems={setNpItems}/>;
       })()}
 
-      {/* ── Tab: Nota de Pedido (mirror de Presupuesto Resumen) ── */}
-      {tab === 'np' && (() => {
+      {tab === 'resumen' && (() => {
+        // Si hay NP parseada → mostrar layout tipo Presupuesto
         const npFlexxusCode = isQuoteSource ? o.flexxus : notaPedido?.flexxusCode;
         const npOcCliente = isQuoteSource ? null : orderDetail?.clientOCCode;
         const linkedPresupuesto = isQuoteSource ? linkedPres : (orderDetail?.fromQuote || null);
         const curSymbol = npCurrency === 'ARS' ? 'AR$' : 'U$S';
+        const hasNpData = npItems.length > 0 || npBreakdown;
 
-        if (npItems.length === 0 && !npBreakdown) {
-          return (
-            <div className="p-6">
-              <div className="card p-10 text-center space-y-2">
-                <Icon name="file-text" size={32} className="text-ink-200 mx-auto"/>
-                <p className="text-ink-500 text-sm font-medium">Sin Nota de Pedido vinculada</p>
-                <p className="text-ink-400 text-xs">Se cargará automáticamente cuando se adjunte o sincronice la NP desde Flexxus.</p>
-              </div>
-            </div>
-          );
-        }
-
-        return (
+        if (hasNpData) return (
           <div className="p-6">
             <div className="grid grid-cols-3 gap-5">
               {/* Columna izquierda: tabla parseada */}
@@ -2368,9 +2356,8 @@ function OrderDetail({ code, onClose, canReassign }) {
             </div>
           </div>
         );
-      })()}
 
-      {tab === 'resumen' && (() => {
+        // Sin NP → mostrar KPIs + Logística + Documentación (layout original)
         const monto = isQuoteSource
           ? (npBreakdown?.total ?? npItems.reduce((s,i)=>s+(i.total||0),0))
           : (orderDetail?.fromQuote?.amount || null);
