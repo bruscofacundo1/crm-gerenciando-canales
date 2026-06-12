@@ -2231,14 +2231,13 @@ function OrderDetail({ code, onClose, canReassign }) {
       })()}
 
       {tab === 'resumen' && (() => {
-        // Si hay NP parseada → mostrar layout tipo Presupuesto
-        const npFlexxusCode = isQuoteSource ? o.flexxus : notaPedido?.flexxusCode;
-        const npOcCliente = isQuoteSource ? null : orderDetail?.clientOCCode;
-        const linkedPresupuesto = isQuoteSource ? linkedPres : (orderDetail?.fromQuote || null);
+        // NP por mail (quote-source) → layout tipo Presupuesto
+        // OC real (order-source) → KPIs + logística + documentación
+        const npFlexxusCode = o.flexxus;
+        const linkedPresupuesto = linkedPres;
         const curSymbol = npCurrency === 'ARS' ? 'AR$' : 'U$S';
-        const hasNpData = npItems.length > 0 || npBreakdown;
 
-        if (hasNpData) return (
+        if (isQuoteSource) return (
           <div className="p-6">
             <div className="grid grid-cols-3 gap-5">
               {/* Columna izquierda: tabla parseada */}
@@ -2309,7 +2308,6 @@ function OrderDetail({ code, onClose, canReassign }) {
                   <ul className="text-[12.5px] space-y-1.5">
                     <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
                     {npFlexxusCode && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{npFlexxusCode}</span></li>}
-                    {npOcCliente && <li className="flex justify-between"><span className="text-ink-500">OC Cliente</span><span className="mono">{npOcCliente}</span></li>}
                     {npBreakdown?.subtotalNeto != null && (
                       <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">{fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}</span></li>
                     )}
