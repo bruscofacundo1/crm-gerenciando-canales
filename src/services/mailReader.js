@@ -727,7 +727,7 @@ async function processNotaPedido(parsed, mailData, att, imap) {
     await prisma.quoteItem.createMany({
       data: npData.items.map((item, i) => ({
         quoteId:     quote.id,
-        sku:         null,
+        sku:         item.sku || null,
         description: (item.description || '').substring(0, 500),
         quantity:    item.quantity || 0,
         unit:        null,

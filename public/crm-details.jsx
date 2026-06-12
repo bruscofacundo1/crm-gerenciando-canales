@@ -200,10 +200,10 @@ function CatalogBadge({ sku, description }) {
   );
 }
 
-// ── Tab Ítems completo (PRESUPUESTO: vista, OC: checklist editable) ──────
+// ── Tab Ítems completo (PRESUPUESTO: vista, OC/NP: checklist editable) ──────
 function OCItemsTab({ q, detailItems, setDetailItems }) {
   const { pushToast } = useApp();
-  const isOC = q.mailType === 'OC';
+  const isOC = q.mailType === 'OC' || q.mailType === 'NOTA_PEDIDO';
 
   // Estado para fila de edición inline
   const [editingId, setEditingId] = useState(null);
@@ -1969,6 +1969,16 @@ function OrderDetail({ code, onClose, canReassign }) {
           setNotaPedido(detail.notaPedido || null);
           setNpCurrency(detail.notaPedido?.currency || detail.fromQuote?.currency || 'USD');
           setPresItems(detail.fromQuote?.items || []);
+          setNpItems(detail.notaPedido?.items || []);
+          const np = detail.notaPedido;
+          if (np && (np.subtotalNeto != null || np.ivaAmount != null || np.amount != null)) {
+            setNpBreakdown({
+              subtotalNeto:      np.subtotalNeto      ?? null,
+              ivaAmount:         np.ivaAmount         ?? null,
+              totalPercepciones: np.totalPercepciones ?? null,
+              total:             np.amount             ?? null,
+            });
+          }
         }
         setLoading(false);
       })
@@ -2204,10 +2214,8 @@ function OrderDetail({ code, onClose, canReassign }) {
       <TabBar
         tabs={[
           { id:'resumen',  label:'Resumen' },
-          // Para NP por mail: tab con sus propios ítems
-          ...(isQuoteSource && npItems.length > 0 ? [{ id:'items-np', label:'Ítems NP', count: npItems.length }] : []),
-          // Para Order real: tab de NP vinculada
-          ...(!isQuoteSource ? [{ id:'np', label: notaPedido ? `NP Enviada ✓` : 'Nota de Pedido', count: notaPedido?.items?.length || null }] : []),
+          { id:'np', label:'Nota de Pedido' },
+          ...(npItems.length > 0 ? [{ id:'items-np', label:'Ítems', count: npItems.length }] : []),
           { id:'historial',label:'Historial', count: loading ? null : history.length },
           { id:'notas',    label:'Notas',     count: loading ? null : notes.length },
           { id:'adj',      label:'Adjuntos',  count: loading ? null : attachments.length },
@@ -2216,188 +2224,151 @@ function OrderDetail({ code, onClose, canReassign }) {
         onChange={setTab}
       />
 
-      {/* ── Tab: Ítems NP (para NP por mail / quote-source) ── */}
-      {tab === 'items-np' && isQuoteSource && (
-        <div className="p-6 space-y-4">
-          <div className="bg-white border border-line rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-line">
-              <span className="text-sm font-semibold text-ink-900">Ítems de la Nota de Pedido</span>
-              <span className="ml-2 text-xs text-ink-400">{npItems.length} ítems</span>
+      {/* ── Tab: Ítems NP (editable, reutiliza OCItemsTab) ── */}
+      {tab === 'items-np' && (() => {
+        const npQuoteId = isQuoteSource ? o.id : notaPedido?.id;
+        if (!npQuoteId) return <div className="p-6 text-center text-ink-400">Sin ítems de NP</div>;
+        return <OCItemsTab q={{ id: npQuoteId, mailType: 'NOTA_PEDIDO', currency: npCurrency }} detailItems={npItems} setDetailItems={setNpItems}/>;
+      })()}
+
+      {/* ── Tab: Nota de Pedido (mirror de Presupuesto Resumen) ── */}
+      {tab === 'np' && (() => {
+        const npFlexxusCode = isQuoteSource ? o.flexxus : notaPedido?.flexxusCode;
+        const npOcCliente = isQuoteSource ? null : orderDetail?.clientOCCode;
+        const linkedPresupuesto = isQuoteSource ? linkedPres : (orderDetail?.fromQuote || null);
+        const curSymbol = npCurrency === 'ARS' ? 'AR$' : 'U$S';
+
+        if (npItems.length === 0 && !npBreakdown) {
+          return (
+            <div className="p-6">
+              <div className="card p-10 text-center space-y-2">
+                <Icon name="file-text" size={32} className="text-ink-200 mx-auto"/>
+                <p className="text-ink-500 text-sm font-medium">Sin Nota de Pedido vinculada</p>
+                <p className="text-ink-400 text-xs">Se cargará automáticamente cuando se adjunte o sincronice la NP desde Flexxus.</p>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12.5px]">
-                <thead>
-                  <tr className="bg-ink-50 text-ink-500 text-xs">
-                    <th className="px-3 py-2 text-left">Código</th>
-                    <th className="px-3 py-2 text-left">Descripción</th>
-                    <th className="px-3 py-2 text-right">Cant.</th>
-                    <th className="px-3 py-2 text-right">P. Unit.</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {npItems.map((it, i) => (
-                    <tr key={it.id || i} className="hover:bg-surface/50">
-                      <td className="px-3 py-2 mono text-ink-600 text-[11px]">{it.sku || '—'}</td>
-                      <td className="px-3 py-2 text-ink-800 max-w-xs truncate" title={it.description}>{it.description}</td>
-                      <td className="px-3 py-2 text-right mono">{it.quantity ?? '—'}</td>
-                      <td className="px-3 py-2 text-right mono">{fmtMoney(it.unitPrice, npCurrency, 2)}</td>
-                      <td className="px-3 py-2 text-right mono font-semibold">{fmtMoney(it.total, npCurrency, 2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                {npItems.length > 0 && (
+          );
+        }
+
+        return (
+          <div className="p-6">
+            <div className="grid grid-cols-3 gap-5">
+              {/* Columna izquierda: tabla parseada */}
+              <div className="col-span-2 bg-white border border-line rounded-xl p-5">
+                <div className="text-sm font-semibold mb-3 text-ink-900">{npFlexxusCode ? 'Nota de Pedido Flexxus' : 'Nota de Pedido'}</div>
+                <table className="w-full text-[12.5px]">
+                  <thead><tr className="text-left text-ink-500">
+                    <th className="font-semibold pb-2">SKU</th>
+                    <th className="font-semibold pb-2">Descripción</th>
+                    <th className="font-semibold pb-2 text-right">Cant.</th>
+                    <th className="font-semibold pb-2 text-right">P. Unit. ({curSymbol})</th>
+                    <th className="font-semibold pb-2 text-right">Total ({curSymbol})</th>
+                  </tr></thead>
+                  <tbody>
+                    {npItems.filter(i => i.accepted !== false).map((it, idx) => (
+                      <tr key={it.id || idx} className="border-t border-line group">
+                        <td className="py-2 mono text-ink-700">
+                          <CatalogBadge sku={it.sku} description={it.description}/>
+                        </td>
+                        <td className="py-2">{it.description}</td>
+                        <td className="py-2 mono text-right">{it.quantity}</td>
+                        <td className="py-2 mono text-right">{it.unitPrice != null ? it.unitPrice.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+                        <td className="py-2 mono text-right font-semibold">{it.total != null ? it.total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
                   <tfoot>
-                    <tr className="bg-indigo-50 font-semibold">
-                      <td colSpan={4} className="px-3 py-2 text-right text-indigo-700">Total NP</td>
-                      <td className="px-3 py-2 text-right mono text-indigo-800">
-                        {fmtMoney(npItems.reduce((s,i) => s + (i.total||0), 0), npCurrency, 2)}
-                      </td>
-                    </tr>
+                    {npBreakdown?.subtotalNeto != null && (
+                      <tr className="border-t border-line">
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Subtotal neto</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}
+                        </td>
+                      </tr>
+                    )}
+                    {npBreakdown?.ivaAmount != null && npBreakdown.ivaAmount > 0 && (
+                      <tr>
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">IVA 21%</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {fmtMoney(npBreakdown.ivaAmount, npCurrency, 2)}
+                        </td>
+                      </tr>
+                    )}
+                    {npBreakdown?.totalPercepciones != null && npBreakdown.totalPercepciones > 0 && (
+                      <tr>
+                        <td colSpan="4" className="text-right py-1.5 text-[11px] text-ink-400">Percepciones</td>
+                        <td className="text-right py-1.5 mono text-[12px] text-ink-500">
+                          {fmtMoney(npBreakdown.totalPercepciones, npCurrency, 2)}
+                        </td>
+                      </tr>
+                    )}
+                    {(npBreakdown?.total != null) && (
+                      <tr className="border-t-2 border-ink-900">
+                        <td colSpan="4" className="text-right pt-3 font-bold">TOTAL</td>
+                        <td className="text-right pt-3 mono font-bold text-base">
+                          {fmtMoney(npBreakdown.total, npCurrency, 2)}
+                        </td>
+                      </tr>
+                    )}
                   </tfoot>
+                </table>
+              </div>
+
+              {/* Columna derecha: resumen + presupuesto vinculado */}
+              <div className="space-y-4">
+                <div className="bg-white border border-line rounded-xl p-4">
+                  <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Resumen</div>
+                  <ul className="text-[12.5px] space-y-1.5">
+                    <li className="flex justify-between"><span className="text-ink-500">Cliente</span><span className="font-medium">{cli?.name || '—'}</span></li>
+                    {npFlexxusCode && <li className="flex justify-between"><span className="text-ink-500">NP Flexxus</span><span className="mono">{npFlexxusCode}</span></li>}
+                    {npOcCliente && <li className="flex justify-between"><span className="text-ink-500">OC Cliente</span><span className="mono">{npOcCliente}</span></li>}
+                    {npBreakdown?.subtotalNeto != null && (
+                      <li className="flex justify-between"><span className="text-ink-500">Subtotal neto</span><span className="mono">{fmtMoney(npBreakdown.subtotalNeto, npCurrency, 2)}</span></li>
+                    )}
+                    {npBreakdown?.ivaAmount != null && npBreakdown.ivaAmount > 0 && (
+                      <li className="flex justify-between"><span className="text-ink-500">IVA 21%</span><span className="mono">{fmtMoney(npBreakdown.ivaAmount, npCurrency, 2)}</span></li>
+                    )}
+                    {npBreakdown?.totalPercepciones != null && npBreakdown.totalPercepciones > 0 && (
+                      <li className="flex justify-between"><span className="text-ink-500">Percepciones</span><span className="mono">{fmtMoney(npBreakdown.totalPercepciones, npCurrency, 2)}</span></li>
+                    )}
+                    {npBreakdown?.total != null && (
+                      <li className="flex justify-between border-t border-line pt-1.5 mt-0.5">
+                        <span className="font-semibold text-ink-800">Total</span>
+                        <span className="mono font-semibold">{fmtMoney(npBreakdown.total, npCurrency)}</span>
+                      </li>
+                    )}
+                    <li className="flex justify-between"><span className="text-ink-500">Ítems</span><span>{npItems.filter(i=>i.accepted!==false).length} registrados</span></li>
+                  </ul>
+                </div>
+
+                {/* Presupuesto vinculado */}
+                {linkedPresupuesto && (
+                  <div className="bg-white border border-line rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600">
+                        <Icon name="file-text" size={13}/>
+                      </div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">Presupuesto vinculado</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className="mono text-[13px] font-semibold text-ink-900">{linkedPresupuesto.code}</span>
+                      {linkedPresupuesto.flexxusCode && <Badge tone="slate"><span className="mono">{linkedPresupuesto.flexxusCode}</span></Badge>}
+                      {linkedPresupuesto.stage && <StageDot tone={STAGES_F1.find(s=>s.id===linkedPresupuesto.stage)?.tone||'gray'}/>}
+                    </div>
+                    {linkedPresupuesto.amount != null && (
+                      <div className="text-[12px] mono text-ink-500 mb-2">{fmtMoney(linkedPresupuesto.amount, linkedPresupuesto.currency || npCurrency, 2)}</div>
+                    )}
+                    <button className="btn-ghost text-[12px] py-1 px-2.5 w-full justify-center"
+                      onClick={() => { onClose(); setTimeout(()=>openModal('quoteDetail',{code: linkedPresupuesto.code}),80); }}>
+                      Ver presupuesto <Icon name="arrow-right" size={11}/>
+                    </button>
+                  </div>
                 )}
-              </table>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Tab: Nota de Pedido ── */}
-      {tab === 'np' && !isQuoteSource && (
-        <div className="p-6 space-y-5">
-          {notaPedido ? (
-            <>
-              {/* Cabecera NP */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 grid grid-cols-4 gap-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold mb-1">NP Flexxus</p>
-                  <p className="font-mono font-semibold text-indigo-800">{notaPedido.flexxusCode || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold mb-1">Nº OC Cliente</p>
-                  <p className="font-mono font-semibold text-indigo-800">{orderDetail?.clientOCCode || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold mb-1">Fecha</p>
-                  <p className="text-sm text-indigo-800">{notaPedido.createdAt ? fmtDate(notaPedido.createdAt) : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-indigo-500 font-semibold mb-1">Monto NP</p>
-                  <p className="font-mono font-semibold text-indigo-800">
-                    {fmtMoney(notaPedido.amount, npCurrency, 2)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Tabla comparativa Presupuesto vs NP */}
-              <div className="bg-white border border-line rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-line flex items-center justify-between">
-                  <span className="text-sm font-semibold text-ink-900">Ítems — Presupuesto vs Nota de Pedido</span>
-                  <span className="text-xs text-ink-400">{notaPedido.items?.length || 0} ítems en NP · {presItems.filter(i=>i.accepted).length} en presupuesto</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-[12.5px]">
-                    <thead>
-                      <tr className="bg-ink-50 text-ink-500 text-xs">
-                        <th className="px-3 py-2 text-left w-5"></th>
-                        <th className="px-3 py-2 text-left">Código</th>
-                        <th className="px-3 py-2 text-left">Descripción</th>
-                        <th className="px-3 py-2 text-right">Cant. Pres.</th>
-                        <th className="px-3 py-2 text-right">Total Pres.</th>
-                        <th className="px-3 py-2 text-right">Cant. NP</th>
-                        <th className="px-3 py-2 text-right">P.U. NP</th>
-                        <th className="px-3 py-2 text-right">Total NP</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-ink-100">
-                      {(() => {
-                        // Construir mapa de ítems NP por SKU y descripción
-                        const npBySku  = {};
-                        const npByDesc = {};
-                        for (const it of (notaPedido.items || [])) {
-                          if (it.sku) npBySku[it.sku.toUpperCase()] = it;
-                          npByDesc[it.description.toLowerCase().substring(0,40)] = it;
-                        }
-                        const npUsed = new Set();
-                        const rows = [];
-
-                        // Ítems del presupuesto
-                        for (const pi of presItems.filter(i => i.accepted !== false)) {
-                          const key = pi.sku?.toUpperCase();
-                          const dk  = pi.description.toLowerCase().substring(0,40);
-                          const ni  = (key && npBySku[key]) || npByDesc[dk] || null;
-                          if (ni) npUsed.add(ni.id);
-
-                          const estado = !ni ? 'no_compro' : pi.quantity === ni.quantity ? 'igual' : 'cant_dist';
-                          const cfg = { igual:'bg-green-50 text-green-600', cant_dist:'bg-amber-50 text-amber-600', no_compro:'bg-red-50 text-red-500' }[estado];
-                          const dot = { igual:'bg-green-500', cant_dist:'bg-amber-500', no_compro:'bg-red-400' }[estado];
-
-                          rows.push(
-                            <tr key={pi.id} className={cfg.split(' ')[0]}>
-                              <td className="px-3 py-2"><span className={`inline-block w-2 h-2 rounded-full ${dot}`}></span></td>
-                              <td className="px-3 py-2"><CatalogBadge sku={pi.sku} description={pi.description}/></td>
-                              <td className="px-3 py-2 max-w-xs truncate" title={pi.description}>{pi.description}</td>
-                              <td className="px-3 py-2 text-right font-mono">{pi.quantity ?? '—'}</td>
-                              <td className="px-3 py-2 text-right font-mono">{pi.total != null ? pi.total.toLocaleString('es-AR') : '—'}</td>
-                              <td className={`px-3 py-2 text-right font-mono font-semibold ${cfg.split(' ')[1]}`}>{ni ? ni.quantity : '—'}</td>
-                              <td className="px-3 py-2 text-right font-mono text-ink-500">{ni?.unitPrice != null ? ni.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                              <td className={`px-3 py-2 text-right font-mono font-semibold ${cfg.split(' ')[1]}`}>{ni?.total != null ? ni.total.toLocaleString('es-AR') : '—'}</td>
-                            </tr>
-                          );
-                        }
-
-                        // Ítems en NP que no estaban en presupuesto
-                        for (const ni of (notaPedido.items || [])) {
-                          if (npUsed.has(ni.id)) continue;
-                          rows.push(
-                            <tr key={ni.id} className="bg-blue-50">
-                              <td className="px-3 py-2"><span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span></td>
-                              <td className="px-3 py-2"><CatalogBadge sku={ni.sku} description={ni.description}/></td>
-                              <td className="px-3 py-2 max-w-xs truncate" title={ni.description}>{ni.description}</td>
-                              <td className="px-3 py-2 text-right text-ink-300">—</td>
-                              <td className="px-3 py-2 text-right text-ink-300">—</td>
-                              <td className="px-3 py-2 text-right font-mono font-semibold text-blue-700">{ni.quantity}</td>
-                              <td className="px-3 py-2 text-right font-mono text-ink-500">{ni.unitPrice != null ? ni.unitPrice.toLocaleString('es-AR') : '—'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-semibold text-blue-700">{ni.total != null ? ni.total.toLocaleString('es-AR') : '—'}</td>
-                            </tr>
-                          );
-                        }
-                        return rows;
-                      })()}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-ink-100 font-semibold text-sm border-t border-ink-200">
-                        <td colSpan="3" className="px-3 py-2"></td>
-                        <td className="px-3 py-2 text-right text-ink-500 text-xs">TOTAL PRES.</td>
-                        <td className="px-3 py-2 text-right font-mono">
-                          {presItems.filter(i=>i.accepted!==false).reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
-                        </td>
-                        <td colSpan="2" className="px-3 py-2 text-right text-ink-500 text-xs">TOTAL NP</td>
-                        <td className="px-3 py-2 text-right font-mono text-indigo-700">
-                          {(notaPedido.items||[]).reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR',{minimumFractionDigits:2})}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                {/* Leyenda */}
-                <div className="px-4 py-2 border-t border-line flex gap-4 text-[11px] text-ink-400">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>Igual</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>Cantidad distinta</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"></span>No compró</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>Agregado en NP</span>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="card p-10 text-center space-y-2">
-              <Icon name="file-text" size={32} className="text-ink-200 mx-auto"/>
-              <p className="text-ink-500 text-sm font-medium">Sin Nota de Pedido vinculada</p>
-              <p className="text-ink-400 text-xs">Se cargará automáticamente cuando el vendedor envíe la NP al cliente desde Flexxus.</p>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {tab === 'resumen' && (() => {
         const monto = isQuoteSource
