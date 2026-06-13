@@ -2,6 +2,68 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Cómo funciona Claude Code (para el desarrollador)
+
+Claude Code es una CLI que corre **localmente** en tu máquina. Tiene acceso directo al sistema de archivos del proyecto:
+- Lee y edita archivos directamente (no trabaja en memoria)
+- Corre comandos de shell: `git`, `npm`, `npx`, etc.
+- Hace `git commit` y `git push` al remoto desde tu máquina
+
+El flujo de trabajo típico en cada sesión:
+1. Abrís Claude Code en la carpeta del proyecto
+2. Le pedís cambios — los hace directo en los archivos locales
+3. Al terminar hace `git add + commit + push` al GitHub configurado
+
+## Setup en PC nueva
+
+### 1. Requisitos previos
+- Node.js 18+
+- Git configurado con tu usuario de GitHub
+- Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
+
+### 2. Clonar el repo
+```bash
+git clone https://github.com/sistemas451/crm-myselec.git
+cd crm-myselec
+npm install
+npx prisma generate
+```
+
+### 3. Variables de entorno
+Crear archivo `.env` en la raíz del proyecto con:
+```
+DATABASE_URL=postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require
+JWT_SECRET=...
+GMAIL_CLIENT_ID=...
+GMAIL_CLIENT_SECRET=...
+GMAIL_REFRESH_TOKEN=...
+MAIL_USER=iamyselec@gmail.com
+MAIL_PASSWORD=...
+MAIL_HOST=imap.gmail.com
+MAIL_PORT=993
+MAIL_ENCRYPTION_KEY=...
+```
+(Los valores exactos están en Railway → Variables del proyecto `crm-myselec`)
+
+### 4. Arrancar
+```bash
+npm run dev
+# Servidor en http://localhost:3000
+```
+
+### 5. Abrir Claude Code
+```bash
+# Desde la carpeta del proyecto
+claude
+```
+Claude Code lee el `CLAUDE.md` automáticamente al iniciar — ya tiene todo el contexto del proyecto.
+
+### Remotes de Git configurados
+- `origin` → `https://github.com/sistemas451/crm-myselec.git` (repo principal Myselec)
+- Si necesitás sincronizar con el repo anterior: `git remote add old https://github.com/bruscofacundo1/crm-gerenciando-canales.git`
+
+
+
 ## Commands
 
 ```bash
