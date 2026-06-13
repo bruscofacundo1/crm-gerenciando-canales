@@ -178,7 +178,8 @@ app.post('/api/quotes/:id/attachments', authMiddleware, upload.array('files', 10
       try {
         const fs = require('fs');
         const buffer = fs.readFileSync(flexxusFile.path);
-        const data = await parseFlexxusPDF(buffer);
+        const catalog = await prisma.article.findMany({ select: { code: true, description: true } });
+        const data = await parseFlexxusPDF(buffer, { catalog });
 
         if (data.npCode || data.items?.length) {
           const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
@@ -270,7 +271,8 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
       try {
         const fs = require('fs');
         const buffer = fs.readFileSync(npFile.path);
-        const data = await parseNotaPedidoPDF(buffer);
+        const catalog = await prisma.article.findMany({ select: { code: true, description: true } });
+        const data = await parseNotaPedidoPDF(buffer, { catalog });
 
         if (data.npCode || data.items?.length) {
           const updateData = {};

@@ -30,7 +30,7 @@ const NP_RE     = /^0{4,}-0*(\d+)$/;
  * @param {string} text  Texto concatenado (descripción + código)
  * @returns {{ sku: string|null, description: string }}
  */
-function extractSkuFromText(text) {
+function extractSkuFromText(text, catalog) {
   let sku = null;
   let cleanDesc = text;
   let found = false;
@@ -103,7 +103,29 @@ function extractSkuFromText(text) {
     }
   }
 
-  // 5) Código alfanumérico pegado al final
+  // 5) Lookup contra catálogo de artículos: la descripción del artículo es prefijo del texto.
+  // Va antes de Strategy 5 (alfanumérico) porque es más preciso cuando hay catálogo disponible.
+  if (!found && catalog && catalog.length > 0) {
+    const textNorm = text.toUpperCase().replace(/\s+/g, ' ').trim();
+    let bestCode = null, bestLen = 0;
+    for (const art of catalog) {
+      const descNorm = art.description.toUpperCase().replace(/\s+/g, ' ').trim();
+      if (descNorm.length >= 8 && descNorm.length > bestLen && textNorm.startsWith(descNorm)) {
+        const remainder = textNorm.slice(descNorm.length).trim();
+        if (remainder.length > 0 && remainder.length <= 25 && !/^\d+$/.test(remainder)) {
+          bestLen = descNorm.length;
+          bestCode = { code: art.code, description: art.description };
+        }
+      }
+    }
+    if (bestCode) {
+      sku = bestCode.code;
+      cleanDesc = bestCode.description;
+      found = true;
+    }
+  }
+
+  // 6) Código alfanumérico pegado al final
   if (!found) {
     const mixM = text.match(/^(.+[^A-Z])([A-Z][A-Z0-9]*\d[A-Z0-9/+\-]*)$/);
     if (mixM && mixM[2].length >= 5) {
@@ -131,7 +153,7 @@ function extractSkuFromText(text) {
  *   4. Extraer el número de ítem del final.
  *   5. Marcar NC ("NO COTIZA") con accepted=false.
  */
-function parseItems(lines) {
+function parseItems(lines, catalog) {
   const items = [];
 
   for (const line of lines) {
@@ -171,7 +193,7 @@ function parseItems(lines) {
     } else if (isNC) {
       cleanDesc = 'NO COTIZA';
     } else {
-      const extracted = extractSkuFromText(text);
+      const extracted = extractSkuFromText(text, catalog);
       sku = extracted.sku;
       cleanDesc = extracted.description;
     }
@@ -232,7 +254,7 @@ function getAdjacentUsd(lines, idx) {
  *   { npCode, cuit, clientName, date, seller, total, items }
  * Todos los campos pueden ser null si no se encontraron.
  */
-async function parseFlexxusPDF(buffer) {
+async function parseFlexxusPDF(buffer, opts) {
   const result = {
     npCode:           null,   // "PR-17680" (PR = Presupuesto)
     npRaw:            null,   // "17680"
@@ -299,7 +321,7 @@ async function parseFlexxusPDF(buffer) {
     }
 
     // ── Ítems ─────────────────────────────────────────────────────────────────
-    result.items = parseItems(lines);
+    result.items = parseItems(lines, opts && opts.catalog);
 
     // ── Breakdown de precios ──────────────────────────────────────────────────
     // IMPORTANTE: pdf-parse puede entregar la etiqueta y el valor en líneas
@@ -388,7 +410,7 @@ const NP_PEDIDO_RE = /^\d{4}-\d{7,}$/;
  *  - El PDF concatena sin espacios separadores.
  *  - El primer U$S es el TOTAL, el segundo es el precio UNITARIO.
  */
-function parseNotaPedidoItems(lines) {
+function parseNotaPedidoItems(lines, catalog) {
   // Líneas candidatas a ser descripciones puras (sin precios, con texto)
   const descCandidates = lines.filter(l =>
     !l.includes('U$S') && l.length > 8 && /[A-Za-z]/.test(l) &&
@@ -491,7 +513,7 @@ function parseNotaPedidoItems(lines) {
 
       // Cascada de 5 filtros como último recurso
       if (!fuzzyFound) {
-        const extracted = extractSkuFromText(textForCascade);
+        const extracted = extractSkuFromText(textForCascade, catalog);
         if (extracted.sku) {
           sku = extracted.sku;
           description = extracted.description;
@@ -518,7 +540,7 @@ function parseNotaPedidoItems(lines) {
  * Retorna:
  *   { npCode, npRaw, cuit, clientName, ocNumber, presupuestoRef, presupuestoNP, date, seller, total, items }
  */
-async function parseNotaPedidoPDF(buffer) {
+async function parseNotaPedidoPDF(buffer, opts) {
   const result = {
     npCode:        null,  // "NP-20728" — número de la Nota de Pedido (NP = Nota de Pedido)
     npRaw:         null,  // "20728"
@@ -637,7 +659,7 @@ async function parseNotaPedidoPDF(buffer) {
     }
 
     // ── Ítems ─────────────────────────────────────────────────────────────────
-    result.items = parseNotaPedidoItems(lines);
+    result.items = parseNotaPedidoItems(lines, opts && opts.catalog);
 
   } catch (err) {
     console.error('parseNotaPedidoPDF error:', err.message);

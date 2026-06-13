@@ -8,6 +8,15 @@ const { sendMail } = require('./mailer');
 
 const prisma = require('../db');
 
+// ── Catálogo de artículos (cacheado en memoria por proceso) ──────────────────
+let _articleCatalog = null;
+async function getArticleCatalog() {
+  if (!_articleCatalog) {
+    _articleCatalog = await prisma.article.findMany({ select: { code: true, description: true } });
+  }
+  return _articleCatalog;
+}
+
 // ── Descifrado de passwords IMAP ─────────────────────────────────────────────
 const MAIL_ENC_KEY = process.env.MAIL_ENCRYPTION_KEY;
 function decryptPassword(stored) {
@@ -567,7 +576,7 @@ async function processNotaPedido(parsed, mailData, att, imap) {
   // Parsear PDF
   let npData = null;
   try {
-    npData = await parseNotaPedidoPDF(att.content);
+    npData = await parseNotaPedidoPDF(att.content, { catalog: await getArticleCatalog() });
     console.log(`   📄 NP: ${npData.npCode} | Cliente: ${npData.clientName} | CUIT: ${npData.cuit} | Pres.Ref: ${npData.presupuestoNP || npData.presupuestoRef || '—'}`);
   } catch (e) {
     console.error('   ❌ Error parseando Nota de Pedido:', e.message);
@@ -823,7 +832,7 @@ async function processSentMail(parsed, mailData, imap) {
     // Intentar recuperar ítems si faltaban
     if (existing.mailType === 'PRESUPUESTO' && existing._count.items === 0) {
       try {
-        const fd = await parseFlexxusPDF(flexxusAtt.content);
+        const fd = await parseFlexxusPDF(flexxusAtt.content, { catalog: await getArticleCatalog() });
         if (fd?.items?.length) {
           await prisma.quoteItem.createMany({
             data: fd.items.map((item, i) => ({
@@ -862,7 +871,7 @@ async function processSentMail(parsed, mailData, imap) {
   // Parsear PDF Flexxus
   let flexxusData = null;
   try {
-    flexxusData = await parseFlexxusPDF(flexxusAtt.content);
+    flexxusData = await parseFlexxusPDF(flexxusAtt.content, { catalog: await getArticleCatalog() });
     console.log(`   📄 Flexxus (enviado): ${flexxusData.npCode} | CUIT: ${flexxusData.cuit} | ${flexxusData.clientName}`);
   } catch (e) {
     console.error('   ❌ Error parseando PDF Flexxus (enviado):', e.message);
@@ -1207,7 +1216,7 @@ async function processEmail(mailData, imap) {
         const flexxusAtt = realAtts.find(a => isFlexxusPDF(a));
         if (flexxusAtt) {
           try {
-            const fd = await parseFlexxusPDF(flexxusAtt.content);
+            const fd = await parseFlexxusPDF(flexxusAtt.content, { catalog: await getArticleCatalog() });
             if (fd?.items?.length) {
               await prisma.quoteItem.createMany({
                 data: fd.items.map((item, i) => ({
@@ -1291,7 +1300,7 @@ async function processEmail(mailData, imap) {
     let flexxusData  = null;
     if (flexxusAtt) {
       try {
-        flexxusData = await parseFlexxusPDF(flexxusAtt.content);
+        flexxusData = await parseFlexxusPDF(flexxusAtt.content, { catalog: await getArticleCatalog() });
         console.log(`   📄 Flexxus detectado: ${flexxusData.npCode} | CUIT: ${flexxusData.cuit} | ${flexxusData.clientName}`);
       } catch (e) {
         console.error('   ❌ Error parseando PDF Flexxus:', e.message);
