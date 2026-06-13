@@ -57,11 +57,13 @@ function extractSkuFromText(text) {
     found = true;
   }
 
-  // 2) Código contenido en otra posición de la descripción
+  // 2) Código contenido como palabra suelta más atrás en la descripción
+  // Requiere 2+ mayúsculas consecutivas (evita ratios "5/8" y specs de tamaño "1X35")
   if (!found) {
     for (let len = 3; len <= Math.min(18, text.length - 3); len++) {
       const candidate = text.slice(-len).trim();
       if (!candidate || candidate.length < 3) continue;
+      if (!/[A-Z]{2}/.test(candidate)) continue;
       const before = text.slice(0, -len).trim();
       const re = new RegExp('(?:^|\\s)' + candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:\\s|$)');
       if (re.test(before)) {
@@ -104,7 +106,7 @@ function extractSkuFromText(text) {
   // 5) Código alfanumérico pegado al final
   if (!found) {
     const mixM = text.match(/^(.+[^A-Z])([A-Z][A-Z0-9]*\d[A-Z0-9/+\-]*)$/);
-    if (mixM && mixM[2].length >= 3) {
+    if (mixM && mixM[2].length >= 5) {
       sku = mixM[2];
       cleanDesc = mixM[1].trim();
       found = true;
@@ -112,7 +114,7 @@ function extractSkuFromText(text) {
   }
 
   if (sku) {
-    cleanDesc = cleanDesc.replace(/[\s.\-]+$/, '').trim();
+    cleanDesc = cleanDesc.replace(/[\s.\-\/]+$/, '').trim();
   }
   return { sku, description: cleanDesc };
 }
@@ -421,6 +423,16 @@ function parseNotaPedidoItems(lines) {
       const skuM = afterDesc.match(/^\d{0,2}?(\d{6}-\d{3})/);
       if (skuM) {
         sku = skuM[1].toUpperCase();
+        // Si la descripción termina en dígitos, pueden ser el prefijo del SKU
+        // (ej: desc termina en "/1" y SKU real es "1893710-000" no "893710-000")
+        const trailingDigits = description.match(/(\d+)$/)?.[1] || '';
+        if (trailingDigits) {
+          const extended = trailingDigits + sku;
+          if (/^\d{4,}-\d{2,}$/.test(extended)) {
+            sku = extended;
+            description = description.slice(0, -trailingDigits.length).replace(/[\s.\-\/]+$/, '').trim();
+          }
+        }
       } else if (afterDesc.length > 2 && /[A-Za-z]/.test(afterDesc)) {
         // Código alfanumérico (ej "KIT ALPUB 4/4 4,550") — quitar qty+remitida del final
         let code = afterDesc;
@@ -440,12 +452,50 @@ function parseNotaPedidoItems(lines) {
       }
     }
 
-    // Cascada de 5 filtros solo cuando no hubo matchDesc (evita extraer números basura)
+    // Fallback cuando no hubo matchDesc: stripear qty+remitida, luego fuzzy + cascada
     if (!sku && !matchDesc) {
-      const extracted = extractSkuFromText(beforePrices);
-      if (extracted.sku) {
-        sku = extracted.sku;
-        description = extracted.description;
+      // Stripear qty+remitida del final (igual que Strategy A alfanumérica)
+      let textStripped = beforePrices;
+      if (qty > 0) {
+        const reQty = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
+        textStripped = textStripped.replace(reQty, '').replace(/[,.\s]+$/, '').trim();
+      }
+      const textForCascade = textStripped || beforePrices;
+
+      // Fuzzy match: candidato con mayor prefijo común (>50%) como ancla de descripción
+      let fuzzyFound = false;
+      if (descCandidates.length > 0) {
+        let bestCand = null, bestPLen = 0;
+        for (const d of descCandidates) {
+          let p = 0;
+          while (p < d.length && p < textForCascade.length && d[p] === textForCascade[p]) p++;
+          if (p > bestPLen) { bestPLen = p; bestCand = d; }
+        }
+        if (bestCand && bestPLen > bestCand.length * 0.5) {
+          const lastWord = bestCand.match(/\S+$/)?.[0];
+          if (lastWord) {
+            const searchFrom = Math.max(0, bestPLen - lastWord.length);
+            const pos = textForCascade.indexOf(lastWord, searchFrom);
+            if (pos >= 0) {
+              const descEnd = pos + lastWord.length;
+              const codeCandidate = textForCascade.substring(descEnd).trim();
+              if (codeCandidate) {
+                description = textForCascade.substring(0, descEnd).trim();
+                sku = codeCandidate;
+                fuzzyFound = true;
+              }
+            }
+          }
+        }
+      }
+
+      // Cascada de 5 filtros como último recurso
+      if (!fuzzyFound) {
+        const extracted = extractSkuFromText(textForCascade);
+        if (extracted.sku) {
+          sku = extracted.sku;
+          description = extracted.description;
+        }
       }
     }
 
