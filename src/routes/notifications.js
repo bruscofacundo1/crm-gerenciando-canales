@@ -337,10 +337,14 @@ router.get('/inbox', authMiddleware, async (req, res) => {
             mailType: 'PRESUPUESTO',
             stage: 'enviado',
             isDraft: false,
-            createdAt: { lte: noResponseCutoff },
+            // Usar stageChangedAt (cuándo se envió) si existe, sino createdAt como fallback
+            OR: [
+              { stageChangedAt: { not: null, lte: noResponseCutoff } },
+              { stageChangedAt: null, createdAt: { lte: noResponseCutoff } },
+            ],
           },
           select: {
-            id: true, code: true, flexxusCode: true, amount: true, createdAt: true,
+            id: true, code: true, flexxusCode: true, amount: true, createdAt: true, stageChangedAt: true,
             client: { select: { id: true, name: true, email: true } },
           },
           take: 15,
@@ -374,7 +378,7 @@ router.get('/inbox', authMiddleware, async (req, res) => {
                 clientName: q.client?.name,
                 clientEmail: q.client?.email,
                 amount: q.amount,
-                daysSent: Math.floor((now - new Date(q.createdAt)) / 86400000),
+                daysSent: Math.floor((now - new Date(q.stageChangedAt || q.createdAt)) / 86400000),
                 canRemind: !!q.client?.email,
               })),
             });
