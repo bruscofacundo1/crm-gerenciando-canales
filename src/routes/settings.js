@@ -143,4 +143,17 @@ router.put('/feedback-notify-users', authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /api/settings/clear-transactional — borra quotes y orders (solo ADMIN/DEV)
+router.delete('/clear-transactional', authMiddleware, async (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo administradores.' });
+  try {
+    const o = await prisma.order.deleteMany({});
+    await prisma.quote.updateMany({ data: { linkedQuoteId: null } });
+    const q = await prisma.quote.deleteMany({});
+    res.json({ ok: true, ordersDeleted: o.count, quotesDeleted: q.count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
