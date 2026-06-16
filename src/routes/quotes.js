@@ -453,21 +453,39 @@ router.get('/:id/detail', authMiddleware, async (req, res) => {
     });
     if (!quote) return res.status(404).json({ error: 'No encontrada' });
 
-    // ── Historial unificado: mezclar actividades de ambas quotes ──────────
-    const ownActivities = (quote.activities || []).map(a => ({ ...a, _fromCode: quote.code, _fromType: quote.mailType }));
-    const linked = quote.linkedQuote || quote.linkedBy?.[0];
-    const linkedActivities = linked
-      ? (linked.activities || []).map(a => ({ ...a, _fromCode: linked.code, _fromType: linked.mailType }))
-      : [];
-    const unifiedHistory = [...ownActivities, ...linkedActivities]
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-    // ── Orden de Compra vinculada (para mostrar su etapa en el detalle del presupuesto) ─
+    // ── Orden de Compra vinculada ─────────────────────────────────────────
     const linkedOrder = await prisma.order.findFirst({
       where: { fromQuoteId: quote.id },
-      select: { id: true, code: true, stage: true, createdAt: true },
+      select: {
+        id: true, code: true, stage: true, createdAt: true,
+        activities: { include: { user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+
+    // ── Historial unificado: mezclar actividades de TODOS los documentos vinculados ──
+    // PRESUPUESTO: linkedQuote(SOLICITUD) + linkedBy[](NP) + linkedOrder(OC)
+    // SOLICITUD:   linkedQuote(PRESUPUESTO)
+    // NP Quote:    linkedQuote(PRESUPUESTO)
+    const ownActivities = (quote.activities || [])
+      .map(a => ({ ...a, _fromCode: quote.code, _fromType: quote.mailType }));
+
+    const linkedQuoteActivities = (quote.linkedQuote?.activities || [])
+      .map(a => ({ ...a, _fromCode: quote.linkedQuote.code, _fromType: quote.linkedQuote.mailType }));
+
+    const linkedByActivities = (quote.linkedBy || []).flatMap(lb =>
+      (lb.activities || []).map(a => ({ ...a, _fromCode: lb.code, _fromType: lb.mailType }))
+    );
+
+    const linkedOrderActivities = (linkedOrder?.activities || [])
+      .map(a => ({ ...a, _fromCode: linkedOrder.code, _fromType: 'ORDER' }));
+
+    const unifiedHistory = [
+      ...ownActivities,
+      ...linkedQuoteActivities,
+      ...linkedByActivities,
+      ...linkedOrderActivities,
+    ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     res.json({ ...quote, unifiedHistory, linkedOrder: linkedOrder || null });
   } catch (err) {

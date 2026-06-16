@@ -1705,7 +1705,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
                 const isLast = i === history.length - 1;
                 // ¿Este evento viene de la quote vinculada?
                 const isFromLinked = a._fromCode && a._fromCode !== q.code;
-                const linkedTypeTone = a._fromType === 'SOLICITUD' ? 'sky' : a._fromType === 'PRESUPUESTO' ? 'blue' : 'gray';
+                const linkedTypeTone = a._fromType === 'SOLICITUD' ? 'sky' : a._fromType === 'PRESUPUESTO' ? 'blue' : a._fromType === 'NOTA_PEDIDO' ? 'purple' : a._fromType === 'ORDER' ? 'amber' : 'gray';
                 return (
                   <div key={`${a.id||i}-${a._fromCode||''}`} className="flex gap-3">
                     <div className="flex flex-col items-center">
