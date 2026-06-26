@@ -95,10 +95,10 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     const [totalQuotes, sentQuotes, activeOrders, deliveredOrders, activeNPs, deliveredNPs] = await Promise.all([
       prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, stage: { notIn: ['aceptada', 'rechazada'] } } }),
       prisma.quote.count({ where: { ...base, stage: 'enviado' } }),
-      prisma.order.count({ where: { stage: { notIn: ['entregada'] } } }),
-      prisma.order.count({ where: { stage: 'entregada' } }),
-      prisma.quote.count({ where: { mailType: 'NOTA_PEDIDO', stage: { notIn: ['entregada'] } } }),
-      prisma.quote.count({ where: { mailType: 'NOTA_PEDIDO', stage: 'entregada' } }),
+      prisma.order.count({ where: { ...base, stage: { notIn: ['entregada'] } } }),
+      prisma.order.count({ where: { ...base, stage: 'entregada' } }),
+      prisma.quote.count({ where: { ...base, mailType: 'NOTA_PEDIDO', stage: { notIn: ['entregada'] } } }),
+      prisma.quote.count({ where: { ...base, mailType: 'NOTA_PEDIDO', stage: 'entregada' } }),
     ]);
 
     const [totalAmount, montoConfirmado, totalAmountARS, montoConfirmadoARS] = await Promise.all([

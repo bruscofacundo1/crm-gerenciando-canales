@@ -2,6 +2,7 @@ const express = require('express');
 const multer  = require('multer');
 const {authMiddleware, isAdmin } = require('../middleware/auth');
 const { parseNotaPedidoPDF } = require('../services/flexxusParser');
+const { onStageChange } = require('../services/notifier');
 const prisma = require('../db');
 
 const router  = express.Router();
@@ -422,6 +423,8 @@ router.patch('/:id/stage', authMiddleware, async (req, res) => {
         orderId: order.id,
       },
     });
+
+    onStageChange(order.id, oldStage, stage).catch(() => {});
 
     res.json(updated);
   } catch (err) {

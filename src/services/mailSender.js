@@ -86,14 +86,14 @@ async function getSenderAccount() {
     } catch (_) {}
   }
 
-  // 4. AppSetting DB
+  // 4. AppSetting DB — contraseñas encriptadas con AES-256-GCM
   try {
     const setting = await prisma.appSetting.findUnique({ where: { key: 'mail_accounts' } });
     if (setting?.value) {
       const accounts = JSON.parse(setting.value);
       if (Array.isArray(accounts) && accounts.length > 0) {
         const acc = accounts[0];
-        return { user: acc.user, password: acc.password, smtp: smtpConfigForEmail(acc.user) };
+        return { user: acc.user, password: decryptPassword(acc.password), smtp: smtpConfigForEmail(acc.user) };
       }
     }
   } catch (_) {}
@@ -268,7 +268,8 @@ async function getTransportForEmail(email, fromName) {
       envAccounts.push({ user: process.env.MAIL_USER, password: process.env.MAIL_PASSWORD });
     }
     const setting = await prisma.appSetting.findUnique({ where: { key: 'mail_accounts' } });
-    const dbAccounts = setting?.value ? JSON.parse(setting.value) : [];
+    const dbAccountsRaw = setting?.value ? JSON.parse(setting.value) : [];
+    const dbAccounts = dbAccountsRaw.map(a => ({ ...a, password: decryptPassword(a.password) }));
     const allAccounts = [...envAccounts, ...dbAccounts];
 
     const account = allAccounts.find(a => a.user.toLowerCase() === normalized);
@@ -333,8 +334,10 @@ async function sendQuoteEmail(quoteId, opts) {
   const quote = await prisma.quote.findUnique({ where: { id: quoteId }, select: { stage: true } });
   let stageAdvanced = false;
   if (quote && STAGES_TO_ADVANCE.includes(quote.stage)) {
+    const fudSetting = await prisma.appSetting.findUnique({ where: { key: 'follow_up_days' } });
+    const fudDays = Math.max(1, parseInt(fudSetting?.value || '4'));
     const followUpDate = new Date();
-    followUpDate.setDate(followUpDate.getDate() + 4); // alerta en 4 días si no hay respuesta
+    followUpDate.setDate(followUpDate.getDate() + fudDays);
     await prisma.quote.update({ where: { id: quoteId }, data: { stage: 'enviado', followUpDate } });
     await prisma.activity.create({
       data: {

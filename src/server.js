@@ -86,8 +86,9 @@ app.use('/uploads', (req, res, next) => {
 }, express.static(path.join(__dirname, '..', 'uploads')));
 
 // API Routes
-app.use('/api/auth/login',          authLimiter);
+app.use('/api/auth/login',           authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/auth/register',        authLimiter);
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/users',         require('./routes/users'));
 app.use('/api/quotes',        require('./routes/quotes'));

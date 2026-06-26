@@ -7,7 +7,7 @@ const router = express.Router();
 const MAX_LOGS = 500; // cuando se supera este umbral se muestra el botón de exportar
 
 // GET /api/logs/logins — lista logs de ingreso (admin only)
-router.get('/logins', authMiddleware, requireRole('ADMIN'), async (req, res) => {
+router.get('/logins', authMiddleware, requireRole('ADMIN', 'DEVELOPER'), async (req, res) => {
   try {
     const { from, to, email, result, page = '1' } = req.query;
     const PAGE_SIZE = 50;
@@ -50,7 +50,7 @@ router.get('/logins', authMiddleware, requireRole('ADMIN'), async (req, res) => 
 });
 
 // GET /api/logs/logins/export — descarga CSV completo (admin only)
-router.get('/logins/export', authMiddleware, requireRole('ADMIN'), async (req, res) => {
+router.get('/logins/export', authMiddleware, requireRole('ADMIN', 'DEVELOPER'), async (req, res) => {
   try {
     const logs = await prisma.loginLog.findMany({
       include: { user: { select: { name: true } } },

@@ -32,7 +32,7 @@ async function resolveRecipients(rule, seller) {
   }
   if (rule.sendTo === 'ADMIN' || rule.sendTo === 'BOTH') {
     const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN', active: true },
+      where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
       select: { email: true },
     });
     admins.forEach(a => { if (!emails.includes(a.email)) emails.push(a.email); });
@@ -283,7 +283,7 @@ async function runWeeklyReport() {
     });
 
     const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN', active: true },
+      where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
       select: { email: true, name: true },
     });
     if (!admins.length) return;

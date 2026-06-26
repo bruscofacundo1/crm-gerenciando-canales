@@ -1165,7 +1165,7 @@ router.post('/:id/send-email', authMiddleware, async (req, res) => {
       },
     });
 
-    const STAGES_TO_ADVANCE = ['asignada', 'armado', 'revision', 'presupuestado'];
+    const STAGES_TO_ADVANCE = ['asignada', 'armado', 'revision', 'presupuestado', 'recibida', 'oferta', 'proveedor'];
     const quoteForStage = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { stage: true } });
     let stageAdvanced = false;
     if (quoteForStage && STAGES_TO_ADVANCE.includes(quoteForStage.stage)) {

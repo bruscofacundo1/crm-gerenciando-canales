@@ -385,6 +385,43 @@ router.get('/inbox', authMiddleware, async (req, res) => {
           }
         }
       }
+    } else if (role === 'LOGISTICA') {
+      // 1. Etapas de OC excedidas (todas las órdenes, sin filtro de vendedor)
+      if (sysOverdue && userInappPref(prefs, 'overdue_stages') && !isDismissed('overdue_stages')) {
+        const overdueResult = await _getOverdueItems(prisma, now, null, lastCheck);
+        // Filtrar solo items de órdenes (kind === 'order')
+        const orderItems = overdueResult.items.filter(i => i.kind === 'order');
+        if (orderItems.length > 0) {
+          const byStage = {};
+          orderItems.forEach(i => { byStage[i.stage] = (byStage[i.stage] || 0) + 1; });
+          const nc = lastCheck ? orderItems.filter(i => i.becameOverdueAt > lastCheck).length : 0;
+          const stageDesc = _formatByStage(byStage);
+          alerts.push({
+            id: 'overdue-stages', type: 'OVERDUE_STAGES', severity: 'medium', icon: 'clock-alert',
+            title: nc > 0
+              ? `${nc} orden${nc > 1 ? 'es' : ''} nueva${nc > 1 ? 's' : ''} con etapa vencida`
+              : `${orderItems.length} orden${orderItems.length > 1 ? 'es' : ''} con etapa vencida`,
+            description: stageDesc || 'Órdenes que superaron el tiempo máximo en su etapa.',
+            action: { label: 'Ver órdenes', view: 'orders' },
+            count: orderItems.length,
+            newCount: nc,
+            dismissable: true,
+            items: orderItems.slice(0, 5).map(i => ({ id: i.id, code: i.code, clientName: i.clientName, stage: i.stage })),
+          });
+        }
+      }
+
+      // 2. OCs en etapa inicial (pendientes de procesar)
+      const pendingOrders = await prisma.order.count({
+        where: { stage: { notIn: ['entregada'] } },
+      });
+      if (pendingOrders > 0) alerts.push({
+        id: 'pending-orders', type: 'PENDING_ORDERS', severity: 'low', icon: 'clipboard-list',
+        title: `${pendingOrders} orden${pendingOrders > 1 ? 'es' : ''} en curso`,
+        description: 'Órdenes de compra activas en el tablero de logística.',
+        action: { label: 'Ver órdenes', view: 'orders' },
+        count: pendingOrders,
+      });
     }
 
     res.json(alerts);
