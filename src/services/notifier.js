@@ -24,18 +24,32 @@ function buildCtx(quote, client, seller) {
   };
 }
 
-// Resuelve los emails de destino según la regla y el contexto
-async function resolveRecipients(rule, seller) {
+// Devuelve true si el usuario tiene activada la pref de email para esa clave
+function userEmailPref(notificationPrefs, key) {
+  const prefs = notificationPrefs;
+  if (!prefs || typeof prefs !== 'object') return true;
+  const emailPrefs = prefs.email;
+  if (!emailPrefs || typeof emailPrefs !== 'object') return true;
+  return emailPrefs[key] !== false;
+}
+
+// Resuelve los emails de destino según la regla, el contexto y las prefs personales
+async function resolveRecipients(rule, seller, prefKey = 'stage_alert') {
   const emails = [];
   if (rule.sendTo === 'SELLER' || rule.sendTo === 'BOTH') {
-    if (seller?.email) emails.push(seller.email);
+    if (seller?.email) {
+      const sellerFull = await prisma.user.findUnique({ where: { id: seller.id }, select: { notificationPrefs: true } });
+      if (userEmailPref(sellerFull?.notificationPrefs, prefKey)) emails.push(seller.email);
+    }
   }
   if (rule.sendTo === 'ADMIN' || rule.sendTo === 'BOTH') {
     const admins = await prisma.user.findMany({
       where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
-      select: { email: true },
+      select: { email: true, notificationPrefs: true },
     });
-    admins.forEach(a => { if (!emails.includes(a.email)) emails.push(a.email); });
+    admins.forEach(a => {
+      if (userEmailPref(a.notificationPrefs, prefKey) && !emails.includes(a.email)) emails.push(a.email);
+    });
   }
   return emails;
 }
@@ -185,8 +199,24 @@ async function runStageAlerts() {
       });
     };
 
-    for (const q of allQuotes) addToSeller(q, q, 'quotes');
-    for (const o of allOrders) addToSeller(o, o, 'orders');
+    // Cargar prefs de todos los vendedores involucrados para filtrar por pref email
+    const involvedSellerIds = [...new Set([...allQuotes, ...allOrders].map(i => i.sellerId).filter(Boolean))];
+    const sellerPrefs = {};
+    if (involvedSellerIds.length) {
+      const sellers = await prisma.user.findMany({
+        where: { id: { in: involvedSellerIds } },
+        select: { id: true, notificationPrefs: true },
+      });
+      sellers.forEach(s => { sellerPrefs[s.id] = s.notificationPrefs; });
+    }
+
+    const addToSellerFiltered = (item, kind) => {
+      if (item.sellerId && !userEmailPref(sellerPrefs[item.sellerId], 'stage_alert')) return;
+      addToSeller(item, item, kind);
+    };
+
+    for (const q of allQuotes) addToSellerFiltered(q, 'quotes');
+    for (const o of allOrders) addToSellerFiltered(o, 'orders');
 
     const { sendMail } = require('./mailer');
 
@@ -282,10 +312,10 @@ async function runWeeklyReport() {
       create: { key: 'weekly_report_last_sent', value: now.toISOString() },
     });
 
-    const admins = await prisma.user.findMany({
+    const admins = (await prisma.user.findMany({
       where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
-      select: { email: true, name: true },
-    });
+      select: { email: true, name: true, notificationPrefs: true },
+    })).filter(a => userEmailPref(a.notificationPrefs, 'weekly_report'));
     if (!admins.length) return;
 
     // ── Calcular rango semana actual vs semana anterior ─────────────────────

@@ -288,7 +288,10 @@ router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
     const data = {};
     if (name)  data.name  = name;
     if (email) data.email = email;
-    if (role)  data.role  = role;
+    if (role) {
+      data.role = role;
+      data.passwordChangedAt = new Date(); // invalida JWT con el rol anterior → re-login obligatorio
+    }
     if (zone !== undefined) data.zone = zone || null;
     if (password) {
       data.password = await bcrypt.hash(password, 10);
