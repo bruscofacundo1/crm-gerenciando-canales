@@ -120,7 +120,7 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       }),
     ]);
 
-    const PRESUPUESTO_ONLY = { mailType: { in: ['PRESUPUESTO', null] }, NOT: { mailType: 'SOLICITUD' } };
+    const PRESUPUESTO_ONLY = { OR: [{ mailType: 'PRESUPUESTO' }, { mailType: null }] };
     const [accepted, totalInPeriod] = await Promise.all([
       prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY, stage: 'aceptada' } }),
       prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY } }),
