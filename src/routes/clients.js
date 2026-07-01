@@ -235,6 +235,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         city: city||null, province: province||null, zone: zone||null,
         activity: activity||null, defaultSellerId: sellerId,
         postalCode: postalCode||null,
+        legacySellerName: sellerId ? null : undefined,
       },
       include: { defaultSeller: { select: { id: true, name: true } } },
     });
@@ -499,6 +500,7 @@ router.post('/sync', authMiddleware, async (req, res) => {
           emailDomain:     r.emailDomain,
           postalCode:      r.postalCode,
           defaultSellerId: defaultSellerId,
+          legacySellerName: defaultSellerId ? null : (r.vendorName || null),
         };
 
         const client = await prisma.client.upsert({

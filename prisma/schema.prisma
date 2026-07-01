@@ -87,6 +87,7 @@ model Client {
   activity       String?                    // Tipo de actividad
   defaultSellerId String?
   defaultSeller  User?    @relation("DefaultSeller", fields: [defaultSellerId], references: [id])
+  legacySellerName String?                  // Nombre de vendedor del XLS que no matcheó con ningún usuario real
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
 

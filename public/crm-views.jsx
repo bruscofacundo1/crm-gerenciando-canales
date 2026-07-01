@@ -1152,6 +1152,7 @@ function Clients({ readonly=false }) {
         cuit: c.cuit || '', city: c.city || '', prov: c.province || '',
         zone: c.zone || '', activity: c.activity || '',
         seller: c.defaultSellerId || '', sellerName: c.defaultSeller?.name || '',
+        legacySellerName: c.legacySellerName || '',
         email: c.emailPrimary || c.email || '', phone: c.phone || '', address: c.address || '',
       }));
       setClients(mapped);
@@ -1301,7 +1302,15 @@ function Clients({ readonly=false }) {
                       <div className="text-[13px] font-semibold text-ink-900 truncate">{c.name}</div>
                       <div className="text-[11px] text-ink-500 truncate">{c.city}, {c.prov}</div>
                       <div className="text-[10.5px] text-ink-500 mt-1.5 flex items-center gap-1.5">
-                        <Avatar name={s?.name||'?'} size={14}/><span>{s?.name?.split(' ')?.[0]||'—'}</span>
+                        {s ? (
+                          <><Avatar name={s.name} size={14}/><span>{s.name.split(' ')[0]}</span></>
+                        ) : c.legacySellerName ? (
+                          <span className="text-amber-600 flex items-center gap-1" title={`"${c.legacySellerName}" no coincide con ningún usuario activo — asignar vendedor`}>
+                            <Icon name="alert-triangle" size={11}/>{c.legacySellerName}
+                          </span>
+                        ) : (
+                          <span>—</span>
+                        )}
                         <span className="text-ink-300">·</span>
                         <span className="mono">{c.code}</span>
                       </div>
@@ -1403,7 +1412,21 @@ function Clients({ readonly=false }) {
             <Field label="Actividad" value={cli.activity}/>
             <Field label="Zona" value={cli.zone}/>
             <Field label="Vendedor asignado">
-              <div className="flex items-center gap-2"><Avatar name={seller?.name||'?'} size={20}/>{seller?.name||'—'}</div>
+              {seller ? (
+                <div className="flex items-center gap-2"><Avatar name={seller.name} size={20}/>{seller.name}</div>
+              ) : cli.legacySellerName ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-[12px] flex items-center gap-1.5">
+                    <Icon name="alert-triangle" size={12}/>
+                    "{cli.legacySellerName}" (sin usuario asignado)
+                  </span>
+                  {!readonly && (
+                    <button className="text-[11px] text-brand hover:underline" onClick={()=>openModal('editClient', { clientId: cli.id })}>
+                      Asignar
+                    </button>
+                  )}
+                </div>
+              ) : '—'}
             </Field>
             <Field label="Email">
               {cliEmails.length > 0 ? (
