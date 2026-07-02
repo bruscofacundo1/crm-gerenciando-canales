@@ -132,7 +132,7 @@ router.post('/create-np', authMiddleware, memUpload.single('file'), async (req, 
       const filepath = path.join(UPLOADS_DIR_NP, filename);
       fs.writeFileSync(filepath, req.file.buffer);
       await prisma.attachment.create({
-        data: { filename, path: filepath, size: req.file.size, mimeType: req.file.mimetype, quoteId: quote.id },
+        data: { filename, originalName: req.file.originalname, path: filepath, size: req.file.size, mimeType: req.file.mimetype, quoteId: quote.id },
       });
     }
 

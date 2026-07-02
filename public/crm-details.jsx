@@ -623,7 +623,7 @@ function SendEmailModal({ quote, attachments, onClose, onSent }) {
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] ${pdfAtt ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
             <Icon name={pdfAtt ? 'paperclip' : 'alert-circle'} size={13} className="shrink-0"/>
             {pdfAtt
-              ? <span><strong>Adjunto:</strong> {pdfAtt.filename}</span>
+              ? <span><strong>Adjunto:</strong> {pdfAtt.originalName || pdfAtt.filename.replace(/^[0-9a-f-]{36}-(\d{13}-)?/i, '')}</span>
               : <span>Sin adjunto PDF — el presupuesto no tiene ningún PDF adjunto</span>
             }
           </div>
@@ -1645,13 +1645,14 @@ function QuoteDetail({ code, onClose, canReassign }) {
               const ext = extOf(a.filename, a.mimeType);
               const isPdf = ext === 'pdf';
               const fileUrl = authUrl(`/uploads/attachments/${a.filename}`);
+              const displayName = a.originalName || a.filename.replace(/^[0-9a-f-]{36}-(\d{13}-)?/i, '');
               return (
                 <div key={a.id} className="bg-white border border-line rounded-xl p-3 flex items-center gap-3">
                   <div className={cx('w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-[11px] shrink-0', extBg(ext))}>
                     {ext.toUpperCase().slice(0,4)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium text-ink-900 truncate">{a.filename}</div>
+                    <div className="text-[13px] font-medium text-ink-900 truncate">{displayName}</div>
                     <div className="text-[11px] text-ink-500">
                       {fmtBytes(a.size)}{a.size ? ' · ' : ''}{fmtDate(a.createdAt)}
                     </div>
@@ -1659,13 +1660,13 @@ function QuoteDetail({ code, onClose, canReassign }) {
                   <div className="flex items-center gap-1 shrink-0">
                     {isPdf && (
                       <button
-                        onClick={() => setPdfPreview({ url: fileUrl, filename: a.filename })}
+                        onClick={() => setPdfPreview({ url: fileUrl, filename: displayName })}
                         className="h-8 px-2.5 rounded-lg hover:bg-surface text-ink-500 text-[12px] font-medium flex items-center gap-1"
                         title="Ver PDF">
                         <Icon name="eye" size={13}/>Ver
                       </button>
                     )}
-                    <a href={fileUrl} download={a.filename}
+                    <a href={fileUrl} download={displayName}
                       className="w-8 h-8 rounded-lg hover:bg-surface text-ink-500 flex items-center justify-center"
                       title="Descargar">
                       <Icon name="download" size={14}/>
@@ -1694,7 +1695,7 @@ function QuoteDetail({ code, onClose, canReassign }) {
 
       {/* Modal preview PDF */}
       {pdfPreview && (() => {
-        const pdfDisplayName = (pdfPreview.filename || '').replace(/^[0-9a-f-]{36}-\d{13}-/i, '');
+        const pdfDisplayName = pdfPreview.filename || '';
         return (
           <div className="fixed inset-0 z-[200] flex flex-col bg-black/80" onClick={() => setPdfPreview(null)}>
             <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{background:'#004669'}} onClick={e => e.stopPropagation()}>
@@ -2921,23 +2922,24 @@ function OrderDetail({ code, onClose, canReassign }) {
               {attachments.map((a, i) => {
                 const ext = extOf(a.filename);
                 const fileUrl = authUrl(`/uploads/attachments/${a.filename}`);
+                const displayName = a.originalName || a.filename.replace(/^[0-9a-f-]{36}-(\d{13}-)?/i, '');
                 return (
                   <div key={a.id || i} className="flex items-center gap-3 p-3 border border-line rounded-xl hover:bg-surface">
                     <span className={cx('w-8 h-8 rounded-lg text-white text-[10px] font-bold inline-flex items-center justify-center uppercase shrink-0', extBg(ext))}>
                       {ext}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-ink-900 truncate">{a.filename}</div>
+                      <div className="text-[13px] font-medium text-ink-900 truncate">{displayName}</div>
                       <div className="text-[11px] text-ink-400">{fmtBytes(a.size)}{a.createdAt ? ` · ${fmtDate(a.createdAt)}` : ''}</div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {ext === 'pdf' && (
                         <button className="btn-ghost text-xs py-1 px-2"
-                          onClick={() => setPdfPreview({ url: fileUrl, filename: a.filename })}>
+                          onClick={() => setPdfPreview({ url: fileUrl, filename: displayName })}>
                           <Icon name="eye" size={12}/>Ver
                         </button>
                       )}
-                      <a href={fileUrl} download={a.filename} className="btn-ghost text-xs py-1 px-2">
+                      <a href={fileUrl} download={displayName} className="btn-ghost text-xs py-1 px-2">
                         <Icon name="download" size={12}/>Descargar
                       </a>
                       <button
@@ -2958,7 +2960,7 @@ function OrderDetail({ code, onClose, canReassign }) {
 
     {/* ── PDF Preview modal ── */}
     {pdfPreview && (() => {
-      const pdfDisplayName = (pdfPreview.filename || '').replace(/^[0-9a-f-]{36}-\d{13}-/i, '');
+      const pdfDisplayName = pdfPreview.filename || '';
       return (
         <div className="fixed inset-0 z-50 flex flex-col" style={{background:'rgba(0,0,0,0.85)'}}>
           <div className="flex items-center gap-3 px-4 py-3" style={{background:'#004669'}}>

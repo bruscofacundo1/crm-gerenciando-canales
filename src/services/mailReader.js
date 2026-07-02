@@ -783,7 +783,7 @@ async function processNotaPedido(parsed, mailData, att, imap) {
     const filePath = require('path').join(UPLOADS_DIR, safeName);
     require('fs').writeFileSync(filePath, att.content);
     await prisma.attachment.create({
-      data: { filename: safeName, path: filePath, size: att.content?.length || null, mimeType: att.contentType || null, quoteId: quote.id },
+      data: { filename: safeName, originalName: att.filename, path: filePath, size: att.content?.length || null, mimeType: att.contentType || null, quoteId: quote.id },
     });
   } catch (e) {
     console.error('   ❌ Error guardando adjunto Nota de Pedido:', e.message);
@@ -1088,11 +1088,12 @@ async function processSentMail(parsed, mailData, imap) {
       fs.writeFileSync(filePath, att.content);
       await prisma.attachment.create({
         data: {
-          filename: safeName,
-          path:     filePath,
-          size:     att.size || att.content?.length || null,
-          mimeType: att.contentType || null,
-          quoteId:  quote.id,
+          filename:     safeName,
+          originalName: rawName,
+          path:         filePath,
+          size:         att.size || att.content?.length || null,
+          mimeType:     att.contentType || null,
+          quoteId:      quote.id,
         },
       });
       console.log(`   📎 Adjunto guardado (enviado): ${safeName}`);
@@ -1570,11 +1571,12 @@ async function processEmail(mailData, imap) {
 
         await prisma.attachment.create({
           data: {
-            filename: safeName,
-            path:     filePath,
-            size:     att.size || att.content?.length || null,
-            mimeType: att.contentType || null,
-            quoteId:  quote.id,
+            filename:     safeName,
+            originalName: rawName,
+            path:         filePath,
+            size:         att.size || att.content?.length || null,
+            mimeType:     att.contentType || null,
+            quoteId:      quote.id,
           },
         });
         console.log(`   📎 Adjunto guardado: ${safeName}`);

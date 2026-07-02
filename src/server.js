@@ -158,11 +158,12 @@ app.post('/api/quotes/:id/attachments', authMiddleware, upload.array('files', 10
     const created = await Promise.all((req.files || []).map(f =>
       prisma.attachment.create({
         data: {
-          filename: f.filename,
-          path:     f.path,
-          size:     f.size,
-          mimeType: f.mimetype,
-          quoteId:  req.params.id,
+          filename:     f.filename,
+          originalName: f.originalname,
+          path:         f.path,
+          size:         f.size,
+          mimeType:     f.mimetype,
+          quoteId:      req.params.id,
         },
       })
     ));
@@ -266,11 +267,12 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
     const created = await Promise.all((req.files || []).map(f =>
       prisma.attachment.create({
         data: {
-          filename: f.filename,
-          path:     f.path,
-          size:     f.size,
-          mimeType: f.mimetype,
-          orderId:  req.params.id,
+          filename:     f.filename,
+          originalName: f.originalname,
+          path:         f.path,
+          size:         f.size,
+          mimeType:     f.mimetype,
+          orderId:      req.params.id,
         },
       })
     ));

@@ -249,8 +249,9 @@ model Note {
 
 // ─── Archivos adjuntos ───
 model Attachment {
-  id        String   @id @default(uuid())
-  filename  String
+  id           String   @id @default(uuid())
+  filename     String
+  originalName String?                       // Nombre limpio original, sin prefijo interno, para mostrar en UI
   path      String
   size      Int?
   mimeType  String?
