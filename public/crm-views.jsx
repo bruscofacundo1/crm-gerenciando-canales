@@ -840,6 +840,7 @@ function ClientImportModal({ onClose, onDone }) {
   const [preview, setPreview]     = useState(null);
   const [deleteSel, setDeleteSel] = useState({});
   const [result, setResult]       = useState(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const pickFile = (f) => {
     if (!f) return;
@@ -917,6 +918,37 @@ function ClientImportModal({ onClose, onDone }) {
               <p className="text-[13px] text-ink-600">
                 Subí el Excel de clientes. El sistema va a comparar con la base actual y mostrarte qué cambia antes de aplicar nada.
               </p>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
+                <button type="button" onClick={()=>setShowGuide(v=>!v)}
+                  className="w-full px-4 py-2.5 flex items-center justify-between text-[12.5px] font-semibold text-blue-800">
+                  <span className="flex items-center gap-1.5"><Icon name="info" size={13}/>¿Cómo tiene que estar armado el Excel?</span>
+                  <Icon name={showGuide ? 'chevron-up' : 'chevron-down'} size={14}/>
+                </button>
+                {showGuide && (
+                  <div className="px-4 pb-4 text-[12.5px] text-blue-900 space-y-2">
+                    <div>
+                      <span className="font-semibold">Estructura del archivo:</span> fila 1 con los encabezados, fila 2 vacía, y desde la fila 3 en adelante los datos de cada cliente.
+                    </div>
+                    <div>
+                      <span className="font-semibold">Columnas, en este orden:</span>
+                      <div className="mono bg-white border border-blue-200 rounded px-2 py-1.5 mt-1 text-[11.5px] leading-relaxed">
+                        Código · Razón Social · CUIT · Dirección · Teléfono · <span className="text-ink-400">(columna libre)</span> · Localidad · Provincia · Zona · Vendedor · Actividad · Mail · Código Postal
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-semibold">Código:</span> identificador único de cada cliente. Si un cliente ya existe con ese código, se actualiza; si no existe, se crea nuevo.
+                    </div>
+                    <div>
+                      <span className="font-semibold">Vendedor:</span> si el nombre coincide con un usuario activo del sistema, se asigna automáticamente. Si no coincide con nadie, el cliente queda marcado con el nombre original para asignarlo manualmente después.
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-amber-800">
+                      <span className="font-semibold">Formato aceptado:</span> solo .xls o .xlsx. Los archivos .csv (como los que exporta Flexxus) todavía no se pueden subir directo — hay que pasarlos a Excel primero.
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div
                 onDragOver={e=>{e.preventDefault();setDragging(true)}}
                 onDragLeave={()=>setDragging(false)}
