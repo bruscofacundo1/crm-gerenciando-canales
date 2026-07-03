@@ -74,7 +74,15 @@ if (!process.env.APP_URL) console.warn('⚠️  APP_URL no seteado — CORS acep
 app.use(express.json({ limit: '10mb' }));
 
 // Serve frontend static files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// .jsx/.html sin cache agresivo: el navegador revalida contra el server en cada
+// carga (If-None-Match) en vez de servir una versión vieja después de un deploy.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jsx') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // Serve uploaded attachments — requiere autenticación (header o query param)
 app.use('/uploads', (req, res, next) => {
