@@ -1106,8 +1106,8 @@ function QuoteDetail({ code, onClose, canReassign }) {
 
       {assigningClient && (() => {
         const selectedClientObj = clients.find(c => c.id === assignClientId);
-        const filteredClients = clients.filter(c =>
-          !clientSearch ||
+        const searchTooShort = clientSearch.trim().length < 2;
+        const filteredClients = searchTooShort ? [] : clients.filter(c =>
           c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
           (c.cuit || '').includes(clientSearch) ||
           (c.email || '').toLowerCase().includes(clientSearch.toLowerCase())
@@ -1140,15 +1140,21 @@ function QuoteDetail({ code, onClose, canReassign }) {
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setClientDropOpen(false)}/>
                       <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-xl shadow-pop max-h-56 overflow-y-auto scroll-thin">
-                        {filteredClients.slice(0, 80).map(c => (
-                          <button key={c.id}
-                            className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
-                            onClick={() => { setAssignClientId(c.id); setClientDropOpen(false); setClientSearch(''); }}>
-                            <div className="text-[12.5px] font-medium text-ink-900">{c.name}</div>
-                          </button>
-                        ))}
-                        {filteredClients.length === 0 && (
-                          <div className="px-3 py-3 text-[12.5px] text-ink-400 text-center">Sin resultados</div>
+                        {searchTooShort ? (
+                          <div className="px-3 py-3 text-[12.5px] text-ink-400 text-center">Escribí para buscar…</div>
+                        ) : (
+                          <>
+                            {filteredClients.slice(0, 80).map(c => (
+                              <button key={c.id}
+                                className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
+                                onClick={() => { setAssignClientId(c.id); setClientDropOpen(false); setClientSearch(''); }}>
+                                <div className="text-[12.5px] font-medium text-ink-900">{c.name}</div>
+                              </button>
+                            ))}
+                            {filteredClients.length === 0 && (
+                              <div className="px-3 py-3 text-[12.5px] text-ink-400 text-center">Sin resultados</div>
+                            )}
+                          </>
                         )}
                         {/* Opción nuevo cliente */}
                         <button
@@ -2342,8 +2348,8 @@ function OrderDetail({ code, onClose, canReassign }) {
       {/* ── NP: Client assignment panel ── */}
       {npAssigningClient && (() => {
         const selectedC = clients.find(c => c.id === npAssignClientId);
-        const filteredC = clients.filter(c =>
-          !npClientSearch ||
+        const npSearchTooShort = npClientSearch.trim().length < 2;
+        const filteredC = npSearchTooShort ? [] : clients.filter(c =>
           c.name.toLowerCase().includes(npClientSearch.toLowerCase()) ||
           (c.cuit || '').includes(npClientSearch) ||
           (c.email || '').toLowerCase().includes(npClientSearch.toLowerCase())
@@ -2361,14 +2367,20 @@ function OrderDetail({ code, onClose, canReassign }) {
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setNpClientDropOpen(false)}/>
                     <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-xl shadow-pop max-h-48 overflow-y-auto scroll-thin">
-                      {filteredC.slice(0, 50).map(c => (
-                        <button key={c.id} className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
-                          onClick={() => { setNpAssignClientId(c.id); setNpClientDropOpen(false); setNpClientSearch(''); }}>
-                          <div className="text-[12px] font-medium text-ink-900">{c.name}</div>
-                          {c.cuit && <div className="text-[11px] mono text-ink-500">{c.cuit}</div>}
-                        </button>
-                      ))}
-                      {filteredC.length === 0 && <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin resultados</div>}
+                      {npSearchTooShort ? (
+                        <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Escribí para buscar…</div>
+                      ) : (
+                        <>
+                          {filteredC.slice(0, 50).map(c => (
+                            <button key={c.id} className="w-full text-left px-3 py-2 hover:bg-surface border-b border-line last:border-b-0"
+                              onClick={() => { setNpAssignClientId(c.id); setNpClientDropOpen(false); setNpClientSearch(''); }}>
+                              <div className="text-[12px] font-medium text-ink-900">{c.name}</div>
+                              {c.cuit && <div className="text-[11px] mono text-ink-500">{c.cuit}</div>}
+                            </button>
+                          ))}
+                          {filteredC.length === 0 && <div className="px-3 py-3 text-[12px] text-ink-400 text-center">Sin resultados</div>}
+                        </>
+                      )}
                     </div>
                   </>
                 )}
