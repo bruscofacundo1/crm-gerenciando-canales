@@ -191,7 +191,10 @@ const CrmApi = {
   }),
   removeClientEmail: (id, emailId) => apiFetch(`/clients/${id}/emails/${emailId}`, { method: 'DELETE' }),
   deleteClient: (id) => apiFetch(`/clients/${id}`, { method: 'DELETE' }),
-  deleteAllClients: () => apiFetch('/clients/all', { method: 'DELETE' }),
+  getDeleteAllPreview: () => apiFetch('/clients/delete-all-preview'),
+  deleteAllClients: (forceHistory = false) => apiFetch('/clients/all', {
+    method: 'DELETE', body: JSON.stringify({ forceHistory }),
+  }),
   exportClients: () => {
     const token = CrmAuth.getToken();
     return fetch(`${API_BASE}/clients/export`, {
@@ -216,6 +219,10 @@ const CrmApi = {
   },
   syncClients: (token, deleteCodes) => apiFetch('/clients/sync', {
     method: 'POST', body: JSON.stringify({ token, deleteCodes }),
+  }),
+  getLegacySellerGroups: () => apiFetch('/clients/legacy-seller-groups'),
+  bulkAssignSeller: (legacySellerName, sellerId) => apiFetch('/clients/bulk-assign-seller', {
+    method: 'POST', body: JSON.stringify({ legacySellerName, sellerId }),
   }),
 
   // Data

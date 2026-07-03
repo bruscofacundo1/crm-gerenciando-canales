@@ -3,13 +3,13 @@
 // ---------- Page Head (reused) ----------
 function PageHead({ subtitle, title, description, actions }) {
   return (
-    <div className="px-6 pt-5 pb-4 flex items-end justify-between gap-4 border-b border-line bg-white page-head">
+    <div className="px-6 pt-5 pb-4 flex flex-wrap items-end justify-between gap-3 border-b border-line bg-white page-head">
       <div>
         {subtitle && <div className="page-head-sub">{subtitle}</div>}
         <h2 className="page-head-title mt-0.5">{title}</h2>
         {description && <div className="text-[13px] text-ink-500 mt-1.5 leading-relaxed">{description}</div>}
       </div>
-      <div className="flex items-center gap-2">{actions}</div>
+      <div className="flex items-center gap-2 flex-wrap justify-end">{actions}</div>
     </div>
   );
 }
@@ -771,7 +771,7 @@ function LogisticsView({ onOpen }) {
 }
 
 // ---------- DeleteAllModal — confirmación con tipeo "ELIMINAR" ----------
-function DeleteAllModal({ title, description, onClose, onConfirm }) {
+function DeleteAllModal({ title, description, onClose, onConfirm, children }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -799,6 +799,7 @@ function DeleteAllModal({ title, description, onClose, onConfirm }) {
           </div>
           <h3 className="text-base font-bold text-ink-900 mb-1">{title}</h3>
           <p className="text-[13px] text-ink-600 mb-5">{description}</p>
+          {children}
           <div className="mb-4">
             <label className="text-[12px] font-semibold text-ink-700 mb-1.5 block">
               Escribí <span className="font-mono bg-red-50 text-red-700 px-1.5 py-0.5 rounded">ELIMINAR</span> para confirmar
@@ -845,7 +846,7 @@ function ClientImportModal({ onClose, onDone }) {
   const pickFile = (f) => {
     if (!f) return;
     const ext = f.name.split('.').pop().toLowerCase();
-    if (!['xls','xlsx'].includes(ext)) { setError('Solo se aceptan archivos .xls o .xlsx'); return; }
+    if (!['xls','xlsx','csv'].includes(ext)) { setError('Solo se aceptan archivos .csv, .xls o .xlsx'); return; }
     setFile(f); setError('');
   };
 
@@ -916,34 +917,34 @@ function ClientImportModal({ onClose, onDone }) {
           {step === STEP.UPLOAD && (
             <div className="space-y-4">
               <p className="text-[13px] text-ink-600">
-                Subí el Excel de clientes. El sistema va a comparar con la base actual y mostrarte qué cambia antes de aplicar nada.
+                Subí el listado de clientes exportado de Flexxus. El sistema va a comparar con la base actual y mostrarte qué cambia antes de aplicar nada.
               </p>
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
                 <button type="button" onClick={()=>setShowGuide(v=>!v)}
                   className="w-full px-4 py-2.5 flex items-center justify-between text-[12.5px] font-semibold text-blue-800">
-                  <span className="flex items-center gap-1.5"><Icon name="info" size={13}/>¿Cómo tiene que estar armado el Excel?</span>
+                  <span className="flex items-center gap-1.5"><Icon name="info" size={13}/>¿Cómo tiene que estar armado el archivo?</span>
                   <Icon name={showGuide ? 'chevron-up' : 'chevron-down'} size={14}/>
                 </button>
                 {showGuide && (
                   <div className="px-4 pb-4 text-[12.5px] text-blue-900 space-y-2">
                     <div>
-                      <span className="font-semibold">Estructura del archivo:</span> fila 1 con los encabezados, fila 2 vacía, y desde la fila 3 en adelante los datos de cada cliente.
+                      <span className="font-semibold">Formato aceptado:</span> .csv (exportado directo de Flexxus) o .xls/.xlsx con las mismas columnas.
+                    </div>
+                    <div>
+                      <span className="font-semibold">Estructura:</span> fila 1 con los encabezados, y desde la fila 2 en adelante los datos de cada cliente.
                     </div>
                     <div>
                       <span className="font-semibold">Columnas, en este orden:</span>
                       <div className="mono bg-white border border-blue-200 rounded px-2 py-1.5 mt-1 text-[11.5px] leading-relaxed">
-                        Código · Razón Social · CUIT · Dirección · Teléfono · <span className="text-ink-400">(columna libre)</span> · Localidad · Provincia · Zona · Vendedor · Actividad · Mail · Código Postal
+                        Código · Razón Social · CUIT · Dirección · Teléfono · Localidad · Provincia · Zona · Vendedor · Tipo Actividad · Mail · Código Postal
                       </div>
                     </div>
                     <div>
-                      <span className="font-semibold">Código:</span> identificador único de cada cliente. Si un cliente ya existe con ese código, se actualiza; si no existe, se crea nuevo.
+                      <span className="font-semibold">Código:</span> identificador único de Flexxus para cada cliente. Se usa tal cual viene en el archivo (sin sacarle ceros a la izquierda) — si un cliente ya existe con ese código exacto, se actualiza; si no existe, se crea nuevo.
                     </div>
                     <div>
-                      <span className="font-semibold">Vendedor:</span> si el nombre coincide con un usuario activo del sistema, se asigna automáticamente. Si no coincide con nadie, el cliente queda marcado con el nombre original para asignarlo manualmente después.
-                    </div>
-                    <div className="bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-amber-800">
-                      <span className="font-semibold">Formato aceptado:</span> solo .xls o .xlsx. Los archivos .csv (como los que exporta Flexxus) todavía no se pueden subir directo — hay que pasarlos a Excel primero.
+                      <span className="font-semibold">Vendedor:</span> si el nombre coincide con un usuario activo del sistema (ej. "Diego Liberal"), se le asigna ese cliente automáticamente. Si no coincide con nadie (ej. "Mercado Libre", "Administrador Sistema"), el cliente queda marcado con ese nombre para asignarlo manualmente después — incluso en bloque, por grupo entero.
                     </div>
                   </div>
                 )}
@@ -970,10 +971,10 @@ function ClientImportModal({ onClose, onDone }) {
                 ) : (
                   <div className="text-center">
                     <div className="font-medium text-ink-700 text-[13px]">Arrastrá el archivo acá o hacé click para seleccionarlo</div>
-                    <div className="text-[12px] text-ink-400 mt-0.5">Formato: .xls o .xlsx (columnas: Código, Razón Social, CUIT, Dirección, Teléfono, Localidad, Provincia, Zona, Vendedor, Actividad, Mail, CP)</div>
+                    <div className="text-[12px] text-ink-400 mt-0.5">Formato: .csv, .xls o .xlsx — export directo de Flexxus</div>
                   </div>
                 )}
-                <input id="cli-xls-input" type="file" accept=".xls,.xlsx" className="hidden"
+                <input id="cli-xls-input" type="file" accept=".csv,.xls,.xlsx" className="hidden"
                   onChange={e=>pickFile(e.target.files[0])}/>
               </div>
               {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>}
@@ -998,11 +999,32 @@ function ClientImportModal({ onClose, onDone }) {
                 ))}
               </div>
 
+              {/* Vendedores matcheados automáticamente */}
+              {preview.matchedVendors?.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-[12px] text-emerald-800">
+                  <div className="font-semibold mb-1.5 flex items-center gap-1.5"><Icon name="check-circle" size={13}/>Vendedores reconocidos automáticamente</div>
+                  <div className="space-y-0.5">
+                    {preview.matchedVendors.map(v => (
+                      <div key={v.vendorName}>
+                        <span className="font-medium">"{v.vendorName}"</span> → se asignó a <span className="font-medium">{v.sellerName}</span> ({v.count.toLocaleString()} clientes)
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Aviso vendedores no mapeados */}
-              {preview.unmatchedVendors?.length > 0 && (
+              {(preview.unmatchedVendorCounts?.length > 0) && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[12px] text-amber-800">
-                  <div className="font-semibold mb-1">⚠ Vendedores no reconocidos en el sistema</div>
-                  <div className="text-amber-700">Los siguientes vendedores del Excel no coinciden con ningún usuario activo y quedarán sin asignar: <span className="font-medium">{preview.unmatchedVendors.join(', ')}</span></div>
+                  <div className="font-semibold mb-1.5 flex items-center gap-1.5"><Icon name="alert-triangle" size={13}/>Vendedores no reconocidos en el sistema</div>
+                  <div className="space-y-0.5">
+                    {preview.unmatchedVendorCounts.map(v => (
+                      <div key={v.vendorName}>
+                        <span className="font-medium">"{v.vendorName}"</span> ({v.count.toLocaleString()} clientes) — quedan sin vendedor asignado
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-amber-700 mt-1.5">Después de importar podés asignarlos en bloque desde el panel "Vendedores sin asignar" en la lista de Clientes.</div>
                 </div>
               )}
 
@@ -1170,11 +1192,40 @@ function Clients({ readonly=false }) {
   const [listCollapsed, setListCollapsed] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [forceHistory, setForceHistory] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [listPage, setListPage] = useState(0);
   const LIST_PAGE_SIZE = 80;
   const isAdmin = ['ADMIN','DEVELOPER'].includes(CrmAuth.getUser()?.role);
+
+  const [legacyGroups, setLegacyGroups] = useState([]);
+  const [legacyPick, setLegacyPick] = useState({});   // legacySellerName -> sellerId elegido
+  const [assigningGroup, setAssigningGroup] = useState(null);
+  const [legacyExpanded, setLegacyExpanded] = useState(false);
+
+  const loadLegacyGroups = async () => {
+    if (!isAdmin) return;
+    try { setLegacyGroups(await CrmApi.getLegacySellerGroups()); }
+    catch (e) { /* silencioso */ }
+  };
+
+  useEffect(() => { loadLegacyGroups(); }, []);
+
+  const handleAssignGroup = async (legacySellerName) => {
+    const sellerId = legacyPick[legacySellerName];
+    if (!sellerId) return;
+    setAssigningGroup(legacySellerName);
+    try {
+      await CrmApi.bulkAssignSeller(legacySellerName, sellerId);
+      await Promise.all([loadLegacyGroups(), reloadClients()]);
+    } catch (e) {
+      alert(e.message || 'Error al asignar el grupo');
+    } finally {
+      setAssigningGroup(null);
+    }
+  };
 
   const reloadClients = async () => {
     try {
@@ -1302,7 +1353,8 @@ function Clients({ readonly=false }) {
                 <button onClick={()=>setShowImport(true)} className="btn-ghost text-xs flex items-center gap-1.5">
                   <Icon name="upload" size={13}/>Importar XLS
                 </button>
-                <button onClick={()=>setShowDeleteAll(true)} className="btn-ghost text-xs flex items-center gap-1.5 text-red-500 hover:bg-red-50 hover:border-red-200">
+                <button onClick={()=>{ setForceHistory(false); setDeletePreview(null); setShowDeleteAll(true); CrmApi.getDeleteAllPreview().then(setDeletePreview).catch(()=>{}); }}
+                  className="btn-ghost text-xs flex items-center gap-1.5 text-red-500 hover:bg-red-50 hover:border-red-200">
                   <Icon name="trash-2" size={13}/>Eliminar todos
                 </button>
               </>
@@ -1311,6 +1363,44 @@ function Clients({ readonly=false }) {
           </>
         }
       />
+      {/* Panel: vendedores legacy sin asignar */}
+      {isAdmin && legacyGroups.length > 0 && (
+        <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+          <button type="button" onClick={()=>setLegacyExpanded(v=>!v)}
+            className={cx('w-full px-4 py-2.5 flex items-center justify-between gap-1.5 text-[12.5px] font-semibold text-amber-800', legacyExpanded && 'border-b border-amber-200')}>
+            <span className="flex items-center gap-1.5">
+              <Icon name="alert-triangle" size={13}/>Vendedores sin asignar ({legacyGroups.reduce((s,g)=>s+g.count,0).toLocaleString()} clientes en {legacyGroups.length} grupo{legacyGroups.length!==1?'s':''})
+            </span>
+            <Icon name={legacyExpanded ? 'chevron-up' : 'chevron-down'} size={14}/>
+          </button>
+          {legacyExpanded && (
+            <div className="divide-y divide-amber-100">
+              {legacyGroups.map(g => (
+                <div key={g.legacySellerName} className="px-4 py-2.5 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-ink-900 text-[13px]">{g.legacySellerName}</span>
+                    <span className="text-ink-500 text-[12px]"> · {g.count.toLocaleString()} clientes</span>
+                  </div>
+                  <select className="inp text-xs py-1.5 w-52" value={legacyPick[g.legacySellerName] || ''}
+                    onChange={e => setLegacyPick(p => ({ ...p, [g.legacySellerName]: e.target.value }))}>
+                    <option value="">Asignar a…</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                  <button
+                    disabled={!legacyPick[g.legacySellerName] || assigningGroup === g.legacySellerName}
+                    onClick={() => handleAssignGroup(g.legacySellerName)}
+                    className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {assigningGroup === g.legacySellerName
+                      ? <><Icon name="loader" size={12} className="inline mr-1 animate-spin"/>Asignando…</>
+                      : 'Asignar grupo'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex h-[calc(100vh-136px)] overflow-hidden relative">
         {/* list panel */}
         <div
@@ -1425,6 +1515,7 @@ function Clients({ readonly=false }) {
                         await CrmApi.deleteClient(cli.id);
                         setClients(prev => prev.filter(c => c.id !== cli.id));
                         setSel('');
+                        loadLegacyGroups();
                       } catch(e) {
                         alert(e.message || 'Error al eliminar cliente');
                       } finally { setDeleting(false); }
@@ -1578,21 +1669,45 @@ function Clients({ readonly=false }) {
       {showImport && (
         <ClientImportModal
           onClose={() => setShowImport(false)}
-          onDone={reloadClients}
+          onDone={async () => { await reloadClients(); await loadLegacyGroups(); }}
         />
       )}
       {/* Delete all modal */}
       {showDeleteAll && (
         <DeleteAllModal
           title="Eliminar todos los clientes"
-          description={`Se van a eliminar todos los clientes sin historial (cotizaciones u órdenes). Los que tengan historial se conservan.`}
+          description={
+            deletePreview
+              ? `Se van a eliminar ${deletePreview.deletableCount.toLocaleString()} clientes sin historial de un total de ${deletePreview.total.toLocaleString()}.`
+              : 'Cargando…'
+          }
           onClose={() => setShowDeleteAll(false)}
           onConfirm={async () => {
-            const res = await CrmApi.deleteAllClients();
-            await reloadClients();
+            await CrmApi.deleteAllClients(forceHistory);
+            await Promise.all([reloadClients(), loadLegacyGroups()]);
             setSel('');
           }}
-        />
+        >
+          {deletePreview?.protectedClients?.length > 0 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <div className="text-[12px] font-semibold text-amber-800 mb-1.5">
+                {deletePreview.protectedClients.length} cliente{deletePreview.protectedClients.length !== 1 ? 's' : ''} con historial (se protegen por defecto):
+              </div>
+              <div className="max-h-28 overflow-y-auto text-[11.5px] text-amber-700 space-y-0.5">
+                {deletePreview.protectedClients.map(c => (
+                  <div key={c.id}>{c.name} — {c.quotesCount} cotización(es), {c.ordersCount} orden(es)</div>
+                ))}
+              </div>
+              <label className="flex items-start gap-2 mt-2.5 pt-2.5 border-t border-amber-200 cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={forceHistory}
+                  onChange={e => setForceHistory(e.target.checked)}/>
+                <span className="text-[12px] text-amber-900 font-medium">
+                  También eliminar estos clientes y TODO su historial asociado (cotizaciones, órdenes, adjuntos). Esta acción no se puede deshacer.
+                </span>
+              </label>
+            </div>
+          )}
+        </DeleteAllModal>
       )}
     </div>
   );

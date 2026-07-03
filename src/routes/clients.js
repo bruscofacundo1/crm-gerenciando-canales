@@ -27,39 +27,66 @@ function emailDomain(email) {
   return at >= 0 ? email.slice(at + 1).toLowerCase() : null;
 }
 
-// ── Helper: parsear XLS de clientes ───────────────────────────────────────
-function parseClientsXLS(buffer) {
+// ── Helper: fila cruda (array de columnas) → objeto cliente ───────────────
+// Layout real de Flexxus: Código;Razón Social;C.U.I.T.;Dirección;Teléfono;
+// Localidad;Provincia;Zona;Vendedor;Tipo Actividad;Mail;Código Postal
+// El código se usa tal cual viene (sin sacar ceros): Flexxus no es
+// consistente con el padding, y normalizar puede mezclar códigos de
+// clientes distintos (ej: "0886" y "00886" son clientes diferentes).
+function rowToClient(r) {
+  const rawMails = String(r[10] || '').trim();
+  const mails = rawMails
+    ? rawMails.split(/[,;]/).map(m => m.trim().toLowerCase()).filter(Boolean)
+    : [];
+  const primaryEmail = mails[0] || null;
+
+  return {
+    code:        String(r[0] || '').trim(),
+    name:        String(r[1] || '').trim(),
+    cuit:        r[2] ? String(r[2]).trim() : null,
+    address:     r[3] ? String(r[3]).trim() : null,
+    phone:       cleanPhone(r[4]),
+    city:        r[5] ? String(r[5]).trim() : null,
+    province:    r[6] ? String(r[6]).trim() : null,
+    zone:        r[7] ? String(r[7]).trim() : null,
+    vendorName:  r[8] ? String(r[8]).trim() : null, // solo para matching
+    activity:    r[9] ? String(r[9]).trim() : null,
+    email:       primaryEmail,
+    emailDomain: emailDomain(primaryEmail),
+    postalCode:  r[11] !== undefined && r[11] !== '' ? String(r[11]).trim() : null,
+    allMails:    mails, // para insertar en ClientEmail
+  };
+}
+
+// ── Helper: parsear CSV crudo de Flexxus (Latin-1, ";", campos ="valor") ──
+function parseFlexxusCSV(buffer) {
+  const text  = buffer.toString('latin1');
+  const lines = text.split(/\r\n/).filter(l => l.trim().length > 0);
+  return lines.slice(1) // fila 0 = headers, sin fila vacía
+    .map(line => line.split(';').map(f => {
+      let v = f.trim();
+      if (v.startsWith('="') && v.endsWith('"')) v = v.slice(2, -1);
+      return v.trim();
+    }))
+    .filter(r => r[0] && r[1]) // necesita código y razón social
+    .map(rowToClient);
+}
+
+// ── Helper: parsear XLS/XLSX de Flexxus (mismo layout, sin fila vacía) ────
+function parseFlexxusXLS(buffer) {
   const wb   = XLSX.read(buffer, { type: 'buffer' });
   const ws   = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-  // Fila 0: headers, Fila 1: vacía, Fila 2+: datos
-  return rows.slice(2)
-    .filter(r => r[0] && r[1]) // necesita código y razón social
-    .map(r => {
-      const rawMails = String(r[11] || '').trim();
-      const mails = rawMails
-        ? rawMails.split(/[,;]/).map(m => m.trim().toLowerCase()).filter(Boolean)
-        : [];
-      const primaryEmail = mails[0] || null;
+  return rows.slice(1) // fila 0 = headers, sin fila vacía
+    .filter(r => r[0] && r[1])
+    .map(rowToClient);
+}
 
-      return {
-        code:        String(r[0]).trim(),
-        name:        String(r[1]).trim(),
-        cuit:        r[2]  ? String(r[2]).trim()  : null,
-        address:     r[3]  ? String(r[3]).trim()  : null,
-        phone:       cleanPhone(r[4]),
-        city:        r[6]  ? String(r[6]).trim()  : null,
-        province:    r[7]  ? String(r[7]).trim()  : null,
-        zone:        r[8]  ? String(r[8]).trim()  : null,
-        vendorName:  r[9]  ? String(r[9]).trim()  : null, // solo para matching
-        activity:    r[10] ? String(r[10]).trim() : null,
-        email:       primaryEmail,
-        emailDomain: emailDomain(primaryEmail),
-        postalCode:  r[12] !== '' ? String(r[12]).trim() : null,
-        allMails:    mails, // para insertar en ClientEmail
-      };
-    });
+// ── Helper: parsear archivo de clientes (detecta CSV vs Excel) ────────────
+function parseClientsFile(buffer, originalname) {
+  const ext = (originalname || '').split('.').pop().toLowerCase();
+  return ext === 'csv' ? parseFlexxusCSV(buffer) : parseFlexxusXLS(buffer);
 }
 
 // ── Helper: generar XLS de exportación ────────────────────────────────────
@@ -115,6 +142,45 @@ router.get('/export', authMiddleware, async (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="clientes-${date}.xlsx"`);
     res.send(buf);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/clients/legacy-seller-groups — grupos de clientes con vendedor legacy sin asignar (ANTES de /:id)
+router.get('/legacy-seller-groups', authMiddleware, async (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo administradores' });
+  try {
+    const groups = await prisma.client.groupBy({
+      by: ['legacySellerName'],
+      where: { legacySellerName: { not: null }, active: true },
+      _count: { id: true },
+    });
+    res.json(groups
+      .map(g => ({ legacySellerName: g.legacySellerName, count: g._count.id }))
+      .sort((a, b) => b.count - a.count));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/clients/delete-all-preview — cuántos se borran, cuántos tienen historial (ANTES de /:id)
+router.get('/delete-all-preview', authMiddleware, async (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo administradores' });
+  try {
+    const total = await prisma.client.count();
+    const withHistory = await prisma.client.findMany({
+      where: { OR: [{ quotes: { some: {} } }, { orders: { some: {} } }] },
+      select: { id: true, name: true, code: true, _count: { select: { quotes: true, orders: true } } },
+    });
+    res.json({
+      total,
+      deletableCount: total - withHistory.length,
+      protectedClients: withHistory.map(c => ({
+        id: c.id, name: c.name, code: c.code,
+        quotesCount: c._count.quotes, ordersCount: c._count.orders,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -253,22 +319,54 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
   // Caso especial: eliminar TODOS los clientes sin historial
   if (req.params.id === 'all') {
+    const forceHistory = !!(req.body && req.body.forceHistory);
     try {
       const conHistorial = await prisma.client.findMany({
         where: { OR: [{ quotes: { some: {} } }, { orders: { some: {} } }] },
-        select: { id: true },
+        select: { id: true, name: true, code: true, _count: { select: { quotes: true, orders: true } } },
       });
       const protectedIds = conHistorial.map(c => c.id);
 
+      // Borrar siempre los que no tienen historial
+      let deletedSafe = 0;
       if (protectedIds.length > 0) {
         await prisma.clientEmail.deleteMany({ where: { clientId: { notIn: protectedIds } } });
-        const result = await prisma.client.deleteMany({ where: { id: { notIn: protectedIds } } });
-        return res.json({ ok: true, deleted: result.count, skipped: protectedIds.length });
+        const safeResult = await prisma.client.deleteMany({ where: { id: { notIn: protectedIds } } });
+        deletedSafe = safeResult.count;
       } else {
         await prisma.clientEmail.deleteMany({});
-        const result = await prisma.client.deleteMany({});
-        return res.json({ ok: true, deleted: result.count, skipped: 0 });
+        const safeResult = await prisma.client.deleteMany({});
+        deletedSafe = safeResult.count;
       }
+
+      // Forzar borrado de los que tienen historial (cotizaciones/órdenes/adjuntos en cascada)
+      let deletedForced = 0;
+      if (forceHistory && protectedIds.length > 0) {
+        console.log(`[AUDIT] Usuario ${req.user.email} (${req.user.id}) forzó el borrado de ${protectedIds.length} cliente(s) CON historial el ${new Date().toISOString()}: ${conHistorial.map(c => `${c.code} ${c.name} (${c._count.quotes} cot., ${c._count.orders} ord.)`).join(' | ')}`);
+
+        const quoteIds = (await prisma.quote.findMany({ where: { clientId: { in: protectedIds } }, select: { id: true } })).map(q => q.id);
+
+        // Romper vínculos que apuntan a estas cotizaciones antes de borrar (linkedQuote, fromQuote)
+        if (quoteIds.length > 0) {
+          await prisma.quote.updateMany({ where: { linkedQuoteId: { in: quoteIds } }, data: { linkedQuoteId: null } });
+          await prisma.order.updateMany({ where: { fromQuoteId: { in: quoteIds } }, data: { fromQuoteId: null } });
+        }
+
+        await prisma.order.deleteMany({ where: { clientId: { in: protectedIds } } });
+        await prisma.quote.deleteMany({ where: { clientId: { in: protectedIds } } });
+        await prisma.clientEmail.deleteMany({ where: { clientId: { in: protectedIds } } });
+        const forcedResult = await prisma.client.deleteMany({ where: { id: { in: protectedIds } } });
+        deletedForced = forcedResult.count;
+      }
+
+      const finalTotal = await prisma.client.count();
+      return res.json({
+        ok: true,
+        deleted: deletedSafe + deletedForced,
+        skipped: forceHistory ? 0 : protectedIds.length,
+        forcedDeleted: deletedForced,
+        remaining: finalTotal,
+      });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -342,8 +440,8 @@ router.post('/preview', authMiddleware, upload.single('file'), async (req, res) 
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
 
-    // 1. Parsear XLS
-    const incoming = parseClientsXLS(req.file.buffer);
+    // 1. Parsear archivo (CSV o Excel, detecta por extensión)
+    const incoming = parseClientsFile(req.file.buffer, req.file.originalname);
     if (!incoming.length) return res.status(400).json({ error: 'No se encontraron clientes en el archivo. Verificá el formato.' });
 
     const incomingMap = new Map(incoming.map(c => [c.code, c]));
@@ -362,18 +460,27 @@ router.post('/preview', authMiddleware, upload.single('file'), async (req, res) 
 
     // 4. Intentar matchear vendedores por nombre (case-insensitive, parcial)
     const vendorMatchCache = new Map();
-    const unmatchedVendors = new Set();
+    const unmatchedCounts = new Map(); // vendorName -> count
+    const matchedCounts   = new Map(); // vendorName -> { sellerId, sellerName, count }
 
     function matchVendor(vendorName) {
       if (!vendorName) return null;
-      if (vendorMatchCache.has(vendorName)) return vendorMatchCache.get(vendorName);
-      const lower = vendorName.toLowerCase();
-      const found = users.find(u => {
-        const parts = u.name.toLowerCase().split(' ');
-        return parts.some(p => p.length > 3 && lower.includes(p));
-      }) || null;
-      if (!found) unmatchedVendors.add(vendorName);
-      vendorMatchCache.set(vendorName, found?.id || null);
+      if (!vendorMatchCache.has(vendorName)) {
+        const lower = vendorName.toLowerCase();
+        const found = users.find(u => {
+          const parts = u.name.toLowerCase().split(' ');
+          return parts.some(p => p.length > 3 && lower.includes(p));
+        }) || null;
+        vendorMatchCache.set(vendorName, found);
+      }
+      const found = vendorMatchCache.get(vendorName);
+      if (found) {
+        const cur = matchedCounts.get(vendorName) || { sellerId: found.id, sellerName: found.name, count: 0 };
+        cur.count++;
+        matchedCounts.set(vendorName, cur);
+      } else {
+        unmatchedCounts.set(vendorName, (unmatchedCounts.get(vendorName) || 0) + 1);
+      }
       return found?.id || null;
     }
 
@@ -440,7 +547,9 @@ router.post('/preview', authMiddleware, upload.single('file'), async (req, res) 
       toAdd:    previewAdd,
       toUpdate: previewUpdate,
       toRemove: toRemove.map(c => ({ code: c.code, name: c.name, city: c.city })),
-      unmatchedVendors: [...unmatchedVendors],
+      unmatchedVendors: [...unmatchedCounts.keys()], // compatibilidad hacia atrás
+      matchedVendors:   [...matchedCounts.entries()].map(([vendorName, v]) => ({ vendorName, ...v })),
+      unmatchedVendorCounts: [...unmatchedCounts.entries()].map(([vendorName, count]) => ({ vendorName, count })),
     });
   } catch (err) {
     console.error('clients/preview error:', err);
@@ -539,6 +648,27 @@ router.post('/sync', authMiddleware, async (req, res) => {
     res.json({ ok: true, upserted, deleted, skipped });
   } catch (err) {
     console.error('clients/sync error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/clients/bulk-assign-seller — asigna un vendedor real a todo un grupo legacy
+router.post('/bulk-assign-seller', authMiddleware, async (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Solo administradores' });
+  try {
+    const { legacySellerName, sellerId } = req.body;
+    if (!legacySellerName || !sellerId) return res.status(400).json({ error: 'legacySellerName y sellerId son requeridos' });
+
+    const seller = await prisma.user.findUnique({ where: { id: sellerId } });
+    if (!seller) return res.status(404).json({ error: 'Vendedor no encontrado' });
+
+    const result = await prisma.client.updateMany({
+      where: { legacySellerName },
+      data: { defaultSellerId: sellerId, legacySellerName: null },
+    });
+
+    res.json({ ok: true, updated: result.count, sellerName: seller.name });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
