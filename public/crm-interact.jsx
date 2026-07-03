@@ -127,7 +127,8 @@ function AppProvider({ children }) {
     id: c.id, code: c.code, name: c.name, cuit: c.cuit || '',
     city: c.city || '', prov: c.province || '', zone: c.zone || '',
     activity: c.activity || '', seller: c.defaultSellerId || '',
-    sellerName: c.defaultSeller?.name || '', email: c.emailPrimary || c.email || '',
+    sellerName: c.defaultSeller?.name || '', legacySellerName: c.legacySellerName || '',
+    email: c.emailPrimary || c.email || '',
     phone: c.phone || '', address: c.address || '',
   }));
   const roleMap = { DEVELOPER: 'Desarrollador', ADMIN: 'Administrador', VENDEDOR: 'Vendedor', LOGISTICA: 'Logística' };
@@ -944,7 +945,8 @@ function NewClientModal() {
         id: c.id, code: c.code, name: c.name, cuit: c.cuit || '',
         city: c.city || '', prov: c.province || '', zone: c.zone || '',
         activity: c.activity || '', seller: c.defaultSellerId || '',
-        sellerName: c.defaultSeller?.name || '', email: c.email || '',
+        sellerName: c.defaultSeller?.name || '', legacySellerName: c.legacySellerName || '',
+        email: c.email || '',
         phone: c.phone || '', address: c.address || '',
       }));
       setClients(mapped);
@@ -1085,7 +1087,8 @@ function EditClientModal({ clientId }) {
         id: c.id, code: c.code, name: c.name, cuit: c.cuit || '',
         city: c.city || '', prov: c.province || '', zone: c.zone || '',
         activity: c.activity || '', seller: c.defaultSellerId || '',
-        sellerName: c.defaultSeller?.name || '', email: c.email || '',
+        sellerName: c.defaultSeller?.name || '', legacySellerName: c.legacySellerName || '',
+        email: c.email || '',
         phone: c.phone || '', address: c.address || '',
       }));
       setClients(mapped);

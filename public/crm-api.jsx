@@ -372,6 +372,7 @@ async function loadAllData() {
       activity: c.activity || '',
       seller: c.defaultSellerId || '',
       sellerName: c.defaultSeller?.name || '',
+      legacySellerName: c.legacySellerName || '',
       email: c.emailPrimary || c.email || '',
       phone: c.phone || '',
       address: c.address || '',
