@@ -4,3 +4,4 @@
 - [User Profile](user-profile.md) — Perfil del usuario: rol, conocimiento técnico, preferencias de trabajo
 - [Feedback](feedback-preferences.md) — Preferencias y correcciones de estilo de trabajo
 - [Manual Review](project-manual-review.md) — Revisión de los 4 manuales PDF en D:\crm-documentacion — gaps encontrados
+- [Flexxus Import](project-flexxus-import.md) — Importador CSV/Excel de Flexxus, 3119 clientes reales, bug de legacySellerName, Volume de Railway
