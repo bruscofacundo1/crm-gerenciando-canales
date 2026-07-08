@@ -38,3 +38,17 @@ Antes de registrar una clave SSH en la cuenta de Railway, restaurar/sobrescribir
 Cuando algo "funciona un rato y después desaparece", no asumir automáticamente que es caché del navegador — puede ser un mapeo de datos incompleto en el frontend que se sobreescribe en el próximo refetch/poll.
 
 **Why:** En la sesión del 2026-07-03, el aviso de "vendedor sin asignar" parecía un problema de caché (ya había pasado antes con la guía del import), pero la causa real era que 4 funciones de mapeo de clientes en el frontend (loadAllData, sync periódico, crear/editar cliente) no incluían el campo `legacySellerName` — solo el mapeo del import local sí lo incluía. Diagnosticar con datos concretos (query directa a la DB) antes de recomendar un hard-refresh como solución.
+
+## Medir el impacto real contra producción ANTES de aplicar un fix de datos
+Cuando un fix cambia un cálculo/agregado (montos, conteos), correr la query vieja vs. la nueva contra producción (solo lectura, vía `railway ssh`) y mostrarle al usuario el número antes/después concreto antes de deployar.
+
+**Why:** Sesión del 2026-07-08 — al arreglar el doble conteo de "Monto cotizado", medir de antemano confirmó que la diferencia coincidía centavo a centavo con "Monto confirmado" en ambas monedas, dando certeza total de que el fix era el correcto antes de tocar producción. Mismo patrón aplicado después para el fix de "OC en curso"/"NP en curso".
+
+**How to apply:** Antes de pushear cualquier cambio que modifique un `aggregate`/`count` usado en dashboards o reportes, escribir un script de medición read-only, correrlo contra prod vía `railway ssh`, y reportar el antes/después al usuario.
+
+## Ojo con el mensaje de commit — no reusar texto de contexto viejo
+Verificar que el mensaje de commit describa el cambio ACTUAL, no texto de commits pasados que puedan aparecer en el contexto (ej. el `git log` inicial del CLAUDE.md).
+
+**Why:** Dos veces en la sesión del 2026-07-08 el mensaje de commit salió con texto de un commit viejo (de la lista "Recent commits" del contexto inicial) en vez de describir el cambio real. Se corrigió con `git commit --amend` antes de pushear ambas veces, pero hay que evitarlo — releer el mensaje antes de confirmar el commit.
+
+**How to apply:** Antes de correr `git commit`, releer el mensaje armado y confirmar que coincide con el diff real de esta sesión, no con texto que pueda haber quedado pegado de otro lado.

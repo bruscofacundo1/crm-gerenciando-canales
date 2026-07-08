@@ -41,6 +41,7 @@ metadata:
 - Orders manuales (`_source: 'ORDER'`)
 - Quote mailType='NOTA_PEDIDO' (`_source: 'QUOTE'`)
 - GET /api/orders devuelve ambos mergeados con discriminador _source
+- **No existe UI para crear una `Order` manual sin presupuesto atrás** (verificado 2026-07-08): el único camino real es `autoAcceptPresupuesto()` creando el espejo cuando un Presupuesto pasa a `aceptada`. El botón "Nueva Nota de Pedido" del tablero F2 crea una `Quote` NOTA_PEDIDO, no una `Order`. Ver [[project-parser-and-dashboard-fixes]].
 
 ## Sistema bimonetario
 - Quote.currency: "USD" | "ARS" (default USD)
