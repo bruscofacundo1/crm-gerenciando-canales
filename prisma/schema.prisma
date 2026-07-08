@@ -176,7 +176,7 @@ model Quote {
   @@index([stage])
   @@index([createdAt])
   @@index([mailType])
-  @@index([emailMessageId])
+  @@unique([emailMessageId])
 }
 
 // ─── Ítems / productos del presupuesto Flexxus ───

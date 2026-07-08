@@ -8,6 +8,14 @@ const { sendMail } = require('./mailer');
 
 const prisma = require('../db');
 
+// Prisma P2002 = violación de constraint único. emailMessageId es único en
+// Quote — si dos syncs procesan el mismo mail en paralelo, el chequeo previo
+// (findFirst) puede pasar en ambos antes de que ninguno haya insertado
+// todavía; la base rechaza el segundo insert en vez de crear un duplicado.
+function isDuplicateEmailError(err) {
+  return err?.code === 'P2002' && (err?.meta?.target || []).includes('emailMessageId');
+}
+
 // ── Catálogo de artículos (cacheado en memoria por proceso) ──────────────────
 let _articleCatalog = null;
 async function getArticleCatalog() {
@@ -728,28 +736,37 @@ async function processNotaPedido(parsed, mailData, att, imap) {
   const npStageSetting = await prisma.appSetting.findUnique({ where: { key: 'default_stage_nota_pedido' } });
   const npEntryStage = npStageSetting?.value || 'np_enviada';
 
-  const quote = await prisma.quote.create({
-    data: {
-      code,
-      clientId:       client?.id || presupuesto?.clientId || null,
-      sellerId:       presupuesto?.sellerId || client?.defaultSellerId || null,
-      stage:          npEntryStage,
-      source:         'EMAIL',
-      mailType:       'NOTA_PEDIDO',
-      flexxusCode:    npData.npCode,
-      amount:         npTotal,
-      currency:       npData.currency || 'USD',
-      subtotalNeto:       npData.subtotalNeto       ?? null,
-      ivaAmount:          npData.ivaAmount          ?? null,
-      totalPercepciones:  npData.totalPercepciones  ?? null,
-      emailSubject:   subject.substring(0, 500),
-      emailMessageId: messageId,
-      emailFrom:      fromAddr,
-      emailBody:      (parsed.text || '').substring(0, 5000),
-      linkedQuoteId:  presupuesto?.id || null,
-      createdAt:      date,
-    },
-  });
+  let quote;
+  try {
+    quote = await prisma.quote.create({
+      data: {
+        code,
+        clientId:       client?.id || presupuesto?.clientId || null,
+        sellerId:       presupuesto?.sellerId || client?.defaultSellerId || null,
+        stage:          npEntryStage,
+        source:         'EMAIL',
+        mailType:       'NOTA_PEDIDO',
+        flexxusCode:    npData.npCode,
+        amount:         npTotal,
+        currency:       npData.currency || 'USD',
+        subtotalNeto:       npData.subtotalNeto       ?? null,
+        ivaAmount:          npData.ivaAmount          ?? null,
+        totalPercepciones:  npData.totalPercepciones  ?? null,
+        emailSubject:   subject.substring(0, 500),
+        emailMessageId: messageId,
+        emailFrom:      fromAddr,
+        emailBody:      (parsed.text || '').substring(0, 5000),
+        linkedQuoteId:  presupuesto?.id || null,
+        createdAt:      date,
+      },
+    });
+  } catch (err) {
+    if (isDuplicateEmailError(err)) {
+      console.log(`   ⚠️  NP ya procesada por otra sincronización en paralelo (${messageId}) — omitiendo duplicado`);
+      return null;
+    }
+    throw err;
+  }
 
   // Vincular presupuesto → nota de pedido (bidireccional)
   if (presupuesto && !presupuesto.linkedQuoteId) {
@@ -984,29 +1001,38 @@ async function processSentMail(parsed, mailData, imap) {
   const followUpDateSent = new Date();
   followUpDateSent.setDate(followUpDateSent.getDate() + fudDaysSent);
 
-  const quote = await prisma.quote.create({
-    data: {
-      code,
-      clientId:          client?.id || null,
-      sellerId:          sellerId,
-      stage:             'enviado',
-      source:            'EMAIL',
-      mailType:          'PRESUPUESTO',
-      currency:          'USD',
-      flexxusCode:       flexxusData?.npCode || null,
-      amount:            flexxusGrandTotal || null,
-      subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
-      ivaAmount:         flexxusData?.ivaAmount || null,
-      totalPercepciones: flexxusData?.totalPercepciones || null,
-      followUpDate:      followUpDateSent,
-      emailSubject:      subject.substring(0, 500),
-      emailMessageId:    messageId,
-      emailFrom:         fromAddr,
-      emailBody:         bodyText.substring(0, 20000),
-      inReplyTo:         inReplyTo,
-      createdAt:         date,
-    },
-  });
+  let quote;
+  try {
+    quote = await prisma.quote.create({
+      data: {
+        code,
+        clientId:          client?.id || null,
+        sellerId:          sellerId,
+        stage:             'enviado',
+        source:            'EMAIL',
+        mailType:          'PRESUPUESTO',
+        currency:          'USD',
+        flexxusCode:       flexxusData?.npCode || null,
+        amount:            flexxusGrandTotal || null,
+        subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
+        ivaAmount:         flexxusData?.ivaAmount || null,
+        totalPercepciones: flexxusData?.totalPercepciones || null,
+        followUpDate:      followUpDateSent,
+        emailSubject:      subject.substring(0, 500),
+        emailMessageId:    messageId,
+        emailFrom:         fromAddr,
+        emailBody:         bodyText.substring(0, 20000),
+        inReplyTo:         inReplyTo,
+        createdAt:         date,
+      },
+    });
+  } catch (err) {
+    if (isDuplicateEmailError(err)) {
+      console.log(`   ⚠️  Presupuesto ya procesado por otra sincronización en paralelo (${messageId}) — omitiendo duplicado`);
+      return null;
+    }
+    throw err;
+  }
 
   // ── Auto-vincular con SOLICITUD existente ─────────────────────────────────
   try {
@@ -1459,29 +1485,38 @@ async function processEmail(mailData, imap) {
       followUpDate.setDate(followUpDate.getDate() + fudDays);
     }
 
-    const quote = await prisma.quote.create({
-      data: {
-        code,
-        clientId:          client?.id || null,
-        sellerId:          sellerId,
-        stage:             entryStage,
-        source:            'EMAIL',
-        mailType,
-        currency:          'USD',
-        flexxusCode:       flexxusData?.npCode || null,
-        amount:            flexxusGrandTotal || null,
-        subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
-        ivaAmount:         flexxusData?.ivaAmount || null,
-        totalPercepciones: flexxusData?.totalPercepciones || null,
-        followUpDate,
-        emailSubject:      subject.substring(0, 500),
-        emailMessageId:    messageId,
-        emailFrom:         originalSender,
-        emailBody:         bodyText.substring(0, 20000),
-        inReplyTo:         inReplyTo,
-        createdAt:         date,
-      },
-    });
+    let quote;
+    try {
+      quote = await prisma.quote.create({
+        data: {
+          code,
+          clientId:          client?.id || null,
+          sellerId:          sellerId,
+          stage:             entryStage,
+          source:            'EMAIL',
+          mailType,
+          currency:          'USD',
+          flexxusCode:       flexxusData?.npCode || null,
+          amount:            flexxusGrandTotal || null,
+          subtotalNeto:      flexxusData?.subtotalNeto || itemsSubtotal || null,
+          ivaAmount:         flexxusData?.ivaAmount || null,
+          totalPercepciones: flexxusData?.totalPercepciones || null,
+          followUpDate,
+          emailSubject:      subject.substring(0, 500),
+          emailMessageId:    messageId,
+          emailFrom:         originalSender,
+          emailBody:         bodyText.substring(0, 20000),
+          inReplyTo:         inReplyTo,
+          createdAt:         date,
+        },
+      });
+    } catch (err) {
+      if (isDuplicateEmailError(err)) {
+        console.log(`   ⚠️  ${mailType} ya procesada por otra sincronización en paralelo (${messageId}) — omitiendo duplicado`);
+        return null;
+      }
+      throw err;
+    }
 
     // ── Auto-vincular PRESUPUESTO con SOLICITUD existente ────────────────
     if (mailType === 'PRESUPUESTO') {
