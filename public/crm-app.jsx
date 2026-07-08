@@ -1320,8 +1320,9 @@ function Dashboard({ setScreen }) {
   };
 
   const kpis = [
-    { label: 'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas) },
+    { label: 'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas), sub: 'total del sistema' },
     { label: 'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
+    { label: 'NP en curso',           value: kv(kpisData?.npEnCurso) },
     { label: 'OC en curso',           value: kv(kpisData?.ocEnCurso) },
     { label: 'Entregas este mes',     value: kv(kpisData?.entregasEsteMes) },
     { label: 'Monto cotizado',        value: kMoney(kpisData?.montoTotalUSD, kpisData?.montoTotalARS), sub: 'presupuestos' },

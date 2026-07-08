@@ -92,14 +92,23 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
   try {
     const base = buildBaseFilter(req.query);
 
-    const [totalQuotes, sentQuotes, activeOrders, deliveredOrders, activeNPs, deliveredNPs] = await Promise.all([
-      prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, stage: { notIn: ['aceptada', 'rechazada'] } } }),
+    // Fase 1 "pura": Solicitud/Presupuesto/manuales, excluye NOTA_PEDIDO y OC
+    // legado (mismo filtro que usa el tablero F1). Antes "Cotizaciones activas"
+    // no excluía NOTA_PEDIDO y contaba casi todas las NP activas ahí también,
+    // duplicándolas contra "OC en curso" (que ya las sumaba a propósito).
+    const F1_ONLY = { OR: [{ mailType: null }, { mailType: { notIn: ['OC', 'NOTA_PEDIDO'] } }] };
+
+    const [f1Active, sentQuotes, activeOrders, deliveredOrders, activeNPs, deliveredNPs] = await Promise.all([
+      prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, ...F1_ONLY, stage: { notIn: ['aceptada', 'rechazada'] } } }),
       prisma.quote.count({ where: { ...base, stage: 'enviado' } }),
       prisma.order.count({ where: { ...base, stage: { notIn: ['entregada'] } } }),
       prisma.order.count({ where: { ...base, stage: 'entregada' } }),
       prisma.quote.count({ where: { ...base, mailType: 'NOTA_PEDIDO', stage: { notIn: ['entregada'] } } }),
       prisma.quote.count({ where: { ...base, mailType: 'NOTA_PEDIDO', stage: 'entregada' } }),
     ]);
+    // "Total en el sistema" = todo lo activo de cualquier tipo, cada uno con
+    // su propio criterio de cierre correcto (F1: aceptada/rechazada · NP/OC: entregada)
+    const totalEnSistema = f1Active + activeNPs + activeOrders;
 
     const PRESUPUESTO_ONLY = { OR: [{ mailType: 'PRESUPUESTO' }, { mailType: null }] };
 
@@ -159,9 +168,10 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     });
 
     res.json({
-      cotizacionesActivas:  totalQuotes,
+      cotizacionesActivas:  totalEnSistema,   // panorama general: F1 + NP + OC activos
       presupuestosEnviados: sentQuotes,
-      ocEnCurso:            activeOrders + activeNPs,
+      npEnCurso:            activeNPs,
+      ocEnCurso:            activeOrders,     // solo Order — ya no suma NP (queda en su propia tarjeta)
       entregasEsteMes:      deliveredOrders + deliveredNPs,
       montoTotalUSD:        totalAmount._sum.amount    || 0,
       montoConfirmadoUSD:   montoConfirmado._sum.amount || 0,
