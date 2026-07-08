@@ -225,6 +225,15 @@ const CrmApi = {
     method: 'POST', body: JSON.stringify({ legacySellerName, sellerId }),
   }),
 
+  // Admin — reparseo de PDFs Flexxus
+  getReparseCandidates: () => apiFetch('/admin/reparse-candidates'),
+  reparsePreview: (quoteIds) => apiFetch('/admin/reparse-preview', {
+    method: 'POST', body: JSON.stringify({ quoteIds }),
+  }),
+  reparseApply: (token) => apiFetch('/admin/reparse-apply', {
+    method: 'POST', body: JSON.stringify({ token }),
+  }),
+
   // Data
   getUsers: () => apiFetch('/data/users'),
   getStages: () => apiFetch('/data/stages'),

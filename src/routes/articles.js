@@ -30,6 +30,37 @@ function parseArticlesXLS(buffer) {
     }));
 }
 
+// ── Helper: parsear CSV export de Flexxus (Latin-1, ";", campos ="valor") ──
+// Columnas: Código;Descripción;Marca;Rubro;Tipo Artículo;Clase
+// El CSV no trae coefVar ni activo — coefVar queda undefined para que el
+// upsert NO pise el valor existente en la DB.
+function parseArticlesCSV(buffer) {
+  const text  = buffer.toString('latin1');
+  const lines = text.split(/\r\n/).filter(l => l.trim().length > 0);
+  return lines.slice(1) // fila 0 = headers
+    .map(line => line.split(';').map(f => {
+      let v = f.trim();
+      if (v.startsWith('="') && v.endsWith('"')) v = v.slice(2, -1);
+      return v.trim();
+    }))
+    .filter(r => r[0] && r[1])
+    .map(r => ({
+      code:        r[0],
+      description: r[1],
+      category:    r[3] || null,  // Rubro
+      type:        r[4] || null,  // Tipo Artículo
+      class:       r[5] || null,  // Clase
+      coefVar:     undefined,
+      active:      true,
+    }));
+}
+
+// ── Helper: parsear archivo de artículos (detecta CSV vs Excel) ────────────
+function parseArticlesFile(buffer, originalname) {
+  const ext = (originalname || '').split('.').pop().toLowerCase();
+  return ext === 'csv' ? parseArticlesCSV(buffer) : parseArticlesXLS(buffer);
+}
+
 // GET /api/articles?q=&category=&type=&class=&active=&sortBy=code&sortDir=asc&limit=100&offset=0
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -213,8 +244,8 @@ router.post('/preview', authMiddleware, upload.single('file'), async (req, res) 
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
 
-    // 1. Parsear XLS
-    const incoming = parseArticlesXLS(req.file.buffer);
+    // 1. Parsear archivo (CSV o Excel, detecta por extensión)
+    const incoming = parseArticlesFile(req.file.buffer, req.file.originalname);
     if (!incoming.length) return res.status(400).json({ error: 'No se encontraron artículos en el archivo. Verificá el formato.' });
 
     const incomingMap = new Map(incoming.map(a => [a.code, a]));

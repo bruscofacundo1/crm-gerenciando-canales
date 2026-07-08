@@ -4107,7 +4107,7 @@ function ArticleImportModal({ onClose, onDone }) {
   const pickFile = (f) => {
     if (!f) return;
     const ext = f.name.split('.').pop().toLowerCase();
-    if (!['xls','xlsx'].includes(ext)) { setError('Solo se aceptan archivos .xls o .xlsx'); return; }
+    if (!['xls','xlsx','csv'].includes(ext)) { setError('Solo se aceptan archivos .csv, .xls o .xlsx'); return; }
     setFile(f); setError('');
   };
 
@@ -4204,10 +4204,10 @@ function ArticleImportModal({ onClose, onDone }) {
                 ) : (
                   <div className="text-center">
                     <div className="font-medium text-ink-700 text-[13px]">Arrastrá el archivo acá o hacé click para seleccionarlo</div>
-                    <div className="text-[12px] text-ink-400 mt-0.5">Formato: .xls o .xlsx (exportado desde Flexxus)</div>
+                    <div className="text-[12px] text-ink-400 mt-0.5">Formato: .csv, .xls o .xlsx — export directo de Flexxus</div>
                   </div>
                 )}
-                <input id="xls-input" type="file" accept=".xls,.xlsx" className="hidden"
+                <input id="xls-input" type="file" accept=".csv,.xls,.xlsx" className="hidden"
                   onChange={e=>pickFile(e.target.files[0])}/>
               </div>
 
@@ -4918,6 +4918,67 @@ function DeveloperSettings() {
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
 
+  // Reparseo de PDFs Flexxus
+  const [reparseCands,    setReparseCands]    = useState([]);
+  const [reparseSelected, setReparseSelected] = useState(new Set());
+  const [reparseFilter,   setReparseFilter]   = useState('all'); // all | PRESUPUESTO | NOTA_PEDIDO
+  const [reparseLoadingCands, setReparseLoadingCands] = useState(true);
+  const [reparsePreview,  setReparsePreview]  = useState(null); // { token, results }
+  const [reparsePreviewing, setReparsePreviewing] = useState(false);
+  const [reparseApplying, setReparseApplying] = useState(false);
+  const [reparseResult,   setReparseResult]   = useState(null);
+
+  const loadReparseCandidates = () => {
+    setReparseLoadingCands(true);
+    CrmApi.getReparseCandidates()
+      .then(setReparseCands)
+      .catch(() => {})
+      .finally(() => setReparseLoadingCands(false));
+  };
+  useEffect(() => { loadReparseCandidates(); }, []);
+
+  const reparseFiltered = reparseCands.filter(c => reparseFilter === 'all' || c.mailType === reparseFilter);
+
+  const toggleReparseSel = (id) => {
+    setReparseSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const selectAllFiltered = () => setReparseSelected(new Set(reparseFiltered.map(c => c.id)));
+  const clearReparseSel = () => setReparseSelected(new Set());
+
+  const doReparsePreview = async () => {
+    if (reparseSelected.size === 0) return;
+    setReparsePreviewing(true);
+    setReparseResult(null);
+    try {
+      const data = await CrmApi.reparsePreview([...reparseSelected]);
+      setReparsePreview(data);
+    } catch (e) {
+      alert(e.message || 'Error al generar el preview');
+    } finally {
+      setReparsePreviewing(false);
+    }
+  };
+
+  const doReparseApply = async () => {
+    if (!reparsePreview?.token) return;
+    setReparseApplying(true);
+    try {
+      const res = await CrmApi.reparseApply(reparsePreview.token);
+      setReparseResult(res);
+      setReparsePreview(null);
+      setReparseSelected(new Set());
+      loadReparseCandidates();
+    } catch (e) {
+      alert(e.message || 'Error al aplicar el reparseo');
+    } finally {
+      setReparseApplying(false);
+    }
+  };
+
   useEffect(() => {
     CrmApi.getFeedbackNotifyUsers()
       .then(d => { setNotifyIds(d.notifyIds || []); setAllUsers(d.users || []); })
@@ -5016,6 +5077,120 @@ function DeveloperSettings() {
             {saving ? <><Icon name="loader" size={11} className="animate-spin"/>Guardando…</> : saved ? <><Icon name="check" size={11}/>Guardado</> : 'Guardar cambios'}
           </button>
         </div>
+      </div>
+
+      {/* Sección: reparsear PDFs Flexxus */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+          <Icon name="refresh-cw" size={14} className="text-brand"/>
+          <span className="font-semibold text-sm text-slate-700">Reparsear PDFs Flexxus</span>
+          <span className="ml-auto text-[11px] text-slate-400">Presupuestos y Notas de Pedido — re-extrae ítems y re-asigna cliente</span>
+        </div>
+
+        {reparseResult && (
+          <div className="mx-5 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-[12.5px] text-emerald-800 flex items-center gap-2">
+            <Icon name="check-circle" size={14}/>
+            Listo: {reparseResult.applied} reparseada{reparseResult.applied !== 1 ? 's' : ''}
+            {reparseResult.skipped > 0 ? `, ${reparseResult.skipped} omitida${reparseResult.skipped !== 1 ? 's' : ''} (sin PDF válido)` : ''}.
+          </div>
+        )}
+
+        {!reparsePreview ? (
+          <>
+            <div className="px-5 pt-4 flex items-center gap-2 flex-wrap">
+              {[
+                { id: 'all', label: 'Todos' },
+                { id: 'PRESUPUESTO', label: 'Presupuestos' },
+                { id: 'NOTA_PEDIDO', label: 'Notas de Pedido' },
+              ].map(f => (
+                <button key={f.id} onClick={() => setReparseFilter(f.id)}
+                  className={cx('px-3 py-1.5 rounded-lg text-[12px] font-medium border',
+                    reparseFilter === f.id ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+                  {f.label}
+                </button>
+              ))}
+              <span className="text-[11px] text-slate-400 ml-1">{reparseFiltered.length} cotización{reparseFiltered.length !== 1 ? 'es' : ''}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={selectAllFiltered} className="text-[11px] text-brand hover:underline">Seleccionar filtrados</button>
+                <button onClick={clearReparseSel} className="text-[11px] text-slate-400 hover:underline">Limpiar</button>
+              </div>
+            </div>
+
+            {reparseLoadingCands ? (
+              <div className="flex justify-center py-8 text-slate-300"><Icon name="loader" size={18} className="animate-spin"/></div>
+            ) : reparseFiltered.length === 0 ? (
+              <div className="px-5 py-8 text-center text-[12.5px] text-slate-400">No hay cotizaciones Flexxus para reparsear.</div>
+            ) : (
+              <div className="mx-5 my-3 max-h-72 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {reparseFiltered.map(c => (
+                  <label key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" checked={reparseSelected.has(c.id)} onChange={() => toggleReparseSel(c.id)}/>
+                    <span className={cx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0',
+                      c.mailType === 'NOTA_PEDIDO' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700')}>
+                      {c.mailType === 'NOTA_PEDIDO' ? 'NP' : 'PR'}
+                    </span>
+                    <span className="text-[12.5px] font-mono font-medium text-slate-700 shrink-0">{c.flexxusCode || c.code}</span>
+                    <span className="text-[12px] text-slate-500 truncate flex-1">{c.clientName || 'sin cliente asignado'}</span>
+                    <span className="text-[11px] text-slate-400 shrink-0">{c.itemsCount} ítem{c.itemsCount !== 1 ? 's' : ''}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                {reparseSelected.size === 0 ? 'Elegí al menos una cotización' : `${reparseSelected.size} seleccionada${reparseSelected.size !== 1 ? 's' : ''}`}
+              </span>
+              <button onClick={doReparsePreview} disabled={reparseSelected.size === 0 || reparsePreviewing}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-brand text-white rounded-lg text-xs font-medium hover:bg-brand/90 disabled:opacity-50">
+                {reparsePreviewing ? <><Icon name="loader" size={11} className="animate-spin"/>Analizando…</> : 'Generar preview'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mx-5 my-3 max-h-96 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {reparsePreview.results.map(r => (
+                <div key={r.id} className="px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className={cx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0',
+                      r.mailType === 'NOTA_PEDIDO' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700')}>
+                      {r.mailType === 'NOTA_PEDIDO' ? 'NP' : 'PR'}
+                    </span>
+                    <span className="text-[12.5px] font-mono font-medium text-slate-700">{r.code}</span>
+                    {!r.ok ? (
+                      <span className="text-[11.5px] text-red-600 flex items-center gap-1"><Icon name="x-circle" size={12}/>{r.error}</span>
+                    ) : (
+                      <>
+                        <span className="text-[11.5px] text-slate-500">
+                          {r.oldItemsCount} → <span className="font-semibold text-slate-700">{r.newItemsCount}</span> ítems
+                        </span>
+                        <span className={cx('text-[10.5px] px-1.5 py-0.5 rounded', r.amountsMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                          {r.amountsMatch ? 'montos OK' : 'revisar montos'}
+                        </span>
+                        {r.matchedClient && (
+                          <span className="text-[11.5px] text-emerald-700 flex items-center gap-1">
+                            <Icon name="user-check" size={12}/>{r.matchedClient.name}
+                          </span>
+                        )}
+                        {!r.matchedClient && !r.currentClientName && (
+                          <span className="text-[11.5px] text-amber-600">sin cliente {r.cuit ? `(CUIT ${r.cuit} no encontrado)` : '(sin CUIT en el PDF)'}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+              <button onClick={() => setReparsePreview(null)} className="text-[11.5px] text-slate-500 hover:underline">← Volver a elegir</button>
+              <button onClick={doReparseApply} disabled={reparseApplying}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-brand text-white rounded-lg text-xs font-medium hover:bg-brand/90 disabled:opacity-50">
+                {reparseApplying ? <><Icon name="loader" size={11} className="animate-spin"/>Aplicando…</> : `Aplicar a ${reparsePreview.results.filter(r=>r.ok).length} cotización(es)`}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

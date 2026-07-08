@@ -738,7 +738,7 @@ async function processNotaPedido(parsed, mailData, att, imap) {
       mailType:       'NOTA_PEDIDO',
       flexxusCode:    npData.npCode,
       amount:         npTotal,
-      currency:       'USD',
+      currency:       npData.currency || 'USD',
       subtotalNeto:       npData.subtotalNeto       ?? null,
       ivaAmount:          npData.ivaAmount          ?? null,
       totalPercepciones:  npData.totalPercepciones  ?? null,

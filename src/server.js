@@ -110,6 +110,7 @@ app.use('/api/articles',      require('./routes/articles'));
 app.use('/api/logs',          require('./routes/logs'));
 app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/exports',       require('./routes/exports'));
+app.use('/api/admin',         require('./routes/admin'));
 
 // POST /api/feedback/upload-image — captura de pantalla adjunta al reporte
 const FEEDBACK_IMG_DIR = path.join(__dirname, '..', 'uploads', 'feedback');
@@ -385,7 +386,7 @@ app.post('/api/orders/:id/attachments', authMiddleware, upload.array('files', 10
                     stage:         'np_enviada',
                     flexxusCode:   data.npCode   || null,
                     amount:        data.total    || null,
-                    currency:      'USD',
+                    currency:      data.currency || 'USD',
                     subtotalNeto:  data.subtotalNeto       || null,
                     ivaAmount:     data.ivaAmount          || null,
                     totalPercepciones: data.totalPercepciones || null,

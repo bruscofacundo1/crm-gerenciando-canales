@@ -103,6 +103,15 @@ function extractSkuFromText(text, catalog) {
       found = true;
     }
   }
+  // 3c) Dígitos-guión-dígito corto pegado a una letra (ej: "...ROJO69338-2")
+  if (!found) {
+    const dsM = text.match(/^(.+[A-Za-zÀ-ÿ])(\d{4,}-\d{1,3})$/);
+    if (dsM) {
+      sku = dsM[2];
+      cleanDesc = dsM[1].trim();
+      found = true;
+    }
+  }
 
   // 4) Código numérico puro (ej: 89032)
   if (!found) {
@@ -136,6 +145,26 @@ function extractSkuFromText(text, catalog) {
     }
   }
 
+  // 5b) Código del catálogo pegado al FINAL del texto. Cubre los casos donde
+  // la descripción del PDF viene truncada y el prefijo de 5) no matchea
+  // (ej: "...LINEAET3499-000" → código "ET3499-000" del catálogo).
+  // Gana el código más largo que coincida.
+  if (!found && catalog && catalog.length > 0) {
+    let best = null;
+    for (const art of catalog) {
+      const code = String(art.code || '').trim();
+      if (code.length < 4) continue;
+      if (text.endsWith(code) && text.length > code.length + 3) {
+        if (!best || code.length > best.length) best = code;
+      }
+    }
+    if (best) {
+      sku = best;
+      cleanDesc = text.slice(0, -best.length).trim();
+      found = true;
+    }
+  }
+
   // 6) Código alfanumérico pegado al final
   if (!found) {
     const mixM = text.match(/^(.+[^A-Z])([A-Z][A-Z0-9]*\d[A-Z0-9/+\-]*)$/);
@@ -146,30 +175,203 @@ function extractSkuFromText(text, catalog) {
     }
   }
 
+  // Validación final contra catálogo: si el SKU extraído no existe tal cual
+  // pero TERMINA con un código real (una regex arrastró letras de la
+  // descripción, ej: "LINEAET3499-000" → "ET3499-000"), corregirlo.
+  if (sku && catalog && catalog.length > 0 && !catalog.some(a => String(a.code || '').trim() === sku)) {
+    let best = null;
+    for (const art of catalog) {
+      const code = String(art.code || '').trim();
+      if (code.length >= 4 && sku.endsWith(code) && sku.length > code.length) {
+        if (!best || code.length > best.length) best = code;
+      }
+    }
+    if (best) {
+      cleanDesc = (cleanDesc + ' ' + sku.slice(0, -best.length)).trim();
+      sku = best;
+    }
+  }
+
   if (sku) {
     cleanDesc = cleanDesc.replace(/[\s.\-\/]+$/, '').trim();
   }
   return { sku, description: cleanDesc };
 }
 
+// ─── Formato NUEVO (desde ~2026): código primero ─────────────────────────────
+/**
+ * Los presupuestos Flexxus recientes se extraen con pdf-parse en este orden:
+ *   {código}{cant}U$S {total}U$S {unitario}{MARCA}{N°item}{DESCRIPCIÓN}
+ * Ejemplos reales:
+ *   "719782-124U$S 209,40U$S 8,73SIMEL1TERMINAL BIMETALICO 120-1/2 - XCX 120"
+ *   "NC1U$S 0,00U$S 0,001ERA CALIDAD7NO COTIZA"           (marca arranca con dígito)
+ *   "1320U$S 26765,74U$S 20,286Subterraneo MT 13,2KV..."  (ítem sin código ni marca)
+ * La línea siguiente suele ser el plazo de entrega ("ENTREGA INMEDIATA", "7 DIAS", ...).
+ */
+
+/**
+ * Separa {MARCA}{N°item}{DESCRIPCIÓN} usando el N° de ítem esperado (secuencial).
+ * Pasada A: N° precedido por letra (fin de marca) y seguido por letra (inicio desc).
+ * Pasada B: idem pero seguido por cualquier no-dígito.
+ * Pasada C: N° seguido por dígito, solo si la descripción arranca con un código
+ *           de producto tipo "{SKU} - ..." que valida el corte (caso PR-18272:
+ *           "RAYCHEM1102L044/S - CAPUCHON..." → marca RAYCHEM, ítem 1, desc "102L044/S - ...").
+ * Luego: N° al inicio (fila sin marca) y fallback genérico.
+ */
+function splitBrandNumDesc(tail, expectedNum) {
+  const isLetter = c => !!c && /[A-Za-zÀ-ÿ]/.test(c);
+  const numStr = String(expectedNum);
+
+  for (const strict of [true, false]) {
+    let idx = tail.indexOf(numStr);
+    while (idx !== -1) {
+      const prev = tail[idx - 1];
+      const next = tail[idx + numStr.length];
+      const nextOk = strict ? isLetter(next) : (next !== undefined && !/\d/.test(next));
+      if (isLetter(prev) && nextOk) {
+        return {
+          brand:   tail.slice(0, idx).trim(),
+          itemNum: expectedNum,
+          desc:    tail.slice(idx + numStr.length).trim(),
+        };
+      }
+      idx = tail.indexOf(numStr, idx + 1);
+    }
+  }
+
+  // Pasada C: el N° va seguido de OTRO dígito porque la descripción empieza
+  // con un código de producto ("102L044/S - CAPUCHON..."). Solo se acepta si
+  // lo que queda matchea el patrón {SKU} - {texto} (Estrategia 0 del cascade).
+  {
+    let idx = tail.indexOf(numStr);
+    while (idx !== -1) {
+      const prev = tail[idx - 1];
+      const desc = tail.slice(idx + numStr.length);
+      if (isLetter(prev) && /^[A-Z0-9][A-Z0-9\/\-\.\(\)]{2,24} - .+/i.test(desc)) {
+        return { brand: tail.slice(0, idx).trim(), itemNum: expectedNum, desc: desc.trim() };
+      }
+      idx = tail.indexOf(numStr, idx + 1);
+    }
+  }
+
+  // N° de ítem al inicio → fila sin marca (ej: cable subterráneo sin código)
+  if (tail.startsWith(numStr) && !/\d/.test(tail[numStr.length] || '')) {
+    return { brand: null, itemNum: expectedNum, desc: tail.slice(numStr.length).trim() };
+  }
+
+  // Genérico (si el contador esperado se desincronizó): {letras}{1-3 dígitos}{letra}
+  const g = tail.match(/^(.*?[A-Za-zÀ-ÿ])(\d{1,3})(?=[A-Za-zÀ-ÿ])/);
+  if (g) {
+    return {
+      brand:   g[1].trim(),
+      itemNum: parseInt(g[2], 10),
+      desc:    tail.slice(g[1].length + g[2].length).trim(),
+    };
+  }
+  return null;
+}
+
+/**
+ * Separa {código}{cantidad} concatenados usando total/unitario para inferir la cantidad.
+ * "719782-124" con total 209,40 y unit 8,73 → qty 24, código "719782-1".
+ * "1320" (solo cantidad, sin código) → qty 1320, código null.
+ * "NC1" (unit = 0) → código "NC", qty 1.
+ */
+function splitCodeQty(pre, total, unitPrice) {
+  if (unitPrice > 0) {
+    const ratio = total / unitPrice;
+    const qtyCand = Math.round(ratio);
+    // Tolerancia relativa: Flexxus muestra el unitario redondeado a 2 decimales,
+    // el total real puede desviarse levemente (ej: qty 1320 → ratio 1319,81)
+    if (qtyCand > 0 && Math.abs(ratio - qtyCand) <= Math.max(0.02, qtyCand * 0.003)) {
+      const qs = String(qtyCand);
+      if (pre.endsWith(qs)) {
+        const code = pre.slice(0, -qs.length).replace(/[\s]+$/, '');
+        return { sku: code || null, qty: qtyCand };
+      }
+    }
+    // Fallback: dígitos al final como cantidad, validados contra los precios
+    const td = pre.match(/^(.*?)(\d{1,6})$/);
+    if (td) {
+      const q = parseInt(td[2], 10);
+      if (q > 0 && Math.abs(q * unitPrice - total) <= Math.max(0.05, total * 0.02)) {
+        return { sku: td[1].trim() || null, qty: q };
+      }
+    }
+    return { sku: pre || null, qty: qtyCand > 0 ? qtyCand : 1 };
+  }
+
+  // Precio 0 (NO COTIZA): dígitos finales = cantidad
+  const m = pre.match(/^(.*?)(\d{1,6})$/);
+  if (m) return { sku: m[1].trim() || null, qty: parseInt(m[2], 10) };
+  return { sku: pre || null, qty: 1 };
+}
+
+/**
+ * Intenta parsear una línea con el formato NUEVO. Retorna null si la línea
+ * no coincide (y se debe intentar con el formato viejo).
+ */
+function tryParseNewFormatItem(line, expectedNum) {
+  const m = line.match(/^(.*?)U\$S\s*([\d.]+,\d{2})\s*U\$S\s*([\d.]+,\d{2})(.+)$/);
+  if (!m) return null;
+
+  const pre = m[1].trim();
+  // En el formato viejo lo que precede al primer precio es la descripción larga;
+  // en el nuevo es {código}{cant} (corto). Umbral conservador.
+  if (pre.length > 24) return null;
+
+  const total     = parseArFloat(m[2]);
+  const unitPrice = parseArFloat(m[3]);
+  const tail      = m[4];
+
+  const bnd = splitBrandNumDesc(tail, expectedNum);
+  if (!bnd || !bnd.desc || bnd.desc.length < 3) return null;
+
+  const cq = splitCodeQty(pre, total, unitPrice);
+  const isNC = /NO COTIZA/i.test(bnd.desc);
+
+  return {
+    sku:         isNC ? null : (cq.sku || null),
+    description: isNC ? 'NO COTIZA' : bnd.desc,
+    quantity:    cq.qty,
+    unit:        null,
+    unitPrice:   isNC ? null : unitPrice,
+    total:       isNC ? null : total,
+    accepted:    !isNC,
+    sortOrder:   bnd.itemNum - 1,
+    brand:       bnd.brand || null,
+  };
+}
+
 // ─── Parsear ítems ────────────────────────────────────────────────────────────
 /**
- * Cada línea de ítem tiene la forma (todo concatenado sin separadores):
- *   {descripción}{código}{cant}U$S {total}U$S {unitario}{marca}{N°item}
- *
- * Estrategia:
- *   1. Detectar línea válida: contiene "U$S" al menos 2 veces.
- *   2. Extraer los dos precios con regex sencilla.
- *   3. Guardar el texto previo al primer precio como "descripción bruta".
- *   4. Extraer el número de ítem del final.
- *   5. Marcar NC ("NO COTIZA") con accepted=false.
+ * Soporta dos layouts de Flexxus:
+ *   NUEVO (desde ~2026): {código}{cant}U$S {total}U$S {unitario}{MARCA}{N°item}{DESCRIPCIÓN}
+ *   VIEJO:               {descripción}{código}{cant}U$S {total}U$S {unitario}{marca}{N°item}
+ * Por cada línea con 2+ "U$S" se intenta primero el formato nuevo; si no
+ * matchea se cae a la lógica vieja (compatibilidad con PDFs anteriores).
  */
 function parseItems(lines, catalog) {
   const items = [];
 
-  for (const line of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
     if ((line.match(/U\$S/g) || []).length < 2) continue;
 
+    // ── 1) Formato NUEVO (código primero) ──────────────────────────────────
+    const newItem = tryParseNewFormatItem(line, items.length + 1);
+    if (newItem) {
+      // Plazo de entrega: línea siguiente sin precios con keywords de plazo
+      const next = lines[li + 1];
+      if (next && !next.includes('U$S') && next.length <= 90 &&
+          /(DIAS|INMEDIAT|SALVO VENTA|ENTREGA|STOCK|SEMANA|CONSULTAR|IMPORTA|DESDE OC)/i.test(next)) {
+        newItem.deliveryNote = next.trim();
+      }
+      items.push(newItem);
+      continue;
+    }
+
+    // ── 2) Formato VIEJO (descripción primero) ─────────────────────────────
     // pdf-parse extrae cada fila como:
     //   {desc}{code}{qty}U$S {total}U$S {unitPrice}{brand}{itemNum}
     // Usamos [\d.]+,\d{2} para precios (evita capturar dígitos de la marca)
@@ -222,6 +424,8 @@ function parseItems(lines, catalog) {
     });
   }
 
+  // Ordenar por N° de ítem del PDF (mailReader persiste con el índice del array)
+  items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   return items;
 }
 
@@ -252,6 +456,19 @@ function getAdjacentUsd(lines, idx) {
   for (const i of [idx - 1, idx + 1, idx]) {
     if (i < 0 || i >= lines.length) continue;
     const m = lines[i].match(/U\$S\s*([\d,.]+)/);
+    if (m) return parseArFloat(m[1]);
+  }
+  return null;
+}
+
+/**
+ * Igual que getAdjacentUsd pero acepta "U$S" o "$" (las NP de compras
+ * Mercado Libre vienen en pesos).
+ */
+function getAdjacentMoney(lines, idx) {
+  for (const i of [idx - 1, idx + 1, idx]) {
+    if (i < 0 || i >= lines.length) continue;
+    const m = lines[i].match(/(?:U\$S|\$)\s*([\d,.]+)/);
     if (m) return parseArFloat(m[1]);
   }
   return null;
@@ -366,13 +583,28 @@ async function parseFlexxusPDF(buffer, opts) {
       }
     }
 
-    // Calcular IVA si no fue parseado directamente:
-    // Total = (SubtotalNeto - Descuento) + IVA + Percepciones
-    // → IVA  = Total - SubtotalNeto + Descuento - Percepciones
+    // Calcular IVA si no fue parseado directamente.
+    // En los PDFs Flexxus verificados (ej: PR-18363 con percepciones ARBA), el Total
+    // NO incluye percepciones: Total = (SubtotalNeto - Desc) + IVA.
+    // Por robustez ante variantes, se calculan ambos candidatos (con y sin
+    // percepciones restadas) y se elige el que mejor coincide con la alícuota.
     if (result.total != null && result.subtotalNeto != null && result.ivaAmount === null) {
       const disc = result.discountAmt || 0;
       const perc = result.totalPercepciones || 0;
-      result.ivaAmount = parseFloat((result.total - result.subtotalNeto + disc - perc).toFixed(2));
+      const neto = result.subtotalNeto - disc;
+
+      // Alícuota impresa en el PDF ("21 %:"); default 21%
+      let ivaRate = 0.21;
+      for (const l of lines) {
+        const rm = l.match(/^([\d,.]+)\s*%\s*:?$/);
+        if (rm) { ivaRate = parseArFloat(rm[1]) / 100; break; }
+      }
+
+      const sinPerc = result.total - result.subtotalNeto + disc;        // Total excluye perc
+      const conPerc = sinPerc - perc;                                    // Total incluye perc
+      const expected = neto * ivaRate;
+      const best = Math.abs(sinPerc - expected) <= Math.abs(conPerc - expected) ? sinPerc : conPerc;
+      result.ivaAmount = parseFloat(best.toFixed(2));
     }
 
   } catch (err) {
@@ -422,28 +654,61 @@ const NP_PEDIDO_RE = /^\d{4}-\d{7,}$/;
  *  - El primer U$S es el TOTAL, el segundo es el precio UNITARIO.
  */
 function parseNotaPedidoItems(lines, catalog) {
+  // Precio con decimales ANCLADOS a 2 dígitos — evita que dígitos posteriores
+  // (ej: columna "Pendiente" pegada al unitario: "U$S 2,9210001") contaminen
+  // el precio. Acepta "U$S" (dólares) o "$" (pesos — NPs de Mercado Libre).
+  const PRICE_PAIR_RE = /(?:U\$S|\$)\s*([\d.]+,\d{2})\s*(?:U\$S|\$)\s*([\d.]+,\d{2})/;
+
   // Líneas candidatas a ser descripciones puras (sin precios, con texto)
   const descCandidates = lines.filter(l =>
-    !l.includes('U$S') && l.length > 8 && /[A-Za-z]/.test(l) &&
+    !/(?:U\$S|\$)\s*[\d.]+,\d{2}/.test(l) && l.length > 8 && /[A-Za-z]/.test(l) &&
     !/^(NOTA|DATOS|DETALLE|MYSELEC|ROWING|COMENTARIO|TRABAJO|Forma|Anticipo|Firma|FLETE|ORDEN|PRESUP|Responsable|Vendedor|Fecha|Operaci|Transpor|Dep|Localidad|Direcci|Telef|E-mail|C\.U\.I|Barrio|Provin|Condic|R\. Social)/i.test(l)
   );
 
+  // Saca "{cantidad}{remitida}" concatenados del final del texto usando la
+  // cantidad inferida por total/unitario (remitida casi siempre "0" al emitir
+  // la NP). Devuelve el resto (el SKU limpio) o null si no pudo.
+  // Ej: "739007-1500" con qty 50 → "739007-1" · "99612060" con qty 6 → "996120"
+  function stripQtyRem(text, qty) {
+    if (!(qty > 0)) return null;
+    const qs = String(qty);
+    for (const suffix of [qs + '0', qs + qs, qs]) {
+      if (text.endsWith(suffix) && text.length > suffix.length) {
+        return text.slice(0, -suffix.length).replace(/[\s,.]+$/, '');
+      }
+    }
+    return null;
+  }
+
+  // Si el SKU extraído arrastra letras de una descripción truncada por el PDF
+  // (ej: "LINEAET3499-000") y no existe tal cual en el catálogo, buscar un
+  // código real del catálogo que sea sufijo exacto. Devuelve { sku, leftover }.
+  function refineSkuWithCatalog(sku) {
+    if (!sku || !catalog || catalog.length === 0) return { sku, leftover: '' };
+    if (catalog.some(a => String(a.code || '').trim() === sku)) return { sku, leftover: '' };
+    let best = null;
+    for (const art of catalog) {
+      const code = String(art.code || '').trim();
+      if (code.length >= 4 && sku.endsWith(code) && sku.length > code.length) {
+        if (!best || code.length > best.length) best = code;
+      }
+    }
+    if (best) return { sku: best, leftover: sku.slice(0, -best.length).trim() };
+    return { sku, leftover: '' };
+  }
+
   const items = [];
   for (const line of lines) {
-    const usdCount = (line.match(/U\$S/g) || []).length;
-    if (usdCount < 2) continue;
-    if (line.startsWith('U$S')) continue;
-
-    // Extraer los dos precios: "U$S {total}U$S {unitario}"
-    const priceM = line.match(/U\$S\s*([\d,.]+)U\$S\s*([\d,.]+)/);
+    const priceM = line.match(PRICE_PAIR_RE);
     if (!priceM) continue;
+
+    const beforePrices = line.slice(0, line.indexOf(priceM[0])).trim();
+    if (!beforePrices) continue; // línea de totales (arranca con el precio)
 
     const total     = parseArFloat(priceM[1]); // primero = total
     const unitPrice = parseArFloat(priceM[2]); // segundo = unitario
     const qty       = (unitPrice > 0 && total > 0) ? Math.round(total / unitPrice) : 0;
     if (total === 0) continue;
-
-    const beforePrices = line.slice(0, line.indexOf('U$S')).trim();
 
     let sku         = null;
     let description = beforePrices;
@@ -453,45 +718,77 @@ function parseNotaPedidoItems(lines, catalog) {
     if (matchDesc) {
       description = matchDesc.trim();
       const afterDesc = beforePrices.slice(matchDesc.length);
-      const skuM = afterDesc.match(/^\d{0,2}?(\d{6}-\d{3})/);
-      if (skuM) {
-        sku = skuM[1].toUpperCase();
-        // Si la descripción termina en dígitos, pueden ser el prefijo del SKU
-        // (ej: desc termina en "/1" y SKU real es "1893710-000" no "893710-000")
-        const trailingDigits = description.match(/(\d+)$/)?.[1] || '';
-        if (trailingDigits) {
-          const extended = trailingDigits + sku;
-          if (/^\d{4,}-\d{2,}$/.test(extended)) {
-            sku = extended;
-            description = description.slice(0, -trailingDigits.length).replace(/[\s.\-\/]+$/, '').trim();
+
+      // 1) Sacar {qty}{remitida} del final → lo que queda es el SKU exacto.
+      //    (antes se adivinaba con regex \d{6}-\d{3} y mutilaba códigos como
+      //    "739007-1" qty 50 → sku erróneo "739007-150")
+      const stripped = stripQtyRem(afterDesc, qty);
+      if (stripped !== null) {
+        sku = stripped.length > 1 ? stripped : null;
+        if (sku) {
+          const refined = refineSkuWithCatalog(sku);
+          if (refined.leftover) description = (description + ' ' + refined.leftover).trim();
+          sku = refined.sku;
+        }
+      } else {
+        // 2) Legacy (layout viejo): regex de SKU numérico + extensión con
+        //    dígitos finales de la descripción
+        const skuM = afterDesc.match(/^\d{0,2}?(\d{6}-\d{3})/);
+        if (skuM) {
+          sku = skuM[1].toUpperCase();
+          const trailingDigits = description.match(/(\d+)$/)?.[1] || '';
+          if (trailingDigits) {
+            const extended = trailingDigits + sku;
+            if (/^\d{4,}-\d{2,}$/.test(extended)) {
+              sku = extended;
+              description = description.slice(0, -trailingDigits.length).replace(/[\s.\-\/]+$/, '').trim();
+            }
           }
+        } else if (afterDesc.length > 2 && /[A-Za-z]/.test(afterDesc)) {
+          // Código alfanumérico — quitar qty+remitida del final
+          let code = afterDesc;
+          if (qty > 0) {
+            const re = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
+            code = code.replace(re, '');
+          }
+          code = code.replace(/[,.\s]+$/, '').trim();
+          if (code.length > 1 && /[A-Za-z]/.test(code)) sku = code;
         }
-      } else if (afterDesc.length > 2 && /[A-Za-z]/.test(afterDesc)) {
-        // Código alfanumérico (ej "KIT ALPUB 4/4 4,550") — quitar qty+remitida del final
-        let code = afterDesc;
-        if (qty > 0) {
-          const re = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
-          code = code.replace(re, '');
-        }
-        code = code.replace(/[,.\s]+$/, '').trim();
-        if (code.length > 1 && /[A-Za-z]/.test(code)) sku = code;
       }
     } else {
-      const allSkuM = [...beforePrices.matchAll(/(\d{6}-\d{3})/g)];
-      const lastSkuM = allSkuM[allSkuM.length - 1];
-      if (lastSkuM) {
-        sku = lastSkuM[1].toUpperCase();
-        description = beforePrices.slice(0, lastSkuM.index).trim() || beforePrices;
+      // Sin línea de descripción limpia: sacar {qty}{remitida} del final y
+      // buscar el SKU numérico estándar de Flexxus (6 dígitos - sufijo)
+      // anclado al final. Ej: "...XCX 150719783-1150" qty 15 →
+      // strip "150" → "...XCX 150719783-1" → sku "719783-1", desc "...XCX 150"
+      const strippedBP = stripQtyRem(beforePrices, qty);
+      if (strippedBP !== null) {
+        const tailSku = strippedBP.match(/^(.*?)(\d{6}-\d{1,3})$/);
+        if (tailSku && tailSku[1].trim()) {
+          sku = tailSku[2].toUpperCase();
+          description = tailSku[1].trim();
+        }
+      }
+      if (!sku) {
+        const allSkuM = [...beforePrices.matchAll(/(\d{6}-\d{3})/g)];
+        const lastSkuM = allSkuM[allSkuM.length - 1];
+        if (lastSkuM) {
+          sku = lastSkuM[1].toUpperCase();
+          description = beforePrices.slice(0, lastSkuM.index).trim() || beforePrices;
+        }
       }
     }
 
     // Fallback cuando no hubo matchDesc: stripear qty+remitida, luego fuzzy + cascada
     if (!sku && !matchDesc) {
-      // Stripear qty+remitida del final (igual que Strategy A alfanumérica)
-      let textStripped = beforePrices;
-      if (qty > 0) {
-        const reQty = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
-        textStripped = textStripped.replace(reQty, '').replace(/[,.\s]+$/, '').trim();
+      // Stripear qty+remitida del final: primero exacto (stripQtyRem), si no
+      // el legacy con regex
+      let textStripped = stripQtyRem(beforePrices, qty);
+      if (textStripped === null) {
+        textStripped = beforePrices;
+        if (qty > 0) {
+          const reQty = new RegExp(String(qty).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\d{0,2}$');
+          textStripped = textStripped.replace(reQty, '').replace(/[,.\s]+$/, '').trim();
+        }
       }
       const textForCascade = textStripped || beforePrices;
 
@@ -514,7 +811,9 @@ function parseNotaPedidoItems(lines, catalog) {
               const codeCandidate = textForCascade.substring(descEnd).trim();
               if (codeCandidate) {
                 description = textForCascade.substring(0, descEnd).trim();
-                sku = codeCandidate;
+                const refined = refineSkuWithCatalog(codeCandidate);
+                if (refined.leftover) description = (description + ' ' + refined.leftover).trim();
+                sku = refined.sku;
                 fuzzyFound = true;
               }
             }
@@ -528,6 +827,10 @@ function parseNotaPedidoItems(lines, catalog) {
         if (extracted.sku) {
           sku = extracted.sku;
           description = extracted.description;
+        } else {
+          // Sin SKU detectable: al menos limpiar los dígitos de qty/remitida
+          // que quedaron pegados a la descripción
+          description = textForCascade;
         }
       }
     }
@@ -562,10 +865,11 @@ async function parseNotaPedidoPDF(buffer, opts) {
     presupuestoNP:  null, // Código PR del presupuesto extraído del COMENTARIO (ej: "PR-17680")
     date:          null,
     seller:        null,
-    subtotalNeto:      null,   // U$S subtotal neto
-    ivaAmount:         null,   // U$S monto IVA
-    totalPercepciones: null,   // U$S total percepciones
+    subtotalNeto:      null,   // subtotal neto
+    ivaAmount:         null,   // monto IVA
+    totalPercepciones: null,   // total percepciones
     total:         null,
+    currency:      'USD', // "USD" | "ARS" — las NP de compras Mercado Libre vienen en pesos
     items:         [],
   };
 
@@ -595,9 +899,17 @@ async function parseNotaPedidoPDF(buffer, opts) {
       result.clientName = lines[cuitIdx + 2];
     }
 
+    // ── Moneda: si ningún precio dice "U$S" pero hay montos en "$" → pesos ───
+    const hasUsd = lines.some(l => /U\$S\s*[\d.]+,\d{2}/.test(l));
+    if (!hasUsd && lines.some(l => /\$\s*[\d.]+,\d{2}/.test(l))) {
+      result.currency = 'ARS';
+    }
+
     // ── Número de OC del cliente (línea después de "Nº OC:") ─────────────────
+    // Si la línea siguiente es otra etiqueta (ej: "Presupuesto:"), el campo
+    // vino vacío en el PDF — no tomar la etiqueta como valor.
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i] === 'Nº OC:' && lines[i + 1]) {
+      if (lines[i] === 'Nº OC:' && lines[i + 1] && !/:\s*$/.test(lines[i + 1])) {
         result.ocNumber = lines[i + 1].trim();
         break;
       }
@@ -646,21 +958,30 @@ async function parseNotaPedidoPDF(buffer, opts) {
       const line = lines[i];
       let m;
 
-      // Subtotal neto
+      // Subtotal neto (el layout nuevo de NP ya no lo imprime — ver fallback abajo)
       if (!result.subtotalNeto && /Subtotal[\s.]+Neto/i.test(line))
-        result.subtotalNeto = getAdjacentUsd(lines, i);
+        result.subtotalNeto = getAdjacentMoney(lines, i);
 
-      // Total percepciones
-      if (!result.totalPercepciones && /Total\s+Perc/i.test(line))
-        result.totalPercepciones = getAdjacentUsd(lines, i);
+      // Total percepciones — el layout nuevo usa la etiqueta "Percepciones:"
+      if (result.totalPercepciones == null && /Total\s+Perc|^Percepciones\s*:/i.test(line))
+        result.totalPercepciones = getAdjacentMoney(lines, i);
 
-      // Grand total
+      // Grand total (acepta U$S o $)
       if (!result.total) {
-        if ((m = line.match(/^Total\s*:\s*U\$S\s*([\d,.]+)$/)))
+        if ((m = line.match(/^Total\s*:\s*(?:U\$S|\$)\s*([\d,.]+)$/)))
           result.total = parseArFloat(m[1]);
         else if (/^Total\s*:?\s*$/.test(line))
-          result.total = getAdjacentUsd(lines, i);
+          result.total = getAdjacentMoney(lines, i);
       }
+    }
+
+    // ── Ítems ─────────────────────────────────────────────────────────────────
+    result.items = parseNotaPedidoItems(lines, opts && opts.catalog);
+
+    // Layout nuevo: el PDF no imprime "Subtotal. Neto:" — derivarlo de los ítems
+    if (result.subtotalNeto === null && result.items.length > 0) {
+      const sum = result.items.reduce((s, it) => s + (it.total || 0), 0);
+      result.subtotalNeto = parseFloat(sum.toFixed(2));
     }
 
     // Calcular IVA: Total = SubtotalNeto + IVA + Percepciones
@@ -668,9 +989,6 @@ async function parseNotaPedidoPDF(buffer, opts) {
       const perc = result.totalPercepciones || 0;
       result.ivaAmount = parseFloat((result.total - result.subtotalNeto - perc).toFixed(2));
     }
-
-    // ── Ítems ─────────────────────────────────────────────────────────────────
-    result.items = parseNotaPedidoItems(lines, opts && opts.catalog);
 
   } catch (err) {
     console.error('parseNotaPedidoPDF error:', err.message);
