@@ -47,8 +47,8 @@ async function findFlexxusAttachment(quoteId, mailType) {
 // Helper: reparsea una quote puntual. No escribe nada — devuelve el resultado.
 async function reparseOne(quote, catalog) {
   const att = await findFlexxusAttachment(quote.id, quote.mailType);
-  if (!att) return { id: quote.id, code: quote.code, ok: false, error: 'No se encontró el PDF de Flexxus entre los adjuntos' };
-  if (!fs.existsSync(att.path)) return { id: quote.id, code: quote.code, ok: false, error: 'El archivo del adjunto ya no existe en disco' };
+  if (!att) return { id: quote.id, code: quote.code, mailType: quote.mailType, ok: false, items: [], error: 'No se encontró el PDF de Flexxus entre los adjuntos' };
+  if (!fs.existsSync(att.path)) return { id: quote.id, code: quote.code, mailType: quote.mailType, ok: false, items: [], error: 'El archivo del adjunto ya no existe en disco' };
 
   const buffer = fs.readFileSync(att.path);
   const parsed = quote.mailType === 'NOTA_PEDIDO'
@@ -116,7 +116,7 @@ router.post('/reparse-preview', authMiddleware, requireDeveloper, async (req, re
 
     res.json({
       token,
-      results: results.map(({ _parsed, items, ...r }) => ({ ...r, itemsPreview: items.slice(0, 5) })),
+      results: results.map(({ _parsed, items, ...r }) => ({ ...r, itemsPreview: (items || []).slice(0, 5) })),
     });
   } catch (err) {
     console.error('reparse-preview error:', err);
