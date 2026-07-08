@@ -627,10 +627,16 @@ function isFlexxusPDF(att) {
 /**
  * Detecta si un attachment es una Nota de Pedido Flexxus.
  * Criterio: filename contiene "Nota de Pedido" y extensión .pdf
+ *
+ * Al guardar el adjunto en disco los espacios del nombre original se
+ * sanitizan a "_" (ej: "Nota de Pedido...pdf" → "Nota_de_Pedido...pdf").
+ * Esta función se usa tanto contra el nombre recién llegado (mail/upload,
+ * con espacios) como contra el nombre YA sanitizado guardado en la DB
+ * (ej: al reparsear) — normalizar "_" a " " antes de comparar cubre ambos.
  */
 function isNotaPedidoPDF(att) {
   if (!att || !att.filename) return false;
-  const name = att.filename.toLowerCase();
+  const name = att.filename.toLowerCase().replace(/_/g, ' ');
   return name.endsWith('.pdf') && name.includes('nota de pedido');
 }
 
