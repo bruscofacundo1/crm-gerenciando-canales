@@ -101,10 +101,15 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       prisma.quote.count({ where: { ...base, mailType: 'NOTA_PEDIDO', stage: 'entregada' } }),
     ]);
 
+    const PRESUPUESTO_ONLY = { OR: [{ mailType: 'PRESUPUESTO' }, { mailType: null }] };
+
+    // "Monto cotizado" = solo Presupuestos (manuales o por mail). Antes sumaba
+    // TODAS las cotizaciones con amount, incluidas las Notas de Pedido — lo que
+    // duplicaba ese monto contra "Monto confirmado" (que sí filtra NOTA_PEDIDO).
     const [totalAmount, montoConfirmado, totalAmountARS, montoConfirmadoARS] = await Promise.all([
       prisma.quote.aggregate({
         _sum:  { amount: true },
-        where: { ...base, ...NO_PACKAGE_DUPES, amount: { not: null }, currency: { not: 'ARS' } },
+        where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY, amount: { not: null }, currency: { not: 'ARS' } },
       }),
       prisma.quote.aggregate({
         _sum:  { amount: true },
@@ -112,7 +117,7 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       }),
       prisma.quote.aggregate({
         _sum:  { amount: true },
-        where: { ...base, ...NO_PACKAGE_DUPES, amount: { not: null }, currency: 'ARS' },
+        where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY, amount: { not: null }, currency: 'ARS' },
       }),
       prisma.quote.aggregate({
         _sum:  { amount: true },
@@ -120,7 +125,6 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       }),
     ]);
 
-    const PRESUPUESTO_ONLY = { OR: [{ mailType: 'PRESUPUESTO' }, { mailType: null }] };
     const [accepted, totalInPeriod] = await Promise.all([
       prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY, stage: 'aceptada' } }),
       prisma.quote.count({ where: { ...base, ...NO_PACKAGE_DUPES, ...PRESUPUESTO_ONLY } }),
