@@ -376,7 +376,7 @@ function AppProvider({ children }) {
 
   const value = {
     quotes, setQuotes, orders, setOrders, clients, setClients, users, setUsers, activity, comments, notifications,
-    inboxAlerts, snoozeAlert, markInboxSeen, ackAssigned,
+    inboxAlerts, setInboxAlerts, snoozeAlert, markInboxSeen, ackAssigned,
     quoteFilters, setQuoteFilters, orderFilters, setOrderFilters,
     currentUserId, setCurrentUserId, roleKey, setRoleKey,
     addQuote, addOrder, addClient, updateQuote, updateOrder,
@@ -1493,7 +1493,7 @@ function SearchPaletteModal() {
 // --- Detail modal wrappers (route to existing drawers via registry) ---
 function QuoteDetailWrapper({ code }) {
   const { closeModal, roleKey } = useApp();
-  return <QuoteDetail code={code} onClose={closeModal} canReassign={['admin','vendedor'].includes(roleKey)}/>;
+  return <QuoteDetail code={code} onClose={closeModal} canReassign={['admin','seller'].includes(roleKey)}/>;
 }
 function OrderDetailWrapper({ code }) {
   const { closeModal, roleKey } = useApp();
@@ -1824,7 +1824,7 @@ const MODAL_REGISTRY = {
 // ---------- Notifications Popover ----------
 function NotificationsPopover({ onClose, setScreen }) {
   const { notifications, markNotificationRead, markAllNotificationsRead, openModal,
-          inboxAlerts, snoozeAlert, markInboxSeen, ackAssigned } = useApp();
+          inboxAlerts, setInboxAlerts, snoozeAlert, markInboxSeen, ackAssigned } = useApp();
   const [tab, setTab] = useS(inboxAlerts.length > 0 ? 'inbox' : 'activity');
   const [dismissOpen, setDismissOpen] = useS(null); // alert.id with open dismiss dropdown
 

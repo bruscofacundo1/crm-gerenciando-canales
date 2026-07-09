@@ -243,7 +243,10 @@ function OCItemsTab({ q, detailItems, setDetailItems }) {
     try {
       await CrmApi.updateQuoteItem(q.id, it.id, data);
     } catch (err) {
-      pushToast(err.message || 'Error al guardar', 'bad');
+      // Revertir al valor original: si no hacemos esto, la fila queda mostrando
+      // datos que el usuario cree guardados pero el servidor nunca persistió.
+      setDetailItems(prev => prev.map(i => i.id === it.id ? it : i));
+      pushToast(err.message || 'Error al guardar — se revirtió el cambio', 'bad');
     }
   };
 
@@ -2246,7 +2249,7 @@ function OrderDetail({ code, onClose, canReassign }) {
   return (
     <>
     <Drawer onClose={onClose}
-      subtitle={`Fase 2 · Orden de Compra · ${stg?.label || o.stage}`}
+      subtitle={`Fase 2 · ${isNP ? 'Nota de Pedido' : 'Orden de Compra'} · ${stg?.label || o.stage}`}
       title={`${code}${cli ? ` — ${cli.name}` : ''}`}
       width={960}
       headerExtras={
