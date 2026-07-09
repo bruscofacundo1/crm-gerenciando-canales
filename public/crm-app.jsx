@@ -1320,7 +1320,7 @@ function Dashboard({ setScreen }) {
   };
 
   const kpis = [
-    { label: 'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas), sub: 'total del sistema' },
+    { label: 'Cotizaciones activas',  value: kv(kpisData?.cotizacionesActivas), sub: 'F1 + NP + OC en curso' },
     { label: 'Presupuestos enviados', value: kv(kpisData?.presupuestosEnviados) },
     { label: 'NP en curso',           value: kv(kpisData?.npEnCurso) },
     { label: 'OC en curso',           value: kv(kpisData?.ocEnCurso) },
@@ -1541,6 +1541,7 @@ function Dashboard({ setScreen }) {
                 {filters.from || filters.to
                   ? `${filters.from || '—'} → ${filters.to || 'hoy'} · cotizadas vs. ganadas`
                   : 'Período seleccionado · cotizadas vs. ganadas'}
+                {filters.sellerId ? ' · muestra todos los vendedores para comparar' : ''}
               </div>
             </div>
             <ResponsiveContainer width="100%" height={220}>
@@ -1588,8 +1589,9 @@ function Dashboard({ setScreen }) {
             <div className="mb-3">
               <div className="text-[13px] font-semibold text-ink-900" style={{letterSpacing: '-0.01em'}}>Evolución mensual</div>
               <div className="text-[11px] text-ink-400 mt-0.5">
-                Últimos 6 meses · recibidas vs. ganadas
+                Últimos 6 meses fijos · recibidas vs. ganadas
                 {filters.sellerId ? ` · ${sellerUsers.find(u=>u.id===filters.sellerId)?.name?.split(' ')[0] || ''}` : ''}
+                {(filters.from || filters.to) ? ' · no usa el rango de fechas filtrado' : ''}
               </div>
             </div>
             <ResponsiveContainer width="100%" height={220}>

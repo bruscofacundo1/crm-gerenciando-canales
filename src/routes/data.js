@@ -382,6 +382,15 @@ router.patch('/stages-reorder', authMiddleware, async (req, res) => {
 
 // GET /data/charts/monthly
 // Acepta: ?sellerId= (filtra por vendedor; siempre muestra últimos 6 meses)
+// Nota: "recibidas" filtra por createdAt (mes en que se creó la cotización) y
+// "ganadas" filtra por stageChangedAt (mes en que pasó a 'aceptada'), con
+// fallback a updatedAt para registros viejos sin stageChangedAt. Es intencional
+// — cada barra representa el evento que le da nombre, no el mismo campo de
+// fecha. Unificar ambas a createdAt rompería el gráfico: un presupuesto creado
+// en enero y ganado en marzo aparecería como "ganado en enero", contradiciendo
+// el resto de KPIs que sí muestran ganadas en el período real de cierre.
+// No acepta from/to (siempre son los últimos 6 meses) — ver aviso en el
+// frontend (Dashboard, subtítulo "Evolución mensual").
 router.get('/charts/monthly', authMiddleware, async (req, res) => {
   try {
     const { sellerId } = req.query;
