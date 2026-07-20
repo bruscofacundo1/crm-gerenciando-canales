@@ -305,6 +305,7 @@ const CrmApi = {
   getFeedbackPosts:   ()           => apiFetch('/feedback'),
   createFeedbackPost: (data)       => apiFetch('/feedback', { method: 'POST', body: JSON.stringify(data) }),
   respondFeedback:    (id, body, status) => apiFetch(`/feedback/${id}/respond`, { method: 'POST', body: JSON.stringify({ body, status }) }),
+  commentFeedback:    (id, body)         => apiFetch(`/feedback/${id}/comment`, { method: 'POST', body: JSON.stringify({ body }) }),
   setFeedbackStatus:  (id, status) => apiFetch(`/feedback/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   voteFeedback:         (id)           => apiFetch(`/feedback/${id}/vote`, { method: 'POST' }),
 

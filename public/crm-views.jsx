@@ -5553,6 +5553,8 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
   const [replyBody,     setReplyBody]     = useState('');
   const [replyStatus,   setReplyStatus]   = useState('');
   const [sending,       setSending]       = useState(false);
+  const [commentBody,   setCommentBody]   = useState('');
+  const [commenting,    setCommenting]    = useState(false);
   const [votingLoading, setVotingLoading] = useState(false);
   const [editing,       setEditing]       = useState(false);
   const [editTitle,     setEditTitle]     = useState('');
@@ -5600,6 +5602,24 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
       alert(e.message || 'Error al responder.');
     }
     setSending(false);
+  }
+
+  async function handleComment() {
+    if (!commentBody.trim()) return;
+    setCommenting(true);
+    try {
+      const result = await CrmApi.commentFeedback(post.id, commentBody);
+      setPost(prev => ({
+        ...prev,
+        status: result.newStatus || prev.status,
+        responses: [...prev.responses, result.response],
+      }));
+      setCommentBody('');
+      onUpdate && onUpdate();
+    } catch (e) {
+      alert(e.message || 'Error al comentar.');
+    }
+    setCommenting(false);
   }
 
   async function handleStatusChange(status) {
@@ -5776,26 +5796,50 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
 
           {post.responses.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 px-5 py-6 text-center text-sm text-slate-400">
-              Todavía no hay respuestas. {isAdmin ? 'Sé el primero en responder.' : ''}
+              Todavía no hay respuestas.
             </div>
           ) : (
             <div className="space-y-3">
-              {post.responses.map(r => (
-                <div key={r.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon name="shield-check" size={13} className="text-white"/>
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-600">{r.user.name}</span>
-                      <span className="px-1.5 py-0.5 bg-brand/10 text-brand rounded text-[9px] font-bold">Dev</span>
-                      <span>·</span>
-                      {fmtDate(r.createdAt)}
+              {post.responses.map(r => {
+                const rDev = r.user.role === 'DEVELOPER';
+                return (
+                  <div key={r.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex gap-3">
+                    <div className={cx('w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5', rDev ? 'bg-brand' : 'bg-slate-300')}>
+                      {rDev
+                        ? <Icon name="shield-check" size={13} className="text-white"/>
+                        : <span className="text-[11px] font-bold text-white">{(r.user.name || '?')[0].toUpperCase()}</span>}
                     </div>
-                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{r.body}</div>
+                    <div className="flex-1">
+                      <div className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-600">{r.user.name}</span>
+                        {rDev && <span className="px-1.5 py-0.5 bg-brand/10 text-brand rounded text-[9px] font-bold">Dev</span>}
+                        <span>·</span>
+                        {fmtDate(r.createdAt)}
+                      </div>
+                      <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{r.body}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+
+          {/* Agregar comentario — cualquier usuario puede seguir el hilo */}
+          {post.status !== 'CLOSED' && (
+            <div className="mt-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Agregar comentario</div>
+              <textarea
+                value={commentBody}
+                onChange={e => setCommentBody(e.target.value)}
+                placeholder="Escribí un comentario o una respuesta de seguimiento…"
+                rows={3}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"/>
+              <div className="flex justify-end mt-2">
+                <button onClick={handleComment} disabled={commenting || !commentBody.trim()}
+                  className="px-4 py-1.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand/90 disabled:opacity-50 flex items-center gap-2">
+                  {commenting ? <><Icon name="loader" size={13} className="animate-spin"/>Enviando…</> : 'Comentar'}
+                </button>
+              </div>
             </div>
           )}
         </div>

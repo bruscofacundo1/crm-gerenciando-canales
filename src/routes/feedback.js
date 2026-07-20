@@ -5,8 +5,9 @@
  * GET  /              — listar posts (todos ven todos)
  * POST /              — crear post (genera código MYS-XXXX)
  * GET  /:id           — detalle de un post
- * POST /:id/respond   — responder (ADMIN only) + notifica al autor
- * PATCH /:id/status   — cambiar estado (ADMIN only)
+ * POST /:id/respond   — responder (DEVELOPER only) + notifica al autor
+ * POST /:id/comment   — seguir el hilo (cualquier usuario autenticado) + notifica
+ * PATCH /:id/status   — cambiar estado (DEVELOPER only)
  * POST /:id/vote      — toggle +1
  */
 
@@ -112,7 +113,7 @@ const POST_INCLUDE = {
   user: { select: { id: true, name: true, email: true, avatar: true, role: true } },
   responses: {
     orderBy: { createdAt: 'asc' },
-    include: { user: { select: { id: true, name: true, avatar: true } } },
+    include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
   },
 };
 
@@ -265,6 +266,87 @@ router.post('/:id/respond', async (req, res) => {
       }
     } catch (mailErr) {
       console.warn('⚠️  feedback respond notify failed:', mailErr.message);
+    }
+
+    res.json({ response, newStatus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /:id/comment — seguir el hilo (cualquier usuario autenticado) ────────
+router.post('/:id/comment', async (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'El comentario no puede estar vacío.' });
+
+    const post = await prisma.feedbackPost.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
+    if (!post) return res.status(404).json({ error: 'Post no encontrado.' });
+    if (post.status === 'CLOSED') return res.status(400).json({ error: 'Este caso está cerrado.' });
+
+    const dev = isDeveloper(req.user);
+    // Si alguien que no es desarrollador comenta un caso ya dado por resuelto, lo reabrimos
+    // para que no quede enterrado — necesita que el equipo lo vuelva a mirar.
+    const reopenStatuses = ['RESPONDED', 'RESOLVED'];
+    const newStatus = (!dev && reopenStatuses.includes(post.status)) ? 'OPEN' : post.status;
+
+    const ops = [
+      prisma.feedbackResponse.create({
+        data: { body: body.trim(), userId: req.user.id, postId: post.id },
+        include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
+      }),
+    ];
+    if (newStatus !== post.status) {
+      ops.push(prisma.feedbackPost.update({ where: { id: post.id }, data: { status: newStatus } }));
+    }
+    const [response] = await prisma.$transaction(ops);
+
+    // Notificar: si comenta el dev, avisar al autor; si comenta cualquier otro, avisar a los devs
+    try {
+      if (dev) {
+        if (post.user.email && post.user.email !== req.user.email) {
+          await sendMail({
+            to: post.user.email,
+            replyTo: req.user.email,
+            subject: `[MySelec CRM] Nueva respuesta en tu reporte ${post.code}`,
+            html: require('../services/emailTemplate').brandedEmail({
+              title: `Respuesta · ${post.code}`,
+              preheader: `${req.user.name} respondió a tu reporte`,
+              content: [
+                require('../services/emailTemplate').emailParagraph(`<strong>${req.user.name}</strong> respondió a: <em>${post.title}</em>`),
+                `<div style="background:#F5F6F7;border-left:3px solid #20759E;border-radius:4px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${escHtml(body.trim())}</div>`,
+                require('../services/emailTemplate').emailParagraph('Podés ver el hilo completo en la sección <strong>Foro</strong> del CRM.'),
+              ].join(''),
+            }),
+            text: `${req.user.name} respondió tu reporte ${post.code}:\n\n${body.trim()}`,
+          });
+        }
+      } else {
+        const devEmails = (await getFeedbackNotifyEmails()).filter(e => e !== req.user.email);
+        if (devEmails.length > 0) {
+          await sendMail({
+            to: devEmails,
+            subject: `[MySelec CRM] ${post.code} — nuevo comentario de ${req.user.name}`,
+            html: require('../services/emailTemplate').brandedEmail({
+              title: `Foro · ${post.code}`,
+              preheader: `${req.user.name} comentó: ${post.title}`,
+              content: [
+                require('../services/emailTemplate').emailParagraph(`<strong>${req.user.name}</strong> sumó un comentario en: <em>${post.title}</em>`),
+                `<div style="background:#F5F6F7;border-radius:8px;padding:14px 16px;margin:16px 0;white-space:pre-wrap;font-size:14px;color:#231F20;line-height:1.6">${escHtml(body.trim())}</div>`,
+                require('../services/emailTemplate').emailParagraph('Ingresá al CRM → sección <strong>Foro</strong> para responder.'),
+              ].join(''),
+            }),
+            text: `${req.user.name} comentó ${post.code}:\n\n${body.trim()}`,
+          });
+        }
+        // Si además hay un tercero (ni autor ni comentarista) siguiendo el hilo, no hace falta avisarle acá —
+        // solo notificamos al autor cuando responde un dev, y a los devs cuando responde cualquier otro.
+      }
+    } catch (mailErr) {
+      console.warn('⚠️  feedback comment notify failed:', mailErr.message);
     }
 
     res.json({ response, newStatus });
