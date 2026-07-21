@@ -534,10 +534,14 @@ app.listen(PORT, () => {
     runStageAlerts().catch(e => console.error('stage alerts initial error:', e.message));
   }, 60 * 1000);
 
-  // Resumen semanal — corre cada hora y actúa solo el día/hora configurados
+  // Resumen semanal — chequea cada 5 min y actúa solo el día/hora configurados.
+  // Intervalo corto a propósito: como el proceso se reinicia seguido (cada deploy),
+  // un intervalo de 60 min podía pasar semanas sin coincidir nunca con la ventana
+  // configurada. runWeeklyReport() ya es liviana cuando no coincide (solo lee 3
+  // AppSetting) y tiene dedup interno por weekly_report_last_sent.
   setInterval(() => {
     runWeeklyReport().catch(e => console.error('weekly report error:', e.message));
-  }, 60 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
   // Sync automático de mails — intervalo configurable desde AppSetting
   async function scheduleMailSync() {

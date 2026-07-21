@@ -585,93 +585,24 @@ router.get('/counts', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/notifications/cron/weekly-report — fuerza el envío del resumen semanal
-// Solo admin autenticado puede dispararlo manualmente; ignora restricción de día/hora.
-// Ejecuta paso a paso y devuelve diagnóstico exacto si algo falla.
-router.post('/cron/weekly-report', authMiddleware, adminOnly, async (req, res) => {
-  const diag = {};
+// POST /api/notifications/cron/weekly-report — ejecuta el chequeo del resumen semanal
+// Protegido por CRON_SECRET (Railway lo puede llamar por cron schedule, ej. cada hora).
+// runWeeklyReport() ya respeta el día/hora configurados en Config y evita doble envío
+// (dedup por weekly_report_last_sent) — pensado para pingearse seguido sin riesgo de
+// mandar de más, igual que /cron/stage-alerts. Reemplaza al setInterval de server.js
+// como mecanismo confiable: ese timer se resetea en cada redeploy y puede pasar
+// semanas sin coincidir nunca con el día/hora configurado.
+router.post('/cron/weekly-report', async (req, res) => {
+  const secret = req.headers['x-cron-secret'];
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET || secret !== CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
-    const { sendMail } = require('../services/mailer');
-    const { brandedEmail, emailButton, emailParagraph, BRAND_COLORS: C } = require('../services/emailTemplate');
-
-    // Paso 1: obtener admins
-    const admins = await prisma.user.findMany({
-      where: { role: { in: ['ADMIN','DEVELOPER'] }, active: true },
-      select: { email: true, name: true },
-    });
-    diag.step = 'admins'; diag.adminEmails = admins.map(a => a.email);
-    if (!admins.length) return res.json({ ok: false, error: 'No hay admins activos', diag });
-
-    // Paso 2: construir stats básicos
-    const now = new Date();
-    const argTime = new Date(now.getTime() - 3 * 3600 * 1000);
-    const reportDate = argTime.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
-    const weekStart = new Date(now.getTime() - 7 * 86400000);
-
-    const [quotesThisWeek, wonThisWeek] = await Promise.all([
-      prisma.quote.count({ where: { createdAt: { gte: weekStart } } }),
-      prisma.quote.count({ where: { stage: 'aceptada', updatedAt: { gte: weekStart } } }),
-    ]);
-    diag.step = 'stats'; diag.quotesThisWeek = quotesThisWeek; diag.wonThisWeek = wonThisWeek;
-
-    const allQuotes = await prisma.quote.findMany({
-      where: { isDraft: false },
-      select: { stage: true, amount: true, sellerId: true },
-    });
-    diag.step = 'allQuotes'; diag.total = allQuotes.length;
-
-    const totalActive = allQuotes.filter(q => !['aceptada','rechazada'].includes(q.stage)).length;
-    const totalMonto  = allQuotes.reduce((s, q) => s + (q.amount || 0), 0);
-    const APP_URL = process.env.APP_URL || 'https://crm-gerenciando-canales-production-c7d6.up.railway.app';
-
-    // Paso 3: enviar mail de prueba con branded template
-    diag.step = 'sendMail';
-    const subject = `📊 Resumen semanal MySelec CRM — ${reportDate}`;
-
-    const kpiGrid =
-      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">' +
-      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
-        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Nuevas cotizaciones</div>' +
-        '<div style="font-size:28px;font-weight:700;color:' + C.brandDark + '">' + quotesThisWeek + '</div>' +
-        '<div style="font-size:11px;color:' + C.grayDark + '">últimos 7 días</div>' +
-      '</div>' +
-      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
-        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Ganadas esta semana</div>' +
-        '<div style="font-size:28px;font-weight:700;color:#22C55E">' + wonThisWeek + '</div>' +
-        '<div style="font-size:11px;color:' + C.grayDark + '">' + totalActive + ' activas en total</div>' +
-      '</div>' +
-      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
-        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Monto total pipeline</div>' +
-        '<div style="font-size:22px;font-weight:700;color:' + C.brandDark + '">U$S ' + Math.round(totalMonto).toLocaleString('es-AR') + '</div>' +
-        '<div style="font-size:11px;color:' + C.grayDark + '">cotizaciones activas</div>' +
-      '</div>' +
-      '<div style="background:' + C.bg + ';border-radius:10px;padding:16px">' +
-        '<div style="font-size:11px;color:' + C.grayDark + ';margin-bottom:4px">Cotizaciones activas</div>' +
-        '<div style="font-size:28px;font-weight:700;color:' + C.brandDark + '">' + totalActive + '</div>' +
-        '<div style="font-size:11px;color:' + C.grayDark + '">en pipeline</div>' +
-      '</div>' +
-      '</div>';
-
-    const html = brandedEmail({
-      title: 'Resumen Semanal',
-      preheader: 'Resumen semanal MySelec CRM · ' + reportDate,
-      content: kpiGrid + emailButton(APP_URL, 'Abrir el CRM →') +
-        '<div style="font-size:11px;color:' + C.grayMid + ';margin-top:16px;text-align:center">Generado automáticamente por MySelec CRM</div>',
-    });
-
-    await sendMail({ to: admins.map(a => a.email), subject, html });
-    diag.step = 'done';
-
-    // Registrar envío
-    await prisma.appSetting.upsert({
-      where:  { key: 'weekly_report_last_sent' },
-      update: { value: now.toISOString() },
-      create: { key: 'weekly_report_last_sent', value: now.toISOString() },
-    });
-
-    res.json({ ok: true, ran: now.toISOString(), sentTo: admins.map(a => a.email), diag });
+    await runWeeklyReport();
+    res.json({ ok: true, ran: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message, stack: err.stack?.split('\n').slice(0,5), diag });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
