@@ -2390,6 +2390,7 @@ function Config() {
     default_stage_nota_pedido:            'np_enviada',
   });
   const [followUpDays, setFollowUpDays] = useState('4');
+  const [deadlineDays, setDeadlineDays] = useState('3');
   const [allowedEmailDomains, setAllowedEmailDomains] = useState('myselec.com,myselec.com.ar,gmail.com');
   const [allowedEmails,       setAllowedEmails]       = useState('');
   const [savingDomains,       setSavingDomains]       = useState(false);
@@ -2462,6 +2463,7 @@ function Config() {
       .then(s => {
         setIncomingStages(prev => ({ ...prev, ...s }));
         if (s.follow_up_days)           setFollowUpDays(s.follow_up_days);
+        if (s.deadline_days)            setDeadlineDays(s.deadline_days);
         if (s.allowed_email_domains)    setAllowedEmailDomains(s.allowed_email_domains);
         if (s.allowed_emails !== undefined) setAllowedEmails(s.allowed_emails);
         if (s.idle_inbox_days)          setIdleInboxDays(s.idle_inbox_days);
@@ -2767,6 +2769,18 @@ function Config() {
         body: JSON.stringify({ follow_up_days: val }),
       });
       pushToast('Días de seguimiento guardados');
+    } catch { pushToast('Error al guardar', 'bad'); }
+  };
+
+  const saveDeadlineDays = async (val) => {
+    setDeadlineDays(val);
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+        body: JSON.stringify({ deadline_days: val }),
+      });
+      pushToast('Días para fecha límite guardados');
     } catch { pushToast('Error al guardar', 'bad'); }
   };
 
@@ -3083,6 +3097,26 @@ function Config() {
                 onChange={e => saveFollowUpDays(e.target.value)}
               >
                 {[1,2,3,4,5,7,10,14,21,30].map(d => (
+                  <option key={d} value={String(d)}>{d} {d === 1 ? 'día' : 'días'}</option>
+                ))}
+              </select>
+            </div>
+            <div className="px-5 py-4 flex items-center gap-4 border-t border-line">
+              <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+                <Icon name="flag" size={15} className="text-orange-500"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-semibold text-ink-800">Fecha límite de armado</div>
+                <div className="text-[11.5px] text-ink-400 mt-0.5">
+                  Días desde que se asigna vendedor hasta el objetivo para tener el presupuesto listo. Se completa automático y se puede editar por cotización.
+                </div>
+              </div>
+              <select
+                className="inp text-[13px] w-28 shrink-0"
+                value={deadlineDays}
+                onChange={e => saveDeadlineDays(e.target.value)}
+              >
+                {[1,2,3,4,5,7,10,14].map(d => (
                   <option key={d} value={String(d)}>{d} {d === 1 ? 'día' : 'días'}</option>
                 ))}
               </select>

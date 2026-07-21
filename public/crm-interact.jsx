@@ -484,7 +484,6 @@ function NewQuoteModal({ defaultClient }) {
     client: defaultClient || '',
     seller: currentUserId || '',
     ingreso: new Date().toISOString().slice(0,10),
-    fechaLimite: '',
     monto: '',
     currency: 'USD',
     origin: 'Mail',
@@ -538,7 +537,6 @@ function NewQuoteModal({ defaultClient }) {
         amount: form.monto ? parseFloat(form.monto) : null,
         currency: form.currency,
         source,
-        deadline: form.fechaLimite || null,
       });
       if (pdfFile && created?.id) {
         try {
@@ -559,7 +557,7 @@ function NewQuoteModal({ defaultClient }) {
   };
 
   return (
-    <Modal onClose={closeModal} subtitle="Fase 1 · Solicitud Recibida" title="Nueva cotización" width={620}
+    <Modal onClose={closeModal} subtitle="Fase 1 · Presupuesto ya armado y enviado" title="Nueva cotización" width={620}
       footer={
         <>
           <button className="btn-ghost" onClick={closeModal} disabled={saving}>Cancelar</button>
@@ -641,13 +639,10 @@ function NewQuoteModal({ defaultClient }) {
         <FormGroup label="Origen">
           <Select value={form.origin} onChange={v=>set('origin',v)} options={ORIGINS}/>
         </FormGroup>
-        <FormGroup label="Fecha de ingreso">
+        <FormGroup label="Fecha de ingreso" cols={2}>
           <input type="date" className="inp w-full" value={form.ingreso} onChange={e=>set('ingreso',e.target.value)}/>
         </FormGroup>
-        <FormGroup label="Fecha límite de armado">
-          <input type="date" className="inp w-full" value={form.fechaLimite} onChange={e=>set('fechaLimite',e.target.value)}/>
-        </FormGroup>
-        <FormGroup label="Monto estimado" hint="Opcional — se completa al armar el presupuesto" cols={2}>
+        <FormGroup label="Monto" hint="Opcional" cols={2}>
           <div className="flex gap-2">
             <select className="inp w-24 shrink-0" value={form.currency} onChange={e=>set('currency',e.target.value)}>
               <option value="USD">U$S</option>

@@ -231,6 +231,7 @@ router.get('/', authMiddleware, async (req, res) => {
       emailMessageId: q.emailMessageId || null,
       mailType: q.mailType || null,
       followUpDate: q.followUpDate?.toISOString() || null,
+      deadline: q.deadline?.toISOString() || null,
       rejectReason: q.rejectReason,
       linkedQuoteId:   q.linkedQuoteId || null,
       linkedQuoteCode: q.linkedQuote?.code || null,
@@ -276,7 +277,7 @@ router.get('/send-accounts', authMiddleware, async (req, res) => {
 // POST /api/quotes - Create new quote
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { clientId, sellerId, amount, source, deadline, notes, currency } = req.body;
+    const { clientId, sellerId, amount, source, notes, currency } = req.body;
 
     // Generate next code
     const code = await nextCode(prisma.quote, 'COT-2026');
@@ -287,6 +288,7 @@ router.post('/', authMiddleware, async (req, res) => {
     const followUpDate = new Date();
     followUpDate.setDate(followUpDate.getDate() + fudDays);
 
+    // No lleva deadline: la creación manual siempre es un presupuesto ya armado y enviado
     const quote = await prisma.quote.create({
       data: {
         code,
@@ -297,7 +299,6 @@ router.post('/', authMiddleware, async (req, res) => {
         mailType: 'PRESUPUESTO',
         stage: 'enviado',
         currency: currency === 'ARS' ? 'ARS' : 'USD',
-        deadline: deadline ? new Date(deadline) : null,
         followUpDate,
       },
       include: {
@@ -494,9 +495,23 @@ router.patch('/:id/assign', authMiddleware, async (req, res) => {
   }
   try {
     const { sellerId } = req.body;
+
+    const updateData = { sellerId };
+    if (sellerId) {
+      // Fecha límite de armado solo aplica a Solicitudes (el Presupuesto ya está armado y enviado)
+      const current = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { deadline: true, mailType: true } });
+      if (current && current.mailType === 'SOLICITUD' && !current.deadline) {
+        const deadlineSetting = await prisma.appSetting.findUnique({ where: { key: 'deadline_days' } });
+        const deadlineDays = Math.max(1, parseInt(deadlineSetting?.value || '3'));
+        const deadline = new Date();
+        deadline.setDate(deadline.getDate() + deadlineDays);
+        updateData.deadline = deadline;
+      }
+    }
+
     const quote = await prisma.quote.update({
       where: { id: req.params.id },
-      data: { sellerId },
+      data: updateData,
       include: { seller: { select: { name: true } } },
     });
 
@@ -957,6 +972,40 @@ router.patch('/:id/amount', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Error updating amount:', err);
     res.status(500).json({ error: 'Error al actualizar monto' });
+  }
+});
+
+// PATCH /api/quotes/:id/deadline — editar fecha límite de armado manualmente
+router.patch('/:id/deadline', authMiddleware, async (req, res) => {
+  try {
+    const { deadline } = req.body; // string ISO o null para limpiar
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id } });
+    if (!quote) return res.status(404).json({ error: 'Cotización no encontrada' });
+    if (req.user.role === 'VENDEDOR' && quote.sellerId !== req.user.id) {
+      return res.status(403).json({ error: 'Sin permiso sobre esta cotización' });
+    }
+    if (quote.mailType !== 'SOLICITUD') {
+      return res.status(400).json({ error: 'La fecha límite de armado solo aplica a Solicitudes' });
+    }
+    const parsed = deadline ? new Date(deadline) : null;
+    if (deadline && isNaN(parsed.getTime())) return res.status(400).json({ error: 'Fecha inválida' });
+
+    const updated = await prisma.quote.update({
+      where: { id: req.params.id },
+      data: { deadline: parsed },
+    });
+    await prisma.activity.create({
+      data: {
+        action: 'STAGE_CHANGE',
+        detail: parsed ? `Fecha límite actualizada a ${parsed.toLocaleDateString('es-AR')}` : 'Fecha límite eliminada',
+        quoteId: quote.id,
+        userId: req.user.id,
+      },
+    });
+    res.json({ id: updated.id, deadline: updated.deadline });
+  } catch (err) {
+    console.error('Error updating deadline:', err);
+    res.status(500).json({ error: 'Error al actualizar fecha límite' });
   }
 });
 

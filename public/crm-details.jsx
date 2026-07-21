@@ -733,6 +733,9 @@ function QuoteDetail({ code, onClose, canReassign }) {
   const [editingMonto, setEditingMonto] = useState(false);
   const [montoVal, setMontoVal] = useState('');
   const [montoSaving, setMontoSaving] = useState(false);
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineVal, setDeadlineVal] = useState('');
+  const [deadlineSaving, setDeadlineSaving] = useState(false);
 
   const handleDuplicate = async () => {
     if (!dupClientId) return;
@@ -1266,6 +1269,54 @@ function QuoteDetail({ code, onClose, canReassign }) {
           <Field label="Ingreso">
             <span className="mono">{fmtDate(q.ingreso)} <span className="text-ink-500">· hace {q.dias}d</span></span>
           </Field>
+          {isSolicitud && !q.linkedQuoteId && (
+            <Field label={
+              <span className="flex items-center gap-1">
+                Fecha límite
+                {sel && (
+                  <button title="Editar fecha límite"
+                    onClick={() => { setDeadlineVal(q.deadline ? q.deadline.slice(0, 10) : ''); setEditingDeadline(true); }}
+                    className="text-ink-300 hover:text-brand transition-colors ml-0.5">
+                    <Icon name="pencil" size={10}/>
+                  </button>
+                )}
+              </span>
+            }>
+              {editingDeadline ? (
+                <span className="flex items-center gap-1.5">
+                  <input autoFocus type="date"
+                    className="text-[12.5px] border border-brand rounded-lg px-2 py-0.5 mono"
+                    value={deadlineVal}
+                    onChange={e => setDeadlineVal(e.target.value)}
+                    onBlur={async () => {
+                      const newVal = deadlineVal || null;
+                      const oldVal = q.deadline ? q.deadline.slice(0, 10) : null;
+                      if (newVal !== oldVal) {
+                        setDeadlineSaving(true);
+                        try {
+                          await CrmApi.updateQuoteDeadline(q.id, newVal);
+                          updateQuote(q.code, { deadline: newVal ? new Date(newVal).toISOString() : null });
+                          pushToast('Fecha límite actualizada');
+                        } catch (err) { pushToast(err.message || 'Error al guardar', 'bad'); }
+                        finally { setDeadlineSaving(false); }
+                      }
+                      setEditingDeadline(false);
+                    }}
+                    onKeyDown={e => { if (e.key === 'Escape') setEditingDeadline(false); }}
+                  />
+                  {deadlineSaving && <span className="text-[11px] text-ink-400">Guardando…</span>}
+                </span>
+              ) : q.deadline ? (
+                <span className={cx('mono', new Date(q.deadline) < new Date() && !['enviado','aceptada','rechazada'].includes(q.stage) ? 'text-bad font-semibold' : '')}>
+                  {fmtDate(q.deadline)}
+                </span>
+              ) : sel ? (
+                <span className="text-ink-400">—</span>
+              ) : (
+                <span className="text-ink-400 text-[12px]">Se completa al asignar vendedor</span>
+              )}
+            </Field>
+          )}
           {!isSolicitud && <Field label="Total con IVA" mono value={
             editingMonto ? (
               <span className="flex items-center gap-1.5">

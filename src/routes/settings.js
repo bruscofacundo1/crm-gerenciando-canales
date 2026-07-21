@@ -26,6 +26,11 @@ const DEFAULTS = {
   // Días tras enviar un presupuesto para marcar seguimiento pendiente (banner naranja)
   follow_up_days:              '4',
 
+  // Días para la fecha límite de armado, se pone automáticamente al asignar
+  // vendedor a una cotización (sea al ingresar ya asignada, o al asignarla
+  // manualmente después). Editable a mano una vez asignada.
+  deadline_days:                '3',
+
   // ── Alertas en panel (inbox CRM) ─────────────────────────────────────────
   // Días sin actividad para mostrar una cotización como alerta en el panel del CRM.
   // Se controla client-side; el usuario lo ve cada vez que abre el inbox.

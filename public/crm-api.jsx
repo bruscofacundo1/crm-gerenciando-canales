@@ -137,6 +137,9 @@ const CrmApi = {
   updateQuoteAmount: (id, amount) => apiFetch(`/quotes/${id}/amount`, {
     method: 'PATCH', body: JSON.stringify({ amount })
   }),
+  updateQuoteDeadline: (id, deadline) => apiFetch(`/quotes/${id}/deadline`, {
+    method: 'PATCH', body: JSON.stringify({ deadline })
+  }),
   createNP: (formData) => {
     const token = CrmAuth.getToken();
     return fetch(`${API_BASE}/quotes/create-np`, {

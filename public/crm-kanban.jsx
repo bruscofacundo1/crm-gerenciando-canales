@@ -31,12 +31,25 @@ function QuoteCard({ q, onOpen, compact }) {
   const followUpDays = followUpOverdue
     ? Math.floor((Date.now() - new Date(q.followUpDate)) / (1000*60*60*24))
     : 0;
+  // Fecha límite de armado vencida: solo aplica a Solicitudes sin presupuesto vinculado aún
+  const deadlineOverdue = q.mailType === 'SOLICITUD' && q.deadline && !q.linkedQuoteId
+    && !['enviado','aceptada','rechazada'].includes(q.stage) && new Date(q.deadline) <= new Date();
+  const deadlineDaysOver = deadlineOverdue
+    ? Math.floor((Date.now() - new Date(q.deadline)) / (1000*60*60*24))
+    : 0;
+  // Cuenta regresiva mientras todavía no se venció (mismo alcance que deadlineOverdue)
+  const deadlinePending = q.mailType === 'SOLICITUD' && q.deadline && !q.linkedQuoteId
+    && !['enviado','aceptada','rechazada'].includes(q.stage) && !deadlineOverdue;
+  const deadlineDaysLeft = deadlinePending
+    ? Math.max(1, Math.ceil((new Date(q.deadline) - Date.now()) / (1000*60*60*24)))
+    : 0;
   const displayName = cli?.name || q.emailSubject || 'Sin cliente asignado';
   const displaySub  = cli ? `${cli.city || ''}${cli.city && cli.prov ? ', ' : ''}${cli.prov || ''}` : 'Cliente por asignar';
   return (
     <div
       onClick={onOpen}
       className={cx('kcard bg-white border rounded-xl p-3.5 cursor-pointer',
+        deadlineOverdue ? 'border-red-300 ring-1 ring-red-100' :
         followUpOverdue ? 'border-amber-300 ring-1 ring-amber-100' : 'border-line/80'
       )}
     >
@@ -47,13 +60,19 @@ function QuoteCard({ q, onOpen, compact }) {
           {q.mailType === 'PRESUPUESTO' && <Badge tone="blue">PRES</Badge>}
           {q.mailType === 'OC'          && <Badge tone="purple">OC</Badge>}
           {q.flexxus && <Badge tone="slate">{q.flexxus}</Badge>}
-          {followUpOverdue && (
+          {deadlineOverdue && (
+            <span title={`Fecha límite vencida hace ${deadlineDaysOver}d`}
+              className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300">
+              🚩 {deadlineDaysOver}d
+            </span>
+          )}
+          {!deadlineOverdue && followUpOverdue && (
             <span title={`Sin respuesta hace ${followUpDays}d`}
               className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
               ⏰ {followUpDays}d
             </span>
           )}
-          {!followUpOverdue && overdue && <Badge tone="red" dot>{q.dias}d</Badge>}
+          {!deadlineOverdue && !followUpOverdue && overdue && <Badge tone="red" dot>{q.dias}d</Badge>}
         </div>
       </div>
       <div className="text-[13px] font-semibold text-ink-900 mt-1 leading-snug truncate">{displayName}</div>
@@ -70,6 +89,12 @@ function QuoteCard({ q, onOpen, compact }) {
             <span className="text-[11.5px] text-ink-700">{sel.name.split(' ')[0]}</span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-ink-500">
+            {deadlinePending && (
+              <span title={`Fecha límite en ${deadlineDaysLeft}d`}
+                className={cx('inline-flex items-center gap-0.5 font-semibold', deadlineDaysLeft <= 1 ? 'text-amber-600' : 'text-ink-500')}>
+                <Icon name="flag" size={11}/>{deadlineDaysLeft}d
+              </span>
+            )}
             {q.adj > 0 && <span className="inline-flex items-center gap-0.5"><Icon name="paperclip" size={11}/>{q.adj}</span>}
             {q.notas > 0 && <span className="inline-flex items-center gap-0.5"><Icon name="message-square" size={11}/>{q.notas}</span>}
             <span className="inline-flex items-center gap-0.5"><Icon name="calendar" size={11}/>{fmtDate(q.ingreso)}</span>
@@ -427,6 +452,41 @@ function KanbanBoard({ stages, items, kind, onOpen, title, subtitle, actions, lo
   );
 }
 
+// ---------- Badge legend ----------
+function BadgeLegendButton() {
+  const [open, setOpen] = useS(false);
+  return (
+    <div className="relative">
+      <button onClick={()=>setOpen(o=>!o)} title="¿Qué significan los indicadores de las tarjetas?"
+        className="w-7 h-7 rounded-lg border border-line flex items-center justify-center text-ink-400 hover:text-brand hover:border-brand/40 transition-colors shrink-0">
+        <Icon name="help-circle" size={14}/>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}/>
+          <div className="absolute right-0 top-full mt-2 w-[290px] bg-white rounded-xl shadow-pop border border-line modal-enter z-40 overflow-hidden p-3.5">
+            <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-2.5">Indicadores de la tarjeta</div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300">🚩 Nd</span>
+                <span className="text-[12px] text-ink-600 leading-snug">Se venció la <b>fecha límite de armado</b>: todavía no se envió el presupuesto y ya pasó el plazo interno objetivo.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">⏰ Nd</span>
+                <span className="text-[12px] text-ink-600 leading-snug">Presupuesto <b>enviado</b> al cliente sin respuesta, pasó la fecha de seguimiento.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="shrink-0"><Badge tone="red" dot>Nd</Badge></span>
+                <span className="text-[12px] text-ink-600 leading-snug">Lleva <b>demasiado tiempo</b> en la etapa actual (más de lo esperado).</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- Quote filters toolbar ----------
 function QuoteFiltersBar() {
   const { quoteFilters, setQuoteFilters, users, roleKey, currentUserId } = useApp();
@@ -487,6 +547,7 @@ function QuoteFiltersBar() {
         </button>
         {moreOpen && <MoreFiltersPopover onClose={()=>setMoreOpen(false)} which="quote"/>}
       </div>
+      <BadgeLegendButton/>
     </>
   );
 }

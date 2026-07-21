@@ -1465,7 +1465,7 @@ async function processEmail(mailData, imap) {
 
     // Leer etapas de entrada configurables + follow_up_days (para paridad con creación manual)
     const stageAndFudSettings = await prisma.appSetting.findMany({
-      where: { key: { in: ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto', 'follow_up_days'] } },
+      where: { key: { in: ['default_stage_solicitud', 'default_stage_solicitud_con_vendedor', 'default_stage_presupuesto', 'follow_up_days', 'deadline_days'] } },
     }).then(rows => Object.fromEntries(rows.map(r => [r.key, r.value])));
     let entryStage;
     if (mailType === 'PRESUPUESTO') {
@@ -1485,6 +1485,15 @@ async function processEmail(mailData, imap) {
       followUpDate.setDate(followUpDate.getDate() + fudDays);
     }
 
+    // deadline: fecha límite de armado, solo si ya entra con vendedor asignado
+    // (si entra sin vendedor, se completa recién cuando se le asigne uno)
+    let deadline = null;
+    if (sellerId) {
+      const deadlineDays = Math.max(1, parseInt(stageAndFudSettings.deadline_days || '3'));
+      deadline = new Date();
+      deadline.setDate(deadline.getDate() + deadlineDays);
+    }
+
     let quote;
     try {
       quote = await prisma.quote.create({
@@ -1502,6 +1511,7 @@ async function processEmail(mailData, imap) {
           ivaAmount:         flexxusData?.ivaAmount || null,
           totalPercepciones: flexxusData?.totalPercepciones || null,
           followUpDate,
+          deadline,
           emailSubject:      subject.substring(0, 500),
           emailMessageId:    messageId,
           emailFrom:         originalSender,
