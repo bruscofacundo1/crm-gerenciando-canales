@@ -2400,6 +2400,7 @@ function Config() {
   const [weeklyReportEnabled,  setWeeklyReportEnabled]  = useState('true');
   const [weeklyReportDay,      setWeeklyReportDay]      = useState('1');
   const [weeklyReportHour,     setWeeklyReportHour]     = useState('9');
+  const [testingWeeklyReport,  setTestingWeeklyReport]  = useState(false);
   const [stageCooldownDays,    setStageCooldownDays]    = useState('3');
   const [unassignedMailFreq,   setUnassignedMailFreq]   = useState('daily');
   const [solSinPresDays,       setSolSinPresDays]       = useState('3');
@@ -3431,7 +3432,22 @@ function Config() {
                 </div>
               )}
               {weekly && (
-                <div className="flex items-center gap-1.5" title="Email semanal">
+                <div className="flex items-center gap-2.5" title="Email semanal">
+                  {isDeveloper && (
+                    <button
+                      onClick={async () => {
+                        setTestingWeeklyReport(true);
+                        try {
+                          await CrmApi.testWeeklyReport();
+                          pushToast('Resumen de prueba enviado a tu mail');
+                        } catch (e) { pushToast(e.message || 'Error al enviar la prueba', 'bad'); }
+                        finally { setTestingWeeklyReport(false); }
+                      }}
+                      disabled={testingWeeklyReport}
+                      className="text-[11px] font-medium text-brand hover:underline disabled:opacity-50 disabled:no-underline shrink-0">
+                      {testingWeeklyReport ? 'Enviando…' : 'Probar'}
+                    </button>
+                  )}
                   <Icon name="mail" size={12} className="text-ink-400"/>
                   <Tog on={weeklyReportEnabled === 'true'}
                     onClick={() => {

@@ -273,6 +273,7 @@ const CrmApi = {
   getNotificationRules: () => apiFetch('/notifications/rules'),
   getNotificationsInbox:  ()    => apiFetch('/notifications/inbox'),
   ackAssignedQuote: (quoteId)   => apiFetch('/notifications/ack-assigned', { method: 'POST', body: JSON.stringify({ quoteId }) }),
+  testWeeklyReport: ()          => apiFetch('/notifications/weekly-report/test', { method: 'POST' }),
 
   // Articles
   getArticles:       (p) => apiFetch(`/articles${toQS(p)}`),

@@ -279,18 +279,26 @@ async function runStageAlerts() {
 
 // ── Resumen semanal por mail ────────────────────────────────────────────────
 // Corre cada hora; solo actúa el día/hora configurados en AppSetting.
-async function runWeeklyReport() {
+// opts.testEmail: si viene seteado, salta el chequeo de día/hora, el dedup por
+// weekly_report_last_sent y la lista de admins — arma el mismo mail y lo manda
+// únicamente a esa dirección. Pensado para el botón "Enviar de prueba".
+async function runWeeklyReport(opts = {}) {
   try {
-    const [enabledS, dayS, hourS] = await Promise.all([
-      prisma.appSetting.findUnique({ where: { key: 'weekly_report_enabled' } }),
-      prisma.appSetting.findUnique({ where: { key: 'weekly_report_day'     } }),
-      prisma.appSetting.findUnique({ where: { key: 'weekly_report_hour'    } }),
-    ]);
+    const isTest = !!opts.testEmail;
+    let targetDay = 1, targetHour = 9; // 1 = Lunes, usados solo para el pie del mail
 
-    if (enabledS?.value === 'false') return; // desactivado
+    if (!isTest) {
+      const [enabledS, dayS, hourS] = await Promise.all([
+        prisma.appSetting.findUnique({ where: { key: 'weekly_report_enabled' } }),
+        prisma.appSetting.findUnique({ where: { key: 'weekly_report_day'     } }),
+        prisma.appSetting.findUnique({ where: { key: 'weekly_report_hour'    } }),
+      ]);
 
-    const targetDay  = parseInt(dayS?.value  ?? '1', 10);  // 1 = Lunes
-    const targetHour = parseInt(hourS?.value ?? '9', 10);
+      if (enabledS?.value === 'false') return; // desactivado
+
+      targetDay  = parseInt(dayS?.value  ?? '1', 10);
+      targetHour = parseInt(hourS?.value ?? '9', 10);
+    }
 
     // Hora en Argentina (UTC-3)
     const now     = new Date();
@@ -298,24 +306,28 @@ async function runWeeklyReport() {
     const curDay  = argTime.getUTCDay();
     const curHour = argTime.getUTCHours();
 
-    if (curDay !== targetDay || curHour !== targetHour) return;
+    if (!isTest) {
+      if (curDay !== targetDay || curHour !== targetHour) return;
 
-    // Evitar doble-envío si la función se llama dos veces en el mismo slot
-    const lastSentS = await prisma.appSetting.findUnique({ where: { key: 'weekly_report_last_sent' } });
-    if (lastSentS?.value) {
-      const lastSent = new Date(lastSentS.value);
-      if ((now - lastSent) < 3600 * 1000) return; // ya se envió en la última hora
+      // Evitar doble-envío si la función se llama dos veces en el mismo slot
+      const lastSentS = await prisma.appSetting.findUnique({ where: { key: 'weekly_report_last_sent' } });
+      if (lastSentS?.value) {
+        const lastSent = new Date(lastSentS.value);
+        if ((now - lastSent) < 3600 * 1000) return; // ya se envió en la última hora
+      }
+      await prisma.appSetting.upsert({
+        where:  { key: 'weekly_report_last_sent' },
+        update: { value: now.toISOString() },
+        create: { key: 'weekly_report_last_sent', value: now.toISOString() },
+      });
     }
-    await prisma.appSetting.upsert({
-      where:  { key: 'weekly_report_last_sent' },
-      update: { value: now.toISOString() },
-      create: { key: 'weekly_report_last_sent', value: now.toISOString() },
-    });
 
-    const admins = (await prisma.user.findMany({
-      where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
-      select: { email: true, name: true, notificationPrefs: true },
-    })).filter(a => userEmailPref(a.notificationPrefs, 'weekly_report'));
+    const admins = isTest
+      ? [{ email: opts.testEmail, name: 'Prueba' }]
+      : (await prisma.user.findMany({
+          where: { role: { in: ['ADMIN', 'DEVELOPER'] }, active: true },
+          select: { email: true, name: true, notificationPrefs: true },
+        })).filter(a => userEmailPref(a.notificationPrefs, 'weekly_report'));
     if (!admins.length) return;
 
     // ── Calcular rango semana actual vs semana anterior ─────────────────────
@@ -488,19 +500,21 @@ async function runWeeklyReport() {
 
     // CTA
     body += emailButton(APP_URL, 'Abrir el CRM →');
-    body += '<div style="font-size:11px;color:' + C.grayMid + ';margin-top:16px;text-align:center">Generado automáticamente · ' + dayLabels[targetDay] + ' a las ' + String(targetHour).padStart(2,'0') + ':00 hs</div>';
+    body += '<div style="font-size:11px;color:' + C.grayMid + ';margin-top:16px;text-align:center">' +
+      (isTest ? 'Envío de prueba — no representa el envío semanal real' : 'Generado automáticamente · ' + dayLabels[targetDay] + ' a las ' + String(targetHour).padStart(2,'0') + ':00 hs') +
+      '</div>';
 
     const html = brandedEmail({
-      title: 'Resumen Semanal',
+      title: 'Resumen Semanal' + (isTest ? ' (prueba)' : ''),
       preheader: 'Resumen semanal MySelec CRM · ' + reportDate,
       content: body,
     });
 
     const { sendMail } = require('./mailer');
-    const subject  = '📊 Resumen semanal MySelec CRM — ' + reportDate;
+    const subject  = (isTest ? '🧪 [PRUEBA] ' : '📊 ') + 'Resumen semanal MySelec CRM — ' + reportDate;
     const toEmails = admins.map(a => a.email);
     await sendMail({ to: toEmails, subject, html });
-    console.log('📊 Resumen semanal enviado a ' + toEmails.join(', '));
+    console.log('📊 Resumen semanal' + (isTest ? ' (prueba)' : '') + ' enviado a ' + toEmails.join(', '));
 
   } catch (e) {
     console.error('runWeeklyReport error:', e.message);

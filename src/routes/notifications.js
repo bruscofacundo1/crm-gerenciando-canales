@@ -1,5 +1,5 @@
 const express = require('express');
-const {authMiddleware, isAdmin } = require('../middleware/auth');
+const {authMiddleware, isAdmin, isDeveloper } = require('../middleware/auth');
 const { runStageAlerts, runWeeklyReport } = require('../services/notifier');
 const prisma = require('../db');
 
@@ -582,6 +582,20 @@ router.get('/counts', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('GET /notifications/counts error:', err);
     res.json({ unlinkedPresupuestos: 0 }); // fallar silencioso para no romper sidebar
+  }
+});
+
+// POST /api/notifications/weekly-report/test — manda el resumen semanal real (mismo
+// contenido/queries que el envío automático) solo al usuario que lo dispara, para
+// previsualizarlo sin esperar al lunes ni afectar el envío real (no toca dedup ni
+// respeta día/hora).
+router.post('/weekly-report/test', authMiddleware, async (req, res) => {
+  if (!isDeveloper(req.user)) return res.status(403).json({ error: 'Solo desarrolladores' });
+  try {
+    await runWeeklyReport({ testEmail: req.user.email });
+    res.json({ ok: true, sentTo: req.user.email });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
