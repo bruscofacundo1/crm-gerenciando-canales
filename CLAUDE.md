@@ -319,6 +319,32 @@ Two email services coexist:
 - SKU: `parseNotaPedidoItems()` intenta patrones NP propios, luego fallback a `extractSkuFromText()` (5 filtros compartidos con presupuesto)
 - Resultado: Quote `mailType: 'NOTA_PEDIDO'` con ítems, montos y vinculación bidireccional al presupuesto
 
+### Sesión Foro + resumen semanal + fecha límite de armado (julio 2026)
+
+**Consultas del equipo que originaron esta sesión (Foro):**
+- **Victoria (MYS-0004):** confundida sobre si hace falta ponerle la etiqueta "crm" a las Notas de Pedido que envía desde su propia casilla (`victorias@myselec.com.ar`, distinta de Ventas) para que el sistema las lea. La respuesta original de Facundo decía que sí hacía falta — no es así. Aclarado: la etiqueta "crm" solo aplica a **Fuente 1** (mail recibido). **Fuente 2** (carpeta Enviados) se lee completa sin filtrar por etiqueta ni asunto — solo detecta si el mail enviado trae un PDF de Presupuesto o de NP adjunto, sea cual sea la casilla (mientras esa casilla esté agregada y sincronizando en Configuración → Mail).
+- **Diego:** reportó que no podía responder en el hilo de su propia publicación del Foro después de que Facundo (dev) ya había contestado. Causa: `POST /:id/respond` estaba duro a `role === 'DEVELOPER'` — nadie más podía sumar mensajes al hilo, ni el autor de la publicación. No tenía que ver con la etapa del caso.
+
+**Fix — hilo del Foro abierto a todos (`src/routes/feedback.js`)**
+- Nuevo `POST /:id/comment`, sin restricción de rol (cualquier usuario autenticado). Si alguien que no es developer comenta un caso ya "Respondido"/"Resuelto", se reabre a "Abierto" automáticamente para que no quede enterrado. Notifica por mail al autor si responde el dev, o a los developers si responde cualquier otro (misma lista que `getFeedbackNotifyEmails()`).
+- `POST /:id/respond` (con plantillas + cambio de estado) sigue siendo exclusivo de DEVELOPER — es el flujo "oficial" de cierre de casos.
+- Frontend (`crm-views.jsx`, `FeedbackDetailView`): caja "Agregar comentario" visible para todos debajo de las respuestas; badge "Dev" solo en los mensajes de developers, el resto muestra la inicial del nombre.
+
+**Fix — el resumen semanal nunca se estaba enviando (`src/services/notifier.js`, `src/server.js`)**
+- Causa raíz: `runWeeklyReport()` solo corría desde un `setInterval` de **60 minutos contado desde el arranque del proceso**, no alineado al reloj. Como cada deploy reinicia el server (varias veces por semana con este ritmo de trabajo), ese timer se reseteaba todo el tiempo y casi nunca coincidía con la ventana configurada (lunes 9am ARG por defecto) — podían pasar semanas sin un envío real, sin ningún error visible.
+- Fix: intervalo bajado a **5 minutos**. El chequeo es liviano cuando no coincide (solo lee 3 `AppSetting`), así que correrlo seguido no tiene costo real, y prácticamente garantiza que algún tick caiga dentro de la hora correcta.
+- Se agregó `POST /notifications/cron/weekly-report`, protegido por header `x-cron-secret` (mismo patrón que `/cron/stage-alerts`), pensado para un cron externo si algún día se configura uno en Railway. **Hoy no está en uso** — no hay `CRON_SECRET` seteado en las variables de Railway ni ningún cron externo apuntándole. El fix real y activo es el intervalo de 5 min.
+- Se agregó botón **"Probar"** en `Configuración → Alertas → Resumen semanal`, visible y funcional solo para rol DEVELOPER (chequeado en frontend y backend), que dispara `POST /notifications/weekly-report/test` — manda el resumen real (mismas queries y diseño que el automático) solo al mail de quien lo aprieta, sin esperar al lunes y sin tocar el dedup (`weekly_report_last_sent`) del envío real.
+- El resumen semanal se manda **solo a usuarios ADMIN o DEVELOPER** activos (y que no hayan desactivado individualmente la preferencia `weekly_report` en su perfil) — VENDEDOR y LOGISTICA nunca lo reciben, sea cual sea la configuración general.
+
+**MYS-0002 — Fecha límite de armado (⚠️ trabajado en esta sesión pero NO commiteado/deployado — verificar `git status` antes de asumir que está en producción)**
+- Idea (pedido de Diego): que el vendedor tenga una fecha límite interna para tener el presupuesto armado, no solo para el seguimiento post-envío.
+- Diseño acordado: la fecha límite (`Quote.deadline`, campo que ya existía en el schema) se calcula automático = hoy + `deadline_days` (nuevo `AppSetting`, default 3, configurable en Config → Automatización) en el momento en que una Solicitud queda con vendedor asignado — sea al ingresar ya asignada (mail) o al asignarla manualmente después. Si ingresa sin vendedor, no se pone nada hasta que se asigne.
+- Aplica **únicamente a Solicitudes** (`mailType: 'SOLICITUD'`) que todavía no tienen un Presupuesto vinculado — el campo y la alerta se ocultan apenas: (a) hay un `linkedQuoteId` seteado (ya existe un presupuesto armado, sea que se envió o no), o (b) la propia Solicitud pasa a etapa `enviado`/`aceptada`/`rechazada`. La lógica vive tanto en el badge del Kanban (`crm-kanban.jsx`) como en el campo de la ficha (`crm-details.jsx`) — ambos comparten la misma condición.
+- Kanban: bandera 🚩 roja (con días de atraso) cuando se pasó la fecha y el presupuesto todavía no se mandó — tiene prioridad visual sobre el ⏰ de seguimiento vencido y el punto rojo genérico de etapa vencida. Se agregó un ícono "?" al lado de los filtros de Fase 1 que abre una leyenda explicando los 3 tipos de badge, porque no era obvio para el equipo qué significaba cada uno.
+- El modal "Nueva cotización" (creación manual) siempre crea el registro como Presupuesto ya en etapa `enviado` — se confirmó con el usuario que ese botón es específicamente para cargar presupuestos que un vendedor ya armó y mandó por otro medio (WhatsApp, teléfono), no solicitudes nuevas a trabajar. Por eso no tiene (ni necesita) fecha límite — se le sacó el campo "Fecha límite de armado" del formulario y se corrigió el copy que decía "monto estimado, se completa al armar el presupuesto" (ya está armado al cargarlo).
+- Backend: `POST /quotes` (creación manual) ya no calcula `deadline`. `PATCH /quotes/:id/assign` solo la setea si `mailType === 'SOLICITUD'`. Nuevo `PATCH /quotes/:id/deadline` para edición manual, también restringido a Solicitudes.
+
 ### Known issues / audit backlog
 
 - **A-1** (ALTO): GET detail endpoints don't enforce ownership for VENDEDORs
