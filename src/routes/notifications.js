@@ -49,9 +49,10 @@ router.get('/inbox', authMiddleware, async (req, res) => {
         getFlag('inapp_unlinked_solicitudes'),
         getFlag('inapp_follow_up_upcoming'),
         getFlag('inapp_no_response'),
+        getFlag('inapp_deadline_overdue'),
       ]),
     ]);
-    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp, sysUnlinkedSol, sysFollowUpUpcoming, sysNoResponse] = sysFlags;
+    const [sysUnassigned, sysPending, sysOverdue, sysIdle, sysFollowUp, sysUnlinkedSol, sysFollowUpUpcoming, sysNoResponse, sysDeadlineOverdue] = sysFlags;
     const prefs = userFull?.notificationPrefs || {};
     const idleInboxDays      = parseInt(idleInboxSetting?.value       ?? '5', 10);
     const solSinPresDays     = parseInt(solSetting?.value             ?? '3', 10);
@@ -170,6 +171,34 @@ router.get('/inbox', authMiddleware, async (req, res) => {
               daysOld: Math.floor((now - new Date(q.createdAt)) / 86400000),
             })),
             dismissable: true, dismissKey: 'unlinked_solicitudes',
+          });
+        }
+      }
+
+      // 6. Solicitudes con fecha límite de armado vencida (todas)
+      if (sysDeadlineOverdue && userInappPref(prefs, 'deadline_overdue') && !isDismissed('deadline_overdue')) {
+        const deadlineOverdueQuotes = await prisma.quote.findMany({
+          where: {
+            mailType: 'SOLICITUD', linkedQuoteId: null, isDraft: false,
+            stage: { notIn: ['enviado', 'aceptada', 'rechazada'] },
+            deadline: { lte: now },
+          },
+          select: { id: true, code: true, deadline: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (deadlineOverdueQuotes.length > 0) {
+          alerts.push({
+            id: 'deadline-overdue', type: 'DEADLINE_OVERDUE', severity: 'high', icon: 'flag',
+            title: `${deadlineOverdueQuotes.length} solicitud${deadlineOverdueQuotes.length > 1 ? 'es' : ''} con fecha límite vencida`,
+            description: 'Solicitudes que pasaron la fecha límite para tener el presupuesto listo, sin enviar todavía.',
+            action: { label: 'Ver solicitudes', view: 'quotes' },
+            count: deadlineOverdueQuotes.length,
+            items: deadlineOverdueQuotes.map(q => ({
+              code: q.code,
+              clientName: q.client?.name,
+              daysOld: Math.floor((now - new Date(q.deadline)) / 86400000),
+            })),
+            dismissable: true, dismissKey: 'deadline_overdue',
           });
         }
       }
@@ -297,6 +326,34 @@ router.get('/inbox', authMiddleware, async (req, res) => {
               daysOld: Math.floor((now - new Date(q.createdAt)) / 86400000),
             })),
             dismissable: true, dismissKey: 'unlinked_solicitudes',
+          });
+        }
+      }
+
+      // 4b. Solicitudes del vendedor con fecha límite de armado vencida
+      if (sysDeadlineOverdue && userInappPref(prefs, 'deadline_overdue') && !isDismissed('deadline_overdue')) {
+        const deadlineOverdueQuotes = await prisma.quote.findMany({
+          where: {
+            sellerId: userId, mailType: 'SOLICITUD', linkedQuoteId: null, isDraft: false,
+            stage: { notIn: ['enviado', 'aceptada', 'rechazada'] },
+            deadline: { lte: now },
+          },
+          select: { id: true, code: true, deadline: true, client: { select: { name: true } } },
+          take: 10,
+        });
+        if (deadlineOverdueQuotes.length > 0) {
+          alerts.push({
+            id: 'deadline-overdue', type: 'DEADLINE_OVERDUE', severity: 'high', icon: 'flag',
+            title: `${deadlineOverdueQuotes.length} solicitud${deadlineOverdueQuotes.length > 1 ? 'es' : ''} con fecha límite vencida`,
+            description: 'Tenés solicitudes que pasaron la fecha límite para tener el presupuesto listo.',
+            action: { label: 'Ver mis cotizaciones', view: 'quotes' },
+            count: deadlineOverdueQuotes.length,
+            items: deadlineOverdueQuotes.map(q => ({
+              code: q.code,
+              clientName: q.client?.name,
+              daysOld: Math.floor((now - new Date(q.deadline)) / 86400000),
+            })),
+            dismissable: true, dismissKey: 'deadline_overdue',
           });
         }
       }

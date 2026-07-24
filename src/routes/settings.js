@@ -72,6 +72,8 @@ const DEFAULTS = {
   no_response_days:           '4',
   // Días extra de followUp al enviar un recordatorio
   reminder_followup_push_days: '4',
+  // Fecha límite de armado vencida (Solicitud sin presupuesto vinculado, ya vencida)
+  inapp_deadline_overdue:      'true',
   // Plantilla de recordatorio
   reminder_subject:           'Seguimiento presupuesto {flexxusCode} — MySelec',
   reminder_body:              'Hola {clientName},\n\nTe escribimos para hacer seguimiento del presupuesto {flexxusCode} que te enviamos hace {daysSent} días.\n\n¿Pudiste revisarlo? Quedamos a disposición para cualquier consulta.\n\nSaludos cordiales,\nEquipo MySelec',

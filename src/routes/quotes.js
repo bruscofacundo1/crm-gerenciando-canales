@@ -498,14 +498,35 @@ router.patch('/:id/assign', authMiddleware, async (req, res) => {
 
     const updateData = { sellerId };
     if (sellerId) {
+      const current = await prisma.quote.findUnique({
+        where: { id: req.params.id },
+        select: { deadline: true, mailType: true, sellerId: true, stage: true },
+      });
+
       // Fecha límite de armado solo aplica a Solicitudes (el Presupuesto ya está armado y enviado)
-      const current = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { deadline: true, mailType: true } });
       if (current && current.mailType === 'SOLICITUD' && !current.deadline) {
         const deadlineSetting = await prisma.appSetting.findUnique({ where: { key: 'deadline_days' } });
         const deadlineDays = Math.max(1, parseInt(deadlineSetting?.value || '3'));
         const deadline = new Date();
         deadline.setDate(deadline.getDate() + deadlineDays);
         updateData.deadline = deadline;
+      }
+
+      // Primera asignación de una Solicitud sin vendedor previo → mover de la etapa de
+      // entrada "sin vendedor" a la de "con vendedor" configuradas en Config → Pipeline
+      // (mismas settings que usa mailReader.js al ingresar por mail). Reasignar a otro
+      // vendedor más adelante en el pipeline NO mueve la etapa — solo cambia el dueño.
+      if (current && current.mailType === 'SOLICITUD' && !current.sellerId) {
+        const [entryNoSellerS, entryWithSellerS] = await Promise.all([
+          prisma.appSetting.findUnique({ where: { key: 'default_stage_solicitud' } }),
+          prisma.appSetting.findUnique({ where: { key: 'default_stage_solicitud_con_vendedor' } }),
+        ]);
+        const stageNoSeller   = entryNoSellerS?.value   || 'recibida';
+        const stageWithSeller = entryWithSellerS?.value || 'asignada';
+        if (current.stage === stageNoSeller && stageWithSeller !== stageNoSeller) {
+          updateData.stage = stageWithSeller;
+          updateData.stageChangedAt = new Date();
+        }
       }
     }
 

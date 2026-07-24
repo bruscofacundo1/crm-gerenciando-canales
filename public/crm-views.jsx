@@ -2437,6 +2437,7 @@ function Config() {
     inapp_unlinked_solicitudes:  'true',
     inapp_follow_up_upcoming:    'true',
     inapp_no_response:           'true',
+    inapp_deadline_overdue:      'true',
   });
 
   // Mail state
@@ -2488,6 +2489,7 @@ function Config() {
           inapp_unlinked_solicitudes: s.inapp_unlinked_solicitudes ?? 'true',
           inapp_follow_up_upcoming:   s.inapp_follow_up_upcoming   ?? 'true',
           inapp_no_response:          s.inapp_no_response          ?? 'true',
+          inapp_deadline_overdue:     s.inapp_deadline_overdue     ?? 'true',
         }));
         if (s.stage_alert_cooldown_days) setStageCooldownDays(s.stage_alert_cooldown_days);
         if (s.unassigned_mail_frequency) setUnassignedMailFreq(s.unassigned_mail_frequency);
@@ -3583,6 +3585,10 @@ function Config() {
                   { label:'Alertar después de', key:'solicitud_sin_pres_days', value:solSinPresDays, setter:setSolSinPresDays,
                     options:[1,2,3,5,7].map(d => ({ value:String(d), label:`${d} día${d>1?'s':''}` })) },
                 ]}/>
+              <AlertRow icon="flag" color="red"
+                label="Fecha límite de armado vencida"
+                desc="Solicitudes que pasaron la fecha límite para tener el presupuesto listo, sin enviar todavía."
+                inapp="inapp_deadline_overdue"/>
               <AlertRow icon="clock" color="gray"
                 label="Cotizaciones sin actividad"
                 desc="Cotizaciones sin movimiento. Descartable por N días."

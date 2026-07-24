@@ -1855,6 +1855,7 @@ function NotificationsPopover({ onClose, setScreen }) {
     UNLINKED_SOLICITUDES:  '📋',
     NO_RESPONSE:           '📨',
     ASSIGNED_QUOTES:       '🎯',
+    DEADLINE_OVERDUE:      '🚩',
   };
 
   const handleAlertAction = (alert) => {
