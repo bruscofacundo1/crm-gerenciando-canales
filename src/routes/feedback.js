@@ -27,40 +27,67 @@ function escHtml(s) {
 
 const VALID_STATUSES = ['OPEN','REVIEWING','PENDING_FIX','SCHEDULE_MEETING','RESPONDED','RESOLVED','CLOSED'];
 
+// {nombre} se reemplaza en el frontend por el nombre (de pila) de quien publicó el post
 const TEMPLATES = {
   BUG: [
     {
       id: 'bug_confirmed',
       label: 'Error confirmado',
       status: 'PENDING_FIX',
-      body: '¡Muchas gracias por reportar este error! Ya lo registramos en nuestro sistema y lo derivamos al equipo técnico para su corrección. Te avisamos cuando esté resuelto.',
+      body: 'Hola {nombre}, ¡muchas gracias por reportar este error! Lo registro y lo reviso — cuando esté corregido te actualizo acá. Cualquier otra duda, avisame.',
     },
     {
       id: 'bug_fixed',
       label: 'Error ya corregido',
       status: 'RESOLVED',
-      body: 'Este inconveniente ya fue corregido en la última actualización del sistema. Si seguís experimentando el problema, por favor avisanos con una nueva captura.',
+      body: 'Hola {nombre}, este error ya lo corregí en la última actualización. Si seguís teniendo el problema, avisame con una captura nueva.',
     },
     {
       id: 'reviewing',
       label: 'En revisión',
       status: 'REVIEWING',
-      body: 'Recibimos tu reporte y lo estamos analizando junto al equipo técnico. Te responderemos pronto con novedades.',
+      body: 'Hola {nombre}, recibí tu reporte y lo estoy analizando. Te actualizo apenas tenga novedades. Cualquier otra duda, avisame.',
     },
     {
       id: 'need_more_info',
       label: 'Pedir más datos',
       status: 'REVIEWING',
-      body: 'Para poder ayudarte mejor, ¿podrías adjuntarnos una captura de pantalla del error y los pasos exactos para reproducirlo?',
+      body: 'Hola {nombre}, para poder ayudarte mejor, ¿me pasás una captura del error y los pasos para reproducirlo? Cualquier otra duda, avisame.',
+    },
+    {
+      id: 'not_a_bug',
+      label: 'No es un error',
+      status: 'RESOLVED',
+      body: 'Hola {nombre}, gracias por avisarme — revisé esto y en realidad es el comportamiento esperado del sistema, no un error. [Explicación acá]. Cualquier otra duda, avisame.',
+    },
+  ],
+  QUESTION: [
+    {
+      id: 'question_reviewing',
+      label: 'Lo voy a revisar',
+      status: 'REVIEWING',
+      body: 'Hola {nombre}, ¡gracias por tu consulta! La recibí y la voy a analizar, te respondo a la brevedad. Cualquier otra duda, avisame.',
+    },
+    {
+      id: 'question_answer',
+      label: 'Responder ahora',
+      status: 'RESPONDED',
+      body: 'Hola {nombre}, ¡gracias por tu consulta! [Escribí acá la respuesta]. Cualquier otra duda, avisame.',
+    },
+    {
+      id: 'question_followup',
+      label: 'Retomando consulta',
+      status: 'RESPONDED',
+      body: '¡Buenas {nombre}! Retomando tu consulta: [Escribí acá la respuesta]. Cualquier otra duda, avisame.',
+    },
+    {
+      id: 'question_more_info',
+      label: 'Pedir más info',
+      status: 'REVIEWING',
+      body: 'Hola {nombre}, ¡gracias por la consulta! Para poder ayudarte mejor, ¿me podrías dar un poco más de detalle sobre [...]? Cualquier otra duda, avisame.',
     },
   ],
   OTHER: [
-    {
-      id: 'answer_question',
-      label: 'Responder consulta',
-      status: 'RESPONDED',
-      body: '¡Gracias por tu consulta! [Escribí acá la respuesta concreta]. Cualquier otra duda, no dudes en preguntarnos.',
-    },
     {
       id: 'schedule_meeting',
       label: 'Agendar reunión (10 min)',

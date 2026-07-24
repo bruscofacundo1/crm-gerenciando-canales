@@ -5617,6 +5617,7 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
   const [editBody,      setEditBody]      = useState('');
   const [editSaving,    setEditSaving]    = useState(false);
   const [deleting,      setDeleting]      = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -5637,7 +5638,8 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
   }
 
   function applyTemplate(tpl) {
-    setReplyBody(tpl.body);
+    const firstName = post?.user?.name?.split(' ')[0] || '';
+    setReplyBody(tpl.body.replace(/\{nombre\}/g, firstName));
     setReplyStatus(tpl.status);
   }
 
@@ -5679,11 +5681,16 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
   }
 
   async function handleStatusChange(status) {
+    if (status === post.status) return;
+    setChangingStatus(true);
     try {
       await CrmApi.setFeedbackStatus(post.id, status);
       setPost(prev => ({ ...prev, status }));
       onUpdate && onUpdate();
-    } catch (_) {}
+    } catch (e) {
+      alert(e.message || 'Error al cambiar el estado.');
+    }
+    setChangingStatus(false);
   }
 
   function startEdit() {
@@ -5726,8 +5733,9 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
   const isOwn          = post.userId === currentUserId;
   const isNew          = post.status === 'OPEN' && post.responses.length === 0;
 
-  const bugTemplates   = meta.templates?.BUG   || [];
-  const otherTemplates = meta.templates?.OTHER  || [];
+  const bugTemplates      = meta.templates?.BUG      || [];
+  const questionTemplates = meta.templates?.QUESTION || [];
+  const otherTemplates    = meta.templates?.OTHER    || [];
 
   const STATUS_BUTTONS = [
     { k: 'OPEN',             label: 'Abierto' },
@@ -5752,7 +5760,16 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
           <div className="px-5 pt-4 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <FbTypeBadge type={post.type}/>
-              <FbStatusBadge status={post.status}/>
+              {isAdmin ? (
+                <select value={post.status} disabled={changingStatus}
+                  onChange={e => handleStatusChange(e.target.value)}
+                  title="Cambiar estado sin responder"
+                  className="text-[11px] font-semibold rounded-full pl-2 pr-6 py-0.5 border border-slate-200 bg-white text-slate-700 disabled:opacity-50 cursor-pointer">
+                  {STATUS_BUTTONS.map(({ k, label }) => <option key={k} value={k}>{label}</option>)}
+                </select>
+              ) : (
+                <FbStatusBadge status={post.status}/>
+              )}
               <span className="text-[11px] font-mono text-slate-400">{post.code}</span>
               {isNew && <span className="text-[10px] text-slate-400">Recién publicado, sin revisar.</span>}
               <div className="ml-auto flex items-center gap-1.5">
@@ -5915,6 +5932,24 @@ function FeedbackDetailView({ postId, onBack, onUpdate, isAdmin, currentUserId }
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Plantillas rápidas · Error</div>
                       <div className="space-y-2 mb-3">
                         {bugTemplates.map(tpl => (
+                          <button key={tpl.id} onClick={() => applyTemplate(tpl)}
+                            className={cx('w-full text-left p-2.5 rounded-lg border hover:border-brand/40 hover:bg-brand/5 transition-all',
+                              replyBody === tpl.body ? 'border-brand/40 bg-brand/5' : 'border-slate-200 bg-slate-50')}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[12px] font-semibold text-slate-700">{tpl.label}</span>
+                              <FbStatusBadge status={tpl.status} size="xs"/>
+                            </div>
+                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-tight">{tpl.body}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {post.type === 'QUESTION' && questionTemplates.length > 0 && (
+                    <>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Plantillas rápidas · Pregunta</div>
+                      <div className="space-y-2 mb-3">
+                        {questionTemplates.map(tpl => (
                           <button key={tpl.id} onClick={() => applyTemplate(tpl)}
                             className={cx('w-full text-left p-2.5 rounded-lg border hover:border-brand/40 hover:bg-brand/5 transition-all',
                               replyBody === tpl.body ? 'border-brand/40 bg-brand/5' : 'border-slate-200 bg-slate-50')}>
